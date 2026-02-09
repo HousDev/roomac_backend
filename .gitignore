@@ -1,0 +1,77 @@
+# ==============================================
+# Node.js Backend .gitignore
+# For Express / MySQL / JWT / Nodemon Projects
+# ==============================================
+
+# Environment files (VERY IMPORTANT)
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS system files
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+node_modules/*
+
+# Build outputs
+dist/
+build/
+tmp/
+temp/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Coverage reports
+coverage/
+*.lcov
+
+# PM2 logs & dumps
+.pm2/
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# MySQL dumps
+*.sql
+*.sql.gz
+*.dump
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Cache
+.cache/
+.nyc_output/
+.eslintcache
+.prettiercache
+
+# Upload folders (if storing locally — OPTIONAL)
+uploads/
+public/uploads/
+storage/
+
+# Logs created by your app
+backend.log
+
+# Optional: Ignore local SSL keys
+*.pem
+*.key
