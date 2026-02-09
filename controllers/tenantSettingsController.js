@@ -1,6 +1,7 @@
 // controllers/tenantSettingsController.js - UPDATED VERSION
 const db = require('../config/db');
-const bcrypt = require('bcryptjs');
+const bcrypt = require("bcrypt");
+
 
 const TenantSettingsController = {
   // Get notification preferences
