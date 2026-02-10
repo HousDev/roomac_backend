@@ -8,7 +8,7 @@ router.get('/stats', addOnController.getStats);
 router.get('/categories', addOnController.getCategories);
 router.get('/:id', addOnController.getOne);
 
-// Protected routes (add auth middleware later)
+// Protected routes 
 router.post('/', addOnController.create);
 router.put('/:id', addOnController.update);
 router.delete('/:id', addOnController.delete);
