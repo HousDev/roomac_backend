@@ -59,8 +59,7 @@ const router = require("express").Router();
 const tenantAuth = require("../middleware/tenantAuth");
 const controller = require("../controllers/tenantRequestController");
 const adminAuth = require("../middleware/adminAuth");
-const db = require("../config/db"); // ADD THIS LINE
-
+const db = require("../config/db"); 
 // Route for creating requests - matches frontend call to /api/tenant/requests
 router.post("/", tenantAuth, controller.createRequest);
 
