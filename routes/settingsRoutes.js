@@ -9,7 +9,7 @@ const adminAuth = require('../middleware/adminAuth');
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../public/uploads/logos');
+    const uploadDir = path.join(__dirname, '../uploads/logos');
     // Create directory if it doesn't exist
     fs.mkdir(uploadDir, { recursive: true }).then(() => {
       cb(null, uploadDir);
