@@ -43,21 +43,26 @@ const upload = multer({
 });
 
 // Apply admin authentication to all settings routes
-router.use(adminAuth);
+
 
 // GET /api/settings - Get all settings
 router.get('/', settingsController.getSettings);
 
 // PUT /api/settings - Update multiple settings
-router.put('/', settingsController.updateSettings);
+router.put("/", adminAuth, settingsController.updateSettings);
 
 // PUT /api/settings/:key - Update single setting
-router.put('/:key', settingsController.updateSetting);
+router.put("/:key", adminAuth, settingsController.updateSetting);
 
 // POST /api/settings/upload - Upload file
-router.post('/upload', upload.single('file'), settingsController.uploadFile);
+router.post(
+  "/upload",
+  adminAuth,
+  upload.single("file"),
+  settingsController.uploadFile,
+);
 
 // POST /api/settings/initialize - Initialize default settings (for first-time setup)
-router.post('/initialize', settingsController.initializeSettings);
+router.post("/initialize", adminAuth, settingsController.initializeSettings);
 
 module.exports = router;
