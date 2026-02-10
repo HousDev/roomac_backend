@@ -1,49 +1,3 @@
-// // middleware/upload.js 
-// const multer = require("multer");
-// const path = require("path");
-// const fs = require("fs");
-
-// const uploadPath = path.join(__dirname, "..", "uploads", "properties");
-
-// // Create uploads directory if it doesn't exist
-// if (!fs.existsSync(uploadPath)) {
-//     fs.mkdirSync(uploadPath, { recursive: true });
-// }
-
-// const storage = multer.diskStorage({
-//     destination: function (req, file, cb) {
-//         cb(null, uploadPath);
-//     },
-//     filename: function (req, file, cb) {
-//         const ext = path.extname(file.originalname).toLowerCase();
-//         const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-//         cb(null, "property-" + unique + ext);
-//     },
-// });
-
-// const fileFilter = (req, file, cb) => {
-//     const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
-    
-//     if (allowedMimes.includes(file.mimetype)) {
-//         cb(null, true);
-//     } else {
-//         cb(new Error("Only image files (jpeg, jpg, png, webp, gif) are allowed"), false);
-//     }
-// };
-
-// const upload = multer({
-//     storage: storage,
-//     fileFilter: fileFilter,
-//     limits: { 
-//         fileSize: 5 * 1024 * 1024, // 5MB
-//         files: 10 // Maximum 10 files
-//     }
-// });
-
-// module.exports = upload;
-
-
-// middleware/upload.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -61,20 +15,22 @@ if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath, { recursive: true });
 }
 
-// Store first in temp folder
+/* =========================
+   MULTER CONFIG (TEMP)
+========================= */
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, tempPath);
   },
-  filename: function (req, file, cb) {
+  filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "temp-" + unique + ext);
+    cb(null, `temp-${unique}${ext}`);
   },
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedMimes = [
+  const allowed = [
     "image/jpeg",
     "image/jpg",
     "image/png",
@@ -82,23 +38,35 @@ const fileFilter = (req, file, cb) => {
     "image/gif",
   ];
 
-  if (allowedMimes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files allowed"), false);
-  }
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error("Only image files allowed"), false);
 };
 
 const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // allow bigger before compression
+    fileSize: 10 * 1024 * 1024,
     files: 10,
   },
 });
 
-// 👉 Compression Middleware
+/* =========================
+   SAFE DELETE (WINDOWS FIX)
+========================= */
+const safeDelete = (filePath) => {
+  setTimeout(() => {
+    fs.unlink(filePath, (err) => {
+      if (err && err.code !== "ENOENT") {
+        console.warn("⚠️ Temp delete failed:", err.message);
+      }
+    });
+  }, 500); // delay avoids EBUSY on Windows
+};
+
+/* =========================
+   IMAGE COMPRESSION
+========================= */
 const compressImages = async (req, res, next) => {
   if (!req.files || req.files.length === 0) return next();
 
@@ -114,24 +82,21 @@ const compressImages = async (req, res, next) => {
         ".webp";
 
       const finalPath = path.join(uploadPath, finalName);
-
       const fileSizeMB = file.size / (1024 * 1024);
 
-      // ✅ If file is already small (<1MB), just optimize lightly
       if (fileSizeMB <= 1) {
         await sharp(file.path)
           .toFormat("webp", { quality: 85 })
           .toFile(finalPath);
-      } 
-      // 🔥 Compress big images
-      else {
+      } else {
         await sharp(file.path)
           .resize(1600)
           .toFormat("webp", { quality: 70 })
           .toFile(finalPath);
       }
 
-      fs.unlinkSync(file.path);
+      // 🔥 SAFE DELETE (NO EBUSY)
+      safeDelete(file.path);
 
       compressedFiles.push({
         filename: finalName,
@@ -141,18 +106,13 @@ const compressImages = async (req, res, next) => {
 
     req.compressedImages = compressedFiles;
     next();
-
   } catch (err) {
     console.error("Compression error:", err);
-    res.status(500).json({ message: "Image processing failed" });
+    return res.status(500).json({ message: "Image processing failed" });
   }
 };
-
 
 module.exports = {
   upload,
   compressImages,
 };
-
-
-
