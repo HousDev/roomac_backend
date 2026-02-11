@@ -2428,7 +2428,368 @@ async updateRoomOccupants(roomId, connection = null) {
       console.error("RoomModel.removePhotos error:", err);
       throw err;
     }
+  },
+
+// Add these methods to your RoomModel (around line 1400-1500)
+
+async bulkUpdate(roomIds, action) {
+  let connection;
+  try {
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    let query;
+    let message;
+    
+    switch (action) {
+      case 'activate':
+        query = 'UPDATE rooms SET is_active = TRUE WHERE id IN (?)';
+        message = `${roomIds.length} room(s) activated successfully`;
+        break;
+      
+      case 'inactivate':
+        query = 'UPDATE rooms SET is_active = FALSE WHERE id IN (?)';
+        message = `${roomIds.length} room(s) inactivated successfully`;
+        break;
+      
+      case 'delete':
+        // First, check if rooms have assigned tenants
+        const [occupiedCheck] = await connection.query(
+          `SELECT DISTINCT room_id 
+           FROM bed_assignments 
+           WHERE room_id IN (?) AND is_available = FALSE`,
+          [roomIds]
+        );
+        
+        if (occupiedCheck.length > 0) {
+          throw new Error(`Cannot delete rooms that have tenants assigned. Please vacate all tenants first.`);
+        }
+        
+        // Delete bed assignments first
+        await connection.query('DELETE FROM bed_assignments WHERE room_id IN (?)', [roomIds]);
+        // Then delete rooms
+        query = 'DELETE FROM rooms WHERE id IN (?)';
+        message = `${roomIds.length} room(s) deleted successfully`;
+        break;
+      
+      default:
+        throw new Error('Invalid action');
+    }
+    
+    const [result] = await connection.query(query, [roomIds]);
+    
+    await connection.commit();
+    connection.release();
+    
+    // Get updated rooms for response
+    const updatedRooms = await this.findAll();
+    
+    return {
+      success: true,
+      message: message,
+      affectedRows: result.affectedRows,
+      updatedRooms: updatedRooms
+    };
+    
+  } catch (err) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+    console.error("RoomModel.bulkUpdate error:", err);
+    throw err;
   }
+},
+
+async getFilteredRooms(filters) {
+  try {
+    const {
+      search = '',
+      property_ids = [],
+      room_types = [],
+      gender_preferences = [],
+      amenities = [],
+      has_attached_bathroom,
+      has_balcony,
+      has_ac,
+      allow_couples,
+      min_rent,
+      max_rent,
+      min_capacity,
+      max_capacity,
+      is_active = true,
+      page = 1,
+      limit = 12
+    } = filters;
+
+    // Base WHERE clause
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+
+    // Active status filter
+    if (is_active !== undefined) {
+      whereClause += ` AND r.is_active = ?`;
+      params.push(is_active ? 1 : 0);
+    }
+
+    // Search filter
+    if (search && search.trim() !== '') {
+      whereClause += ` AND (
+        r.room_number LIKE ? OR 
+        p.name LIKE ? OR 
+        p.address LIKE ? OR 
+        r.sharing_type LIKE ?
+      )`;
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    // Property filter
+    if (property_ids && property_ids.length > 0) {
+      whereClause += ` AND r.property_id IN (?)`;
+      params.push(property_ids);
+    }
+
+    // Room type filter
+    if (room_types && room_types.length > 0) {
+      whereClause += ` AND r.sharing_type IN (?)`;
+      params.push(room_types);
+    }
+
+    // Gender preference filter
+    if (gender_preferences && gender_preferences.length > 0) {
+      whereClause += ` AND JSON_OVERLAPS(r.room_gender_preference, ?)`;
+      params.push(JSON.stringify(gender_preferences));
+    }
+
+    // Amenities filter
+    if (amenities && amenities.length > 0) {
+      whereClause += ` AND (`;
+      amenities.forEach((amenity, index) => {
+        if (index > 0) whereClause += ` AND `;
+        whereClause += `JSON_CONTAINS(r.amenities, ?)`;
+        params.push(JSON.stringify(amenity));
+      });
+      whereClause += `)`;
+    }
+
+    // Boolean filters
+    if (has_attached_bathroom !== undefined && has_attached_bathroom !== null) {
+      whereClause += ` AND r.has_attached_bathroom = ?`;
+      params.push(has_attached_bathroom ? 1 : 0);
+    }
+
+    if (has_balcony !== undefined && has_balcony !== null) {
+      whereClause += ` AND r.has_balcony = ?`;
+      params.push(has_balcony ? 1 : 0);
+    }
+
+    if (has_ac !== undefined && has_ac !== null) {
+      whereClause += ` AND r.has_ac = ?`;
+      params.push(has_ac ? 1 : 0);
+    }
+
+    if (allow_couples !== undefined && allow_couples !== null) {
+      whereClause += ` AND r.allow_couples = ?`;
+      params.push(allow_couples ? 1 : 0);
+    }
+
+    // Rent range filter
+    if (min_rent !== undefined && min_rent !== null && min_rent !== '') {
+      const minRentValue = parseFloat(min_rent);
+      if (!isNaN(minRentValue)) {
+        whereClause += ` AND r.rent_per_bed >= ?`;
+        params.push(minRentValue);
+      }
+    }
+
+    if (max_rent !== undefined && max_rent !== null && max_rent !== '') {
+      const maxRentValue = parseFloat(max_rent);
+      if (!isNaN(maxRentValue) && maxRentValue < 100000) {
+        whereClause += ` AND r.rent_per_bed <= ?`;
+        params.push(maxRentValue);
+      }
+    }
+
+    // Capacity filter
+    if (min_capacity !== undefined && min_capacity !== null && min_capacity !== '') {
+      const minCapacityValue = parseInt(min_capacity);
+      if (!isNaN(minCapacityValue)) {
+        whereClause += ` AND r.total_bed >= ?`;
+        params.push(minCapacityValue);
+      }
+    }
+
+    if (max_capacity !== undefined && max_capacity !== null && max_capacity !== '') {
+      const maxCapacityValue = parseInt(max_capacity);
+      if (!isNaN(maxCapacityValue) && maxCapacityValue < 10) {
+        whereClause += ` AND r.total_bed <= ?`;
+        params.push(maxCapacityValue);
+      }
+    }
+
+    // COUNT QUERY - FIXED: Use SELECT COUNT(*) instead of SELECT *
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM rooms r
+      JOIN properties p ON p.id = r.property_id
+      ${whereClause}
+    `;
+
+    console.log('Count Query:', countQuery);
+    console.log('Count Params:', params);
+    
+    const [countResult] = await db.query(countQuery, params);
+    const total = countResult[0].total;
+
+    // MAIN QUERY - Get paginated results
+    const mainQuery = `
+      SELECT 
+        r.*,
+        p.name AS property_name,
+        p.address AS property_address,
+        p.city_id AS property_city_id,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ba.id,
+              'bed_number', ba.bed_number,
+              'tenant_gender', ba.tenant_gender,
+              'is_available', ba.is_available,
+              'tenant_id', ba.tenant_id
+            )
+          )
+          FROM bed_assignments ba 
+          WHERE ba.room_id = r.id
+          ORDER BY ba.bed_number
+        ) as bed_assignments_json
+      FROM rooms r
+      JOIN properties p ON p.id = r.property_id
+      ${whereClause}
+      ORDER BY r.id DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const mainParams = [...params, parseInt(limit), offset];
+
+    console.log('Main Query:', mainQuery);
+    console.log('Main Params:', mainParams);
+    
+    const [rows] = await db.query(mainQuery, mainParams);
+
+    // Parse JSON fields
+    const rooms = rows.map(room => ({
+      ...room,
+      amenities: safeJsonParse(room.amenities),
+      photo_urls: safeJsonParse(room.photo_urls),
+      room_gender_preference: safeJsonParse(room.room_gender_preference),
+      bed_assignments: room.bed_assignments_json ? safeJsonParse(room.bed_assignments_json) : []
+    }));
+
+    return {
+      rooms,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    };
+
+  } catch (err) {
+    console.error("RoomModel.getFilteredRooms error:", err);
+    console.error("Error details:", {
+      message: err.message,
+      sql: err.sql,
+      sqlMessage: err.sqlMessage
+    });
+    throw err;
+  }
+},
+
+async getRoomFiltersData() {
+  try {
+    // Get all unique room types
+    const [roomTypes] = await db.query(`
+      SELECT DISTINCT 
+        sharing_type as type,
+        COUNT(*) as count
+      FROM rooms 
+      WHERE is_active = TRUE
+      GROUP BY sharing_type
+      ORDER BY sharing_type
+    `);
+
+    // Get all unique gender preferences
+    const [genderPrefs] = await db.query(`
+      SELECT DISTINCT 
+        JSON_UNQUOTE(JSON_EXTRACT(room_gender_preference, '$[0]')) as gender,
+        COUNT(*) as count
+      FROM rooms 
+      WHERE is_active = TRUE 
+        AND room_gender_preference IS NOT NULL 
+        AND room_gender_preference != '[]'
+      GROUP BY gender
+      HAVING gender IS NOT NULL
+      ORDER BY gender
+    `);
+
+    // Get property options
+    const [properties] = await db.query(`
+      SELECT p.id, p.name, p.address, COUNT(r.id) as room_count
+      FROM properties p
+      LEFT JOIN rooms r ON p.id = r.property_id AND r.is_active = TRUE
+      WHERE p.is_active = TRUE
+      GROUP BY p.id, p.name, p.address
+      ORDER BY p.name
+    `);
+
+    // Get amenity options
+    const [amenities] = await db.query(`
+      SELECT DISTINCT
+        JSON_UNQUOTE(amenity) as amenity,
+        COUNT(*) as count
+      FROM rooms,
+      JSON_TABLE(
+        amenities,
+        '$[*]' COLUMNS(amenity VARCHAR(255) PATH '$')
+      ) AS amenities_parsed
+      WHERE is_active = TRUE
+      GROUP BY amenity
+      ORDER BY amenity
+    `);
+
+    return {
+      roomTypes: roomTypes.map(type => ({
+        value: type.type,
+        label: type.type.charAt(0).toUpperCase() + type.type.slice(1),
+        count: type.count
+      })),
+      genderPreferences: genderPrefs.map(gender => ({
+        value: gender.gender,
+        label: gender.gender === 'male_only' ? 'Male Only' : 
+               gender.gender === 'female_only' ? 'Female Only' : 
+               gender.gender === 'couples' ? 'Couples' : gender.gender,
+        count: gender.count
+      })),
+      properties: properties.map(prop => ({
+        id: prop.id.toString(),
+        name: prop.name,
+        address: prop.address,
+        roomCount: prop.room_count
+      })),
+      amenities: amenities.map(amenity => ({
+        value: amenity.amenity,
+        label: amenity.amenity,
+        count: amenity.count
+      }))
+    };
+  } catch (err) {
+    console.error("RoomModel.getRoomFiltersData error:", err);
+    throw err;
+  }
+}
 };
 
 module.exports = RoomModel;
