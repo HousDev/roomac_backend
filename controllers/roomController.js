@@ -2428,7 +2428,91 @@ async testTenants(req, res) {
                 message: err.message || 'Internal server error'
             });
         }
+    },
+
+
+// In RoomController.js, replace these methods:
+
+// Bulk update rooms - POST /api/rooms/bulk-update
+// Bulk update rooms - POST /api/rooms/bulk-update
+async bulkUpdateRooms(req, res) {
+  try {
+    const { room_ids, action } = req.body;
+
+    if (!room_ids || !Array.isArray(room_ids) || room_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least one room"
+      });
     }
+
+    if (!['activate', 'inactivate', 'delete'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid action. Must be: activate, inactivate, or delete"
+      });
+    }
+
+    // Call model method
+    const result = await RoomModel.bulkUpdate(room_ids, action);
+
+    res.json({
+      success: true,
+      message: result.message,
+      affectedRows: result.affectedRows,
+      updatedRooms: result.updatedRooms // Send updated rooms back to client
+    });
+
+  } catch (err) {
+    console.error("bulkUpdateRooms error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to perform bulk action"
+    });
+  }
+},
+
+// Get room filters data - GET /api/rooms/filters/data
+async getRoomFiltersData(req, res) {
+  try {
+    const data = await RoomModel.getRoomFiltersData();
+    
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (err) {
+    console.error("getRoomFiltersData error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch filter data: " + err.message
+    });
+  }
+},
+
+// Get filtered rooms - POST /api/rooms/filter
+async getFilteredRooms(req, res) {
+  try {
+    const filters = req.body;
+    
+    // Call model method instead of using db directly
+    const result = await RoomModel.getFilteredRooms(filters);
+
+    res.json({
+      success: true,
+      data: result.rooms,
+      pagination: result.pagination
+    });
+
+  } catch (err) {
+    console.error("getFilteredRooms error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch filtered rooms: " + err.message
+    });
+  }
+}
+
 }
 
 module.exports = RoomController;

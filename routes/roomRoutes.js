@@ -40,6 +40,9 @@ router.get('/:roomId/available-beds', tenantAuth, RoomController.getAvailableBed
 
 
 router.get('/tenant-assignment/:tenant_id', RoomController.getTenantAssignment);
+router.post('/bulk-update', RoomController.bulkUpdateRooms);
+router.post('/filter', RoomController.getFilteredRooms);
+router.get('/filters/data', RoomController.getRoomFiltersData);
 
 
 
