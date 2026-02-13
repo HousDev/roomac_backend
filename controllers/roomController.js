@@ -1387,11 +1387,15 @@ if (photosToRemove.length) {
   console.log("REMOVE LIST CLEAN:", removeList);
 
   const keptPhotos = [];
+  console.log("CURRENT PHOTOS:", currentPhotos);
+  console.log("REMOVE PHOTOS:", removeList);
 
   for (const photo of currentPhotos) {
 
     const photoPath = extractPath(photo.url);
-
+    
+console.log("CHECKING PHOTO:", photoPath);
+console.log("REMOVE LIST:", removeList);
     const shouldRemove = removeList.includes(photoPath);
 
     console.log("CHECK:", photoPath, "REMOVE?", shouldRemove);
