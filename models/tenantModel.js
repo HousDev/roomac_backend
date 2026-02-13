@@ -1,3 +1,4 @@
+// tenantModel.js 
 const pool = require("../config/db");
 
 // function parseTenant(row) {
@@ -1659,7 +1660,153 @@ async update(id, payload) {
       console.error("TenantModel.getStateOptions error:", err);
       return [];
     }
+  },
+
+
+// Complete corrected methods for tenantModel.js
+
+// Check if tenant exists
+async findByEmailOrPhone(email, phone) {
+  const query = 'SELECT * FROM tenants WHERE email = ? OR phone = ?';
+  
+  try {
+    const [rows] = await pool.query(query, [email, phone]);
+    return rows[0];
+  } catch (error) {
+    console.error("TenantModel.findByEmailOrPhone error:", error);
+    throw error;
   }
+},
+
+// Create new tenant from booking
+async createFromBooking(bookingData, roomData, propertyData) {
+  // Generate a unique email if not exists
+  let email = bookingData.email;
+  if (!email || email === '') {
+    email = `guest_${Date.now()}@temp.com`;
+  }
+
+  const query = `
+    INSERT INTO tenants (
+      salutation, full_name, email, phone, gender, 
+      property_id, room_id, bed_id, check_in_date,
+      preferred_property_id, preferred_sharing,
+      is_active, portal_access_enabled,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+  `;
+
+  // Map sharing type from room data
+  let sharingType = 'double';
+  if (roomData.sharing_type) {
+    if (roomData.sharing_type.toString().includes('1') || roomData.sharing_type === 'single') {
+      sharingType = 'single';
+    } else if (roomData.sharing_type.toString().includes('2') || roomData.sharing_type === 'double') {
+      sharingType = 'double';
+    } else if (roomData.sharing_type.toString().includes('3') || roomData.sharing_type === 'triple') {
+      sharingType = 'triple';
+    }
+  }
+
+  const values = [
+    bookingData.salutation || 'Mr.',
+    bookingData.fullName,
+    email,
+    bookingData.phone,
+    bookingData.gender || 'Other',
+    bookingData.propertyId,
+    bookingData.roomId,
+    null, // bed_id
+    bookingData.moveInDate || bookingData.checkInDate || null,
+    bookingData.propertyId,
+    sharingType,
+    1, // is_active
+    0 // portal_access_enabled
+  ];
+
+  try {
+    const [result] = await pool.query(query, values);
+    return result.insertId;
+  } catch (error) {
+    console.error("TenantModel.createFromBooking error:", error);
+    throw error;
+  }
+},
+
+// Get bookings for tenant IDs - FIXED VERSION
+async getBookingsForTenantIds(tenantIds = []) {
+  try {
+    if (!tenantIds || !tenantIds.length) return [];
+    
+    const [rows] = await pool.query(
+      `SELECT 
+        b.id, 
+        b.tenant_name,
+        b.email,
+        b.phone,
+        b.status, 
+        b.monthly_rent,
+        b.booking_type,
+        b.check_in_date,
+        b.check_out_date,
+        b.move_in_date,
+        b.total_amount,
+        b.payment_status,
+        b.created_at,
+        p.name as property_name, 
+        p.city_id as property_city_id,
+        p.state as property_state,
+        r.room_number, 
+        r.room_type, 
+        r.sharing_type, 
+        r.floor
+       FROM bookings b
+       LEFT JOIN properties p ON p.id = b.property_id
+       LEFT JOIN rooms r ON r.id = b.room_id
+       WHERE b.email IN (
+         SELECT email FROM tenants WHERE id IN (?)
+       ) OR b.phone IN (
+         SELECT phone FROM tenants WHERE id IN (?)
+       )
+       ORDER BY b.created_at DESC`,
+      [tenantIds, tenantIds]
+    );
+    return rows;
+  } catch (err) {
+    console.error("TenantModel.getBookingsForTenantIds error:", err);
+    return [];
+  }
+},
+
+// Get payments for tenant IDs - FIXED VERSION (removed month/year)
+async getPaymentsForTenantIds(tenantIds = []) {
+  try {
+    if (!tenantIds || !tenantIds.length) return [];
+    
+    const [rows] = await pool.query(
+      `SELECT 
+        id, 
+        tenant_id, 
+        amount, 
+        payment_date, 
+        payment_mode, 
+        status, 
+        transaction_id, 
+        notes, 
+        created_at,
+        updated_at
+       FROM payments 
+       WHERE tenant_id IN (?)
+       ORDER BY payment_date DESC`,
+      [tenantIds]
+    );
+    return rows;
+  } catch (err) {
+    console.error("TenantModel.getPaymentsForTenantIds error:", err);
+    return [];
+  }
+},
 };
+
 
 module.exports = TenantModel;
