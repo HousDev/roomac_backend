@@ -1,12 +1,12 @@
 const express = require("express");
-const router = express.Router();
-const paymentController = require("../controllers/paymentController");
+const {
+  createOrder,
+  verifyPayment,
+} = require("../controllers/paymentController");
 
-// Payment routes
-router.post("/", paymentController.createPayment);
-router.get("/", paymentController.getAllPayments);
-router.get("/stats", paymentController.getPaymentStats);
-router.get("/:id", paymentController.getPayment);
-router.patch("/:id/status", paymentController.updatePaymentStatus);
+const router = express.Router();
+
+router.post("/create-order", createOrder);
+router.post("/verify-payment", verifyPayment);
 
 module.exports = router;
