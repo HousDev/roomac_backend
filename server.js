@@ -141,7 +141,10 @@ const adminDeletionRequestsRoutes = require("./routes/adminDeletionRequestsRoute
 const settingsRoutes = require("./routes/settingsRoutes");
 const profileRoutes = require("./routes/adminProfileRoutes");
 const addOnRoutes = require("./routes/addOnRoutes");
+const bookingRoutes = require("./routes/bookingRoutes");
+const paymentsRoutes = require("./routes/payment.Routes");
 
+const  paymentRoutes =require ("./routes/paymentRoutes");
 dotenv.config();
 
 const app = express();
@@ -214,13 +217,10 @@ app.use("/api/admin/deletion-requests", adminDeletionRequestsRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/admin/add-ons", addOnRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/payments", paymentsRoutes);
 
-/* =========================
-   HEALTH CHECK
-========================= */
-app.get("/", (req, res) => {
-  res.send("✅ ROOMAC Backend API is running...");
-});
+app.use("/api/payment", paymentRoutes);
 
 /* =========================
    SERVER START

@@ -1,3 +1,4 @@
+// enquiryModel.js - Handles database interactions for tenant enquiries
 const db = require("../config/db");
 
 const EnquiryModel = {
@@ -221,6 +222,49 @@ const EnquiryModel = {
       throw err;
     }
   },
+
+  async createFromBooking(bookingData, propertyData) {
+    const query = `
+      INSERT INTO enquiries (
+        property_id, tenant_name, email, phone, property_name,
+        preferred_move_in_date, budget_range, message, status,
+        source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `;
+
+    // Determine budget range based on booking type
+    let budgetRange = 'Not specified';
+    if (bookingData.bookingType === 'long') {
+      budgetRange = `₹${bookingData.monthlyRent || 0}/month`;
+    } else {
+      const days = bookingData.checkInDate && bookingData.checkOutDate 
+        ? Math.ceil((new Date(bookingData.checkOutDate) - new Date(bookingData.checkInDate)) / (1000 * 60 * 60 * 24))
+        : 1;
+      budgetRange = `₹${bookingData.totalAmount || 0} for ${days} days`;
+    }
+
+    const moveInDate = bookingData.moveInDate || bookingData.checkInDate || null;
+
+    const values = [
+      bookingData.propertyId,
+      bookingData.fullName,
+      bookingData.email,
+      bookingData.phone,
+      propertyData?.name || 'Property',
+      moveInDate,
+      budgetRange,
+      `Booking enquiry for ${bookingData.bookingType === 'long' ? 'Long Stay' : 'Short Stay'}. Room: ${bookingData.roomNumber || 'Not selected'}`,
+      'pending',
+      'website'
+    ];
+
+    try {
+      const [result] = await db.execute(query, values);
+      return { id: result.insertId, ...bookingData };
+    } catch (error) {
+      throw error;
+    }
+  }
 };
 
 module.exports = EnquiryModel;
