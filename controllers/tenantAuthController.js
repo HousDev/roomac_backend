@@ -4,9 +4,9 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 
 // Generate JWT token
-const generateToken = (tenantId, email) => {
+const generateToken = (tenantId, email,type) => {
   return jwt.sign(
-    { tenantId, email, type: 'tenant' },
+    { tenantId, email, type: type },
     process.env.JWT_SECRET || 'your-secret-key',
     { expiresIn: '7d' }
   );
@@ -22,64 +22,53 @@ const otpStore = new Map();
 
 class TenantAuthController {
   // Login with email and password
-  static async login(req, res) {
-    try {
-      console.log('🔍 Login attempt:', req.body);
+ static async login(req, res) {
+  try {
+    console.log('🔍 Login attempt:', req.body);
 
-      const { email, password } = req.body;
+    const { email, password } = req.body;
 
-      // Validate input
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          error: 'Email and password are required'
-        });
-      }
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and password are required'
+      });
+    }
 
-      // Find credential by email
-      const [credentials] = await db.query(
-        'SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1',
-        [email]
-      );
+    // ============================================
+    // 1️⃣ CHECK TENANT LOGIN FIRST
+    // ============================================
 
-      if (credentials.length === 0) {
-        console.log('❌ No credential found for email:', email);
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid email or password'
-        });
-      }
+    const [credentials] = await db.query(
+      'SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1',
+      [email]
+    );
 
+    if (credentials.length > 0) {
       const credential = credentials[0];
 
-      // For testing: Check if password is plain text or bcrypt
-      // If it's plain text (like "123456"), use direct comparison
-      // If it's bcrypt hash, use bcrypt.compare
-      
       let isValid = false;
-      
-      // Check if password_hash looks like a bcrypt hash
-      if (credential.password_hash.startsWith('$2b$') || 
-          credential.password_hash.startsWith('$2a$') || 
-          credential.password_hash.startsWith('$2y$')) {
-        // It's a bcrypt hash
+
+      // Check bcrypt or plain text
+      if (
+        credential.password_hash.startsWith('$2b$') ||
+        credential.password_hash.startsWith('$2a$') ||
+        credential.password_hash.startsWith('$2y$')
+      ) {
         isValid = await bcrypt.compare(password, credential.password_hash);
       } else {
-        // Plain text comparison (for testing only!)
-        isValid = (password === credential.password_hash);
+        isValid = password === credential.password_hash;
       }
 
       if (!isValid) {
-        console.log('❌ Invalid password for:', email);
         return res.status(401).json({
           success: false,
           error: 'Invalid email or password'
         });
       }
 
-      console.log('✅ Password verified for tenant:', credential.tenant_id);
-
-      // Check if tenant has portal access enabled
+      // Check tenant details
       const [tenant] = await db.query(
         'SELECT id, full_name, email, phone, portal_access_enabled FROM tenants WHERE id = ?',
         [credential.tenant_id]
@@ -93,35 +82,84 @@ class TenantAuthController {
       }
 
       if (!tenant[0].portal_access_enabled) {
-        console.log('❌ Portal access disabled for tenant:', credential.tenant_id);
         return res.status(403).json({
           success: false,
-          error: 'Portal access is not enabled for your account. Please contact administrator.'
+          error: 'Portal access is not enabled for your account.'
         });
       }
 
-      // Generate token
-      const token = generateToken(credential.tenant_id, credential.email);
+      const token = generateToken({
+        id: credential.tenant_id,
+        email: credential.email,
+        role: 'tenant',
+        type: 'tenant'
+      });
 
-      console.log('✅ Login successful for tenant:', credential.tenant_id);
-
-      res.json({
+      return res.json({
         success: true,
         token,
-        tenant_id: credential.tenant_id,
-        tenant_email: credential.email,
-        tenant: tenant[0],
-        message: 'Login successful'
-      });
-
-    } catch (error) {
-      console.error('❌ Login error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error'
+        role: 'tenant',
+        user: tenant[0],
+        message: 'Tenant login successful'
       });
     }
+
+    // ============================================
+    // 2️⃣ IF NOT TENANT → CHECK ADMIN
+    // ============================================
+
+    const [admins] = await db.query(
+      'SELECT * FROM users WHERE email = ? ',
+      [email]
+    );
+
+    if (admins.length === 0) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    const admin = admins[0];
+
+    const isAdminValid = await bcrypt.compare(password, admin.password);
+
+    if (!isAdminValid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    const token = generateToken({
+      id: admin.id,
+      email: admin.email,
+      role: 'admin',
+     type: 'admin'
+
+    });
+
+    return res.json({
+      success: true,
+      token,
+      role: 'admin',
+      user: {
+        id: admin.id,
+        full_name: admin.full_name,
+        email: admin.email
+      },
+      message: 'Admin login successful'
+    });
+
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
   }
+}
+
 
   // Send OTP to email (alternative login method)
   static async sendOTP(req, res) {
