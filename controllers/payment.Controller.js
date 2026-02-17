@@ -6,18 +6,24 @@ const paymentController = {
   async createPayment(req, res) {
     try {
       const paymentData = req.body;
-      
-      if (!paymentData.booking_id || !paymentData.amount || !paymentData.payment_mode) {
+
+      // ✅ FIX: booking_id is DEFAULT NULL in DB — removed from required check
+      if (!paymentData.amount || !paymentData.payment_mode) {
         return res.status(400).json({
           success: false,
-          message: "Missing required fields"
+          message: "Missing required fields: amount and payment_mode are required"
         });
       }
 
+      // ✅ FIX: Ensure booking_id is null (not empty string) if not provided
+      if (!paymentData.booking_id || paymentData.booking_id === '') {
+        paymentData.booking_id = null;
+      }
+
       const newPayment = await Payment.create(paymentData);
-      
-      // Update booking payment status
-      if (paymentData.status === 'completed') {
+
+      // Only update booking payment status if booking_id exists
+      if (paymentData.booking_id && paymentData.status === 'completed') {
         await Booking.updatePaymentStatus(paymentData.booking_id, 'paid');
       }
 
@@ -42,7 +48,7 @@ const paymentController = {
     try {
       const { id } = req.params;
       const payment = await Payment.findById(id);
-      
+
       if (!payment) {
         return res.status(404).json({
           success: false,
@@ -78,7 +84,7 @@ const paymentController = {
       };
 
       const payments = await Payment.getAll(filters);
-      
+
       res.status(200).json({
         success: true,
         count: payments.length,
@@ -100,7 +106,7 @@ const paymentController = {
     try {
       const { bookingId } = req.params;
       const payments = await Payment.findByBooking(bookingId);
-      
+
       res.status(200).json({
         success: true,
         count: payments.length,
@@ -124,7 +130,7 @@ const paymentController = {
       const { status, transaction_id } = req.body;
 
       const updated = await Payment.updateStatus(id, status, transaction_id);
-      
+
       if (!updated) {
         return res.status(404).json({
           success: false,
@@ -132,16 +138,15 @@ const paymentController = {
         });
       }
 
-      // Get payment details to update booking
+      // Only update booking if payment has a booking_id
       const payment = await Payment.findById(id);
-      
+
       if (payment && payment.booking_id) {
         if (status === 'completed') {
           await Booking.updatePaymentStatus(payment.booking_id, 'paid');
         } else if (status === 'failed') {
           await Booking.updatePaymentStatus(payment.booking_id, 'failed');
         } else if (status === 'refunded') {
-          // Keep as paid but you might want to add a refunded status
           await Booking.updatePaymentStatus(payment.booking_id, 'paid');
         }
       }
@@ -166,7 +171,7 @@ const paymentController = {
     try {
       const { propertyId } = req.query;
       const stats = await Payment.getStats(propertyId);
-      
+
       res.status(200).json({
         success: true,
         data: stats
