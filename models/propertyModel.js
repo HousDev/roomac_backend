@@ -477,10 +477,23 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
       `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     );
     
+    // const [rows] = await db.query(
+    //   `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    //   [...params, pageSize, offset]
+    // );
     const [rows] = await db.query(
-      `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    );
+  `SELECT id, name, slug, city_id, state, area, address, total_rooms, total_beds, 
+   occupied_beds, starting_price, security_deposit, description, 
+   property_manager_name, property_manager_phone, property_manager_email,
+   property_manager_role, staff_id, amenities, services, photo_urls, 
+   property_rules, is_active, rating, created_at, updated_at,
+   lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
+   notice_period_days, notice_penalty_amount, notice_penalty_type,
+   additional_terms, tags
+   FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+  [...params, pageSize, offset]
+);
+
 
     // ✅ ADD DEBUG: Show raw database data
     console.log("📊 Raw database rows with tags:", 
@@ -560,6 +573,9 @@ async findById(id) {
         description,
         property_manager_name,
         property_manager_phone,
+        property_manager_email,
+  property_manager_role,
+  staff_id,
         amenities,
         services,
         photo_urls,
@@ -582,7 +598,8 @@ async findById(id) {
         `INSERT INTO properties
         (name, slug, city_id, state, area, address, total_rooms, total_beds, occupied_beds,
          starting_price, security_deposit, description, property_manager_name,
-         property_manager_phone, amenities, services, photo_urls, property_rules,
+          property_manager_phone, property_manager_email, property_manager_role, staff_id,
+ amenities, services, photo_urls, property_rules,
          is_active, rating, lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
          notice_period_days, notice_penalty_amount, notice_penalty_type,
          terms_conditions, terms_json, additional_terms, tags, created_at)
@@ -602,7 +619,12 @@ async findById(id) {
           description || null,
           property_manager_name || null,
           property_manager_phone || null,
-          JSON.stringify(amenities || []),
+          property_manager_name || null,
+property_manager_phone || null,
+property_manager_email || null,      // ← ADD
+property_manager_role || null,       // ← ADD  
+staff_id ? parseInt(staff_id) : null, // ← ADD
+JSON.stringify(amenities || []),
           JSON.stringify(services || []),
           JSON.stringify(photo_urls || []),
           property_rules || null,
@@ -656,6 +678,9 @@ async findById(id) {
       add("description", property.description);
       add("property_manager_name", property.property_manager_name);
       add("property_manager_phone", property.property_manager_phone);
+      add("property_manager_email", property.property_manager_email);
+add("property_manager_role", property.property_manager_role);
+add("staff_id", property.staff_id, (v) => v ? parseInt(v) : null);
       add("amenities", property.amenities, (v) => JSON.stringify(v || []));
       add("services", property.services, (v) => JSON.stringify(v || []));
       add("photo_urls", property.photo_urls, (v) => JSON.stringify(v || []));

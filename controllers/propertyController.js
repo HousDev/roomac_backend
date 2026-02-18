@@ -1067,6 +1067,9 @@ async create(req, res) {
         body.property_manager_name?.trim() || null,
       property_manager_phone:
         body.property_manager_phone?.trim() || null,
+        property_manager_email: body.property_manager_email?.trim() || null,  // ← ADD
+property_manager_role: body.property_manager_role?.trim() || null,    // ← ADD
+staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,     // ← ADD
 
       amenities,
       services,
@@ -1525,10 +1528,26 @@ async update(req, res) {
         body.property_manager_name.trim() || null;
     }
 
-    if (body.property_manager_phone !== undefined) {
-      updateData.property_manager_phone =
-        body.property_manager_phone.trim() || null;
-    }
+// FIND THIS:
+if (body.property_manager_phone !== undefined) {
+  updateData.property_manager_phone =
+    body.property_manager_phone.trim() || null;
+}
+
+// ← ADD THESE 3 BLOCKS RIGHT HERE:
+if (body.property_manager_email !== undefined) {
+  updateData.property_manager_email =
+    body.property_manager_email.trim() || null;
+}
+
+if (body.property_manager_role !== undefined) {
+  updateData.property_manager_role =
+    body.property_manager_role.trim() || null;
+}
+
+if (body.staff_id !== undefined && body.staff_id !== "") {
+  updateData.staff_id = parseInt(body.staff_id) || null;
+}
 
     // Handle array fields
     if (body["amenities[]"] !== undefined || body.amenities !== undefined) {
