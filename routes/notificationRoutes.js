@@ -1,14 +1,32 @@
-// routes/adminNotifications.js
+// routes/notifications.js
 const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/notificationController');
 
-// All routes in one line each with controller functions
-router.get('/notifications', (req, res) => notificationController.getNotifications({ params: { recipient_type: 'admin', recipient_id: 1 }, query: req.query }, res));
-router.get('/notifications/unread-count', (req, res) => notificationController.getUnreadCount({ params: { recipient_type: 'admin', recipient_id: 1 } }, res));
-router.put('/notifications/:id/read', (req, res) => notificationController.markAsRead(req, res));
-router.put('/notifications/read-all', (req, res) => notificationController.markAllAsRead({ params: { recipient_type: 'admin', recipient_id: 1 } }, res));
-router.get('/notifications/stats', (req, res) => notificationController.getStats({ params: { recipient_type: 'admin', recipient_id: 1 } }, res));
+router.get('/', (req, res) =>
+  notificationController.getNotifications(
+    { params: { recipient_type: 'admin', recipient_id: 1 }, query: req.query },
+    res
+  )
+);
+
+router.get('/unread-count', (req, res) =>
+  notificationController.getUnreadCount(
+    { params: { recipient_type: 'admin', recipient_id: 1 } },
+    res
+  )
+);
+
+router.put('/:id/read', notificationController.markAsRead);
+
+router.put('/read-all', (req, res) =>
+  notificationController.markAllAsRead(
+    { params: { recipient_type: 'admin', recipient_id: 1 } },
+    res
+  )
+);
+
+router.get('/stats', (req, res) => notificationController.getStats({ params: { recipient_type: 'admin', recipient_id: 1 } }, res));
 router.get('/test', (req, res) => res.json({ success: true, message: 'API working' }));
 router.post('/test-notification', async (req, res) => {
   try {
