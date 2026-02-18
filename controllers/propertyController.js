@@ -1740,17 +1740,17 @@ if (body.staff_id !== undefined && body.staff_id !== "") {
       }
 
       // Get all properties to delete their photos
-      const properties = await PropertyModel.findByIds(ids);
+      const properties = await PropertyModel.findById(ids);
 
       console.log(`📊 Found ${properties.length} properties to delete`);
 
-      // Delete all photos
-      properties.forEach((property) => {
-        if (property.photo_urls && property.photo_urls.length > 0) {
-          console.log(`🗑️  Deleting ${property.photo_urls.length} photos for property ${property.id}`);
-          deletePhotoFiles(property.photo_urls);
-        }
-      });
+      // // Delete all photos
+      // properties.forEach((property) => {
+      //   if (property.photo_urls && property.photo_urls.length > 0) {
+      //     console.log(`🗑️  Deleting ${property.photo_urls.length} photos for property ${property.id}`);
+      //     deletePhotoFiles(property.photo_urls);
+      //   }
+      // });
 
       // Delete properties from database
       const deletedCount = await PropertyModel.bulkDelete(ids);
