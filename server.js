@@ -114,6 +114,9 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const db = require("./config/db");
+const http = require('http');
+const WebSocket = require('ws');
+
 
 // ROUTES
 const authRoutes = require("./routes/authRoutes");
@@ -148,6 +151,19 @@ const  paymentRoutes =require ("./routes/paymentRoutes");
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+  
+  ws.on('message', (message) => {
+    console.log('Received:', message);
+  });
+  
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
 
 /* =========================
    BASIC MIDDLEWARE
@@ -211,7 +227,7 @@ app.use("/api/admin/change-bed-requests", adminChangeBedRoutes);
 app.use("/api/masters", masterRoutes);
 app.use("/api/vacate", vacateRoutes);
 app.use("/api/change-bed", changeBedRoutes);
-app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin/notifications", notificationRoutes);
 app.use("/api/tenant-settings", tenantSettingsRoutes);
 app.use("/api/admin/deletion-requests", adminDeletionRequestsRoutes);
 app.use("/api/settings", settingsRoutes);

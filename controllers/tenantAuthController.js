@@ -35,7 +35,7 @@ class TenantAuthController {
         error: 'Email and password are required'
       });
     }
-
+    console.log('🔍 Validated login input for email:', email);
     // ============================================
     // 1️⃣ CHECK TENANT LOGIN FIRST
     // ============================================
@@ -44,6 +44,7 @@ class TenantAuthController {
       'SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1',
       [email]
     );
+      console.log('🔍 Tenant credential lookup result:', credentials)
 
     if (credentials.length > 0) {
       const credential = credentials[0];
@@ -112,6 +113,7 @@ class TenantAuthController {
       'SELECT * FROM users WHERE email = ? ',
       [email]
     );
+    console.log('🔍 Admin lookup result:', admins);
 
     if (admins.length === 0) {
       return res.status(401).json({
