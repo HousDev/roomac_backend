@@ -542,9 +542,12 @@ async findById(id) {
     const propertyId = parseInt(id);
     
     const [rows] = await db.query(
-      "SELECT * FROM properties WHERE id = ? LIMIT 1",
-      [propertyId]
-    );
+  `SELECT p.*, s.photo_url AS manager_photo_url 
+   FROM properties p
+   LEFT JOIN staff s ON p.staff_id = s.id
+   WHERE p.id = ? LIMIT 1`,
+  [propertyId]
+);
     
     console.log(`🔍 Found ${rows.length} properties`);
     
