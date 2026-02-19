@@ -3,8 +3,6 @@ const db = require('../config/db');
 
 const AdminDeletionRequestsController = {
   // Get pending deletion requests
-// Update getPendingDeletionRequests in adminDeletionRequestsController.js
-// Update getPendingDeletionRequests in adminDeletionRequestsController.js
 async getPendingDeletionRequests(req, res) {
   try {
     const [requests] = await db.query(
