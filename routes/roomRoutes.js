@@ -2,25 +2,18 @@ const express = require("express");
 const router = express.Router();
 const RoomController = require("../controllers/roomController");
 const tenantAuth = require("../middleware/tenantAuth");
-// const uploadRoomMedia = require("../middleware/roomUpload")
 const roomUpload = require("../middleware/roomUpload");
 
 
-// Simple routes - upload middleware is now in controller
-// Add this route (after your existing routes)
 router.get("/", RoomController.getAllRooms);
 router.get("/property/:propertyId", RoomController.getRoomsByPropertyId);
 router.get("/:id", RoomController.getRoomById);
-// router.post("/", RoomController.createRoom);
-// router.post("/", uploadRoomMedia, RoomController.createRoom);
-// router.put("/:id", RoomController.updateRoom);
 router.post(
   "/",
   roomUpload.upload,           // multer upload
   roomUpload.compressRoomMedia, // compression middleware
   RoomController.createRoom
 );
-// router.put("/:id", uploadRoomMedia, RoomController.updateRoom);
 router.put(
   "/:id",
   roomUpload.upload,

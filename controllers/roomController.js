@@ -1060,11 +1060,7 @@ console.log(photos)
       message: "Failed to create room"
     });
   }
-}
-
-
-
-,
+},
 
 // Update room - PUT /api/rooms/:id
 // async updateRoom(req, res) {
@@ -1561,10 +1557,7 @@ console.log("Video:", req.compressedVideo);
       message: "Failed to update room"
     });
   }
-}
-
-
-,
+},
 
 
 
@@ -1924,8 +1917,6 @@ console.log("Video:", req.compressedVideo);
         }
     },
     
-    // Add this to your roomController.js
-    // Add this to roomController.js
     async diagnoseRoomBeds(req, res) {
         try {
             const { id } = req.params; // Changed from room_id to id
