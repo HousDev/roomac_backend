@@ -1,5 +1,5 @@
 // controllers/adminProfileController.js
-const db = require('../config/db'); // Import your database config
+const db = require('../config/db'); 
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const path = require('path');

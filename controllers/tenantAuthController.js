@@ -3,14 +3,20 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
 
-// Generate JWT token
-const generateToken = (tenantId, email,type) => {
+
+const generateToken = ({ id, email, role, type }) => {
   return jwt.sign(
-    { tenantId, email, type: type },
+    {
+      id,          
+      email,
+      role,
+      type
+    },
     process.env.JWT_SECRET || 'your-secret-key',
     { expiresIn: '7d' }
   );
 };
+
 
 // Send OTP (for demo - in production use email service)
 const generateOTP = () => {
@@ -96,12 +102,14 @@ class TenantAuthController {
       });
 
       return res.json({
-        success: true,
-        token,
-        role: 'tenant',
-        user: tenant[0],
-        message: 'Tenant login successful'
-      });
+  success: true,
+  token,
+  role: 'tenant',
+  tenant_id: credential.tenant_id,   // ✅ REQUIRED
+  user: tenant[0],
+  message: 'Tenant login successful'
+});
+
     }
 
     // ============================================
@@ -315,7 +323,8 @@ class TenantAuthController {
 // Get current tenant profile
   static async getProfile(req, res) {
     try {
-      const tenantId = req.user?.tenantId;
+      // const tenantId = req.user?.tenantId;
+      const tenantId = req.user?.id;
 
       if (!tenantId) {
         return res.status(401).json({
