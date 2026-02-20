@@ -273,7 +273,7 @@ const [rows] = await db.query(
         address,
         total_rooms,
         total_beds,
-        occupied_beds,
+        floor,
         starting_price,
         security_deposit,
         description,
@@ -302,7 +302,7 @@ const [rows] = await db.query(
 
       const [result] = await db.query(
         `INSERT INTO properties
-        (name, slug, city_id, state, area, address, total_rooms, total_beds, occupied_beds,
+        (name, slug, city_id, state, area, address, total_rooms, total_beds, floor,
          starting_price, security_deposit, description, property_manager_name,
           property_manager_phone, property_manager_email, property_manager_role, staff_id,
  amenities, services, photo_urls, property_rules,
@@ -319,7 +319,7 @@ const [rows] = await db.query(
           address || null,
           total_rooms || 0,
           total_beds || 0,
-          occupied_beds || 0,
+          floor || 0,
           starting_price || 0,
           security_deposit || 0,
           description || null,
@@ -378,7 +378,7 @@ JSON.stringify(amenities || []),
       add("address", property.address);
       add("total_rooms", property.total_rooms);
       add("total_beds", property.total_beds);
-      add("occupied_beds", property.occupied_beds);
+      add("floor", property.floor);
       add("starting_price", property.starting_price);
       add("security_deposit", property.security_deposit);
       add("description", property.description);
