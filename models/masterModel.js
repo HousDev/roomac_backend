@@ -162,7 +162,7 @@ exports.exportMasterItems = async () => {
 
 exports.exportMasterItemValues = async (itemId) => {
   const [rows] = await db.query(`
-    SELECT
+    SELECT  
       mv.id        AS value_id,
       mv.name      AS value_name,
       mv.isactive  AS value_status,
@@ -176,5 +176,77 @@ exports.exportMasterItemValues = async (itemId) => {
     ORDER BY mv.name
   `, [itemId]);
 
+  return rows;
+};
+
+// Fetch ALL masters (tabs + items + values)
+exports.getAllMasters = async () => {
+    const sql = `
+      SELECT
+        mt.id   AS tab_id,
+        mt.tab_name,
+        mt.is_active AS tab_active,
+
+        mi.id   AS item_id,
+        mi.name AS item_name,
+        mi.is_active AS item_active,
+
+        miv.id   AS value_id,
+        miv.name AS value_name,
+        miv.is_active AS value_active
+
+      FROM master_tabs mt
+      LEFT JOIN master_items mi
+        ON mi.tab_id = mt.id
+      LEFT JOIN master_item_values miv
+        ON miv.master_item_id = mi.id
+      ORDER BY mt.id, mi.id, miv.id
+    `;
+
+    const [rows] = await db.query(sql);
+    return rows;
+  },
+
+  // Fetch items by tab_id (NO hardcoding)
+  exports.getItemsByTabId = async (tab_id) => {
+    const sql = `
+      SELECT id, name
+      FROM master_items
+      WHERE tab_id = ? AND is_active = 1
+    `;
+    const [rows] = await db.query(sql, [tab_id]);
+    return rows;
+  }
+
+  exports.consumeMasters = async ({ tab, type }) => {
+  let sql = `
+    SELECT
+      mt.tab_name,
+      mi.name AS type_name,
+      miv.id  AS value_id,
+      miv.name AS value_name
+    FROM master_tabs mt
+    JOIN master_items mi
+      ON mi.tab_id = mt.id AND mi.isactive = 1
+    JOIN master_item_values miv
+      ON miv.master_item_id = mi.id AND miv.isactive = 1
+    WHERE mt.isactive = 1
+  `;
+
+  const params = [];
+
+  if (tab) {
+    sql += ` AND mt.tab_name = ?`;
+    params.push(tab);
+  }
+
+  if (type) {
+    sql += ` AND mi.name = ?`;
+    params.push(type);
+  }
+
+  sql += ` ORDER BY mi.name, miv.name`;
+
+  const [rows] = await db.query(sql, params);
   return rows;
 };
