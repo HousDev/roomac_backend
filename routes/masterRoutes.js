@@ -1,41 +1,28 @@
 // routes/masterRoutes.js
 const router = require("express").Router();
-const ctrl = require("../controllers/masterController");
-
-/* MASTER TYPES */
-router.get("/types", ctrl.getMasterTypes);
-router.post("/types", ctrl.createMasterType);
-router.put("/types/:id", ctrl.updateMasterType);
-router.delete("/types/:id", ctrl.deleteMasterType);
-router.patch("/types/:id/status", ctrl.toggleMasterTypeStatus);
-router.get("/types/:id", ctrl.getMasterTypeById);
-router.get("/types/code/:code", ctrl.getMasterTypeByCode);
-router.get("/types-codes", ctrl.getAllMasterTypeCodes);
+const c = require("../controllers/masterController");
 
 /* TABS */
-router.get("/tabs", ctrl.getTabs);
-router.post("/tabs", ctrl.createTab); 
-router.put("/tabs/:tabName", ctrl.updateTab); 
-router.delete("/tabs/:tabName", ctrl.deleteTab); 
-router.post("/tabs/create-with-type", ctrl.createTabWithFirstType);
-router.get("/types/tab/:tab", ctrl.getMasterTypesByTab);
+router.get("/tabs", c.getTabs);
+router.post("/tabs", c.createTab);
+router.put("/tabs/:id", c.updateTab);
+router.delete("/tabs/:id", c.deleteTab);
 
-/* MASTER VALUES */
-router.get("/values/:typeId", ctrl.getMasterValues);
-router.post("/values", ctrl.createMasterValue);
-router.put("/values/:id", ctrl.updateMasterValue);
-router.delete("/values/:id", ctrl.deleteMasterValue);
-router.patch("/values/:id/status", ctrl.toggleMasterValueStatus);
+/* ITEMS */
+router.get("/items", c.getItems);
+router.get("/items/tab/:tab_id", c.getItemsByTab);
+router.post("/items", c.createItem);
+router.put("/items/:id", c.updateItem);
+router.delete("/items/:id", c.deleteItem);
 
-/* VALUES BY CODE */
-router.get('/values/code/:code', ctrl.getValuesByCode);
-router.get('/active-values/code/:code', ctrl.getActiveValuesByCode);
+/* VALUES */
+router.get("/values/:item_id", c.getValues);
+router.post("/values", c.createValue);
+router.put("/values/:id", c.updateValue);
+router.delete("/values/:id", c.deleteValue);
 
 /* EXPORT */
-router.get("/export/types", ctrl.exportMasterTypes);
-router.get("/export/values/:typeId", ctrl.exportMasterValues);
-
-/* BACKWARD COMPATIBILITY */
-router.get('/values-by-type/:typeName', ctrl.getValuesByType);
+router.get("/export/items", c.exportMasterItems);
+router.get("/export/values/:itemId", c.exportMasterItemValues);
 
 module.exports = router;
