@@ -172,7 +172,7 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
     // );
     const [rows] = await db.query(
   `SELECT id, name, slug, city_id, state, area, address, total_rooms, total_beds, 
-   occupied_beds, starting_price, security_deposit, description, 
+   floor, starting_price, security_deposit, description, 
    property_manager_name, property_manager_phone, property_manager_email,
    property_manager_role, staff_id, amenities, services, photo_urls, 
    property_rules, is_active, rating, created_at, updated_at,
@@ -261,103 +261,103 @@ const [rows] = await db.query(
   }
 },
 
-  // CREATE
-  async create(property) {
-    try {
-      const {
+// CREATE
+async create(property) {
+  try {
+    const {
+      name,
+      slug,
+      city_id,
+      state,
+      area,
+      address,
+      total_rooms,
+      total_beds,
+      floor,
+      starting_price,
+      security_deposit,
+      description,
+      property_manager_name,
+      property_manager_phone,
+      property_manager_email,
+      property_manager_role,
+      staff_id,
+      amenities,
+      services,
+      photo_urls,
+      property_rules,
+      is_active,
+      rating,
+      lockin_period_months,
+      lockin_penalty_amount,
+      lockin_penalty_type,
+      notice_period_days,
+      notice_penalty_amount,
+      notice_penalty_type,
+      terms_conditions,
+      terms_json,
+      additional_terms,
+      tags
+    } = property;
+
+    const [result] = await db.query(
+      `INSERT INTO properties
+      (name, slug, city_id, state, area, address, total_rooms, total_beds, floor,
+       starting_price, security_deposit, description, property_manager_name,
+       property_manager_phone, property_manager_email, property_manager_role, staff_id,
+       amenities, services, photo_urls, property_rules,
+       is_active, rating, lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
+       notice_period_days, notice_penalty_amount, notice_penalty_type,
+       terms_conditions, terms_json, additional_terms, tags, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
         name,
         slug,
-        city_id,
-        state, // ADDED STATE FIELD
-        area,
-        address,
-        total_rooms,
-        total_beds,
-        floor,
-        starting_price,
-        security_deposit,
-        description,
-        property_manager_name,
-        property_manager_phone,
-        property_manager_email,
-  property_manager_role,
-  staff_id,
-        amenities,
-        services,
-        photo_urls,
-        property_rules,
-        is_active,
-        rating,
-        lockin_period_months,
-        lockin_penalty_amount,
-        lockin_penalty_type,
-        notice_period_days,
-        notice_penalty_amount,
-        notice_penalty_type,
-        terms_conditions,
-        terms_json,
-        additional_terms,
-         tags
-      } = property;
+        city_id || null,
+        state || null,
+        area || null,
+        address || null,
+        total_rooms || 0,
+        total_beds || 0,
+        floor || 0,
+        starting_price || 0,
+        security_deposit || 0,
+        description || null,
+        property_manager_name || null,
+        property_manager_phone || null,
+        property_manager_email || null,
+        property_manager_role || null,
+        staff_id ? parseInt(staff_id) : null,
+        JSON.stringify(amenities || []),
+        JSON.stringify(services || []),
+        JSON.stringify(photo_urls || []),
+        JSON.stringify(property_rules || []),
+        is_active ? 1 : 0,
+        rating || null,
+        lockin_period_months || 0,
+        lockin_penalty_amount || 0,
+        lockin_penalty_type || 'fixed',
+        notice_period_days || 0,
+        notice_penalty_amount || 0,
+        notice_penalty_type || 'fixed',
+        terms_conditions || null,
+        terms_json ? JSON.stringify(terms_json) : null,
+        JSON.stringify(additional_terms || []),
+        JSON.stringify(tags || []),
+        // No need for a 34th value because we have NOW() in the SQL
+      ]
+    );
 
-      const [result] = await db.query(
-        `INSERT INTO properties
-        (name, slug, city_id, state, area, address, total_rooms, total_beds, floor,
-         starting_price, security_deposit, description, property_manager_name,
-          property_manager_phone, property_manager_email, property_manager_role, staff_id,
- amenities, services, photo_urls, property_rules,
-         is_active, rating, lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
-         notice_period_days, notice_penalty_amount, notice_penalty_type,
-         terms_conditions, terms_json, additional_terms, tags, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, NOW())`,
-        [
-          name,
-          slug,
-          city_id || null,
-          state || null, // ADDED STATE FIELD
-          area || null,
-          address || null,
-          total_rooms || 0,
-          total_beds || 0,
-          floor || 0,
-          starting_price || 0,
-          security_deposit || 0,
-          description || null,
-          property_manager_name || null,
-          property_manager_phone || null,
-          property_manager_name || null,
-property_manager_phone || null,
-property_manager_email || null,      // ← ADD
-property_manager_role || null,       // ← ADD  
-staff_id ? parseInt(staff_id) : null, // ← ADD
-JSON.stringify(amenities || []),
-          JSON.stringify(services || []),
-          JSON.stringify(photo_urls || []),
-          property_rules || null,
-          is_active ? 1 : 0,
-          rating || null,
-          lockin_period_months || 0,
-          lockin_penalty_amount || 0,
-          lockin_penalty_type || 'fixed',
-          notice_period_days || 0,
-          notice_penalty_amount || 0,
-          notice_penalty_type || 'fixed',
-          terms_conditions || null,
-          terms_json ? JSON.stringify(terms_json) : null,
-          additional_terms || null,
-          JSON.stringify(tags || []),
-        ]
-      );
-
-      return result.insertId;
-    } catch (err) {
-      console.error("PropertyModel.create error:", err);
-      throw err;
-    }
-  },
+    return result.insertId;
+  } catch (err) {
+    console.error("PropertyModel.create error:", err);
+    throw err;
+  }
+},
 
   // UPDATE
   async update(id, property) {
+    console.log("updeted check",property);
     try {
       const fields = [];
       const params = [];
@@ -390,7 +390,7 @@ add("staff_id", property.staff_id, (v) => v ? parseInt(v) : null);
       add("amenities", property.amenities, (v) => JSON.stringify(v || []));
       add("services", property.services, (v) => JSON.stringify(v || []));
       add("photo_urls", property.photo_urls, (v) => JSON.stringify(v || []));
-      add("property_rules", property.property_rules);
+      add("property_rules", property.property_rules, (v) => JSON.stringify(v || []));
       add("is_active", property.is_active, (v) =>
         typeof v !== "undefined" ? (v ? 1 : 0) : undefined
       );
@@ -409,7 +409,7 @@ add("staff_id", property.staff_id, (v) => v ? parseInt(v) : null);
       // Terms and conditions
       add("terms_conditions", property.terms_conditions);
       add("terms_json", property.terms_json, (v) => v ? JSON.stringify(v) : null);
-      add("additional_terms", property.additional_terms);
+      add("additional_terms", property.additional_terms, (v) => JSON.stringify(v || []));
       add("tags", property.tags, (v) => JSON.stringify(v || []));
 
       if (!fields.length) return false;
