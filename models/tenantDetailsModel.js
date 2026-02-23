@@ -187,6 +187,7 @@ const TenantDetailsModel = {
         SELECT 
           -- ===== TENANT PERSONAL INFO =====
           t.id,
+            t.salutation,      
           t.full_name,
           t.email,
           t.phone,
