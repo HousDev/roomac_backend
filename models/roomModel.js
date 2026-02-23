@@ -821,7 +821,7 @@ async create(room) {
       property_id,
       room_number,
       sharing_type,
-      room_type = 'pg',
+      room_type = 'standard', // Make sure this is included
       total_beds,
       occupied_beds = 0,
       floor = 1,
@@ -832,11 +832,13 @@ async create(room) {
       amenities = [],
       photo_urls = [],
       video_url = null,
-      room_gender_preference = [], // Changed from ['any']
+      room_gender_preference = [],
       allow_couples = false,
       description = '',
       is_active = true
     } = room;
+
+    console.log("RoomModel.create received:", { room_type }); // Debug log
 
     let genderPrefArray;
     if (Array.isArray(room_gender_preference)) {
@@ -850,9 +852,6 @@ async create(room) {
     } else {
       genderPrefArray = [];
     }
-
-    // Debug log
-    console.log("Creating room with gender preferences:", genderPrefArray);
 
     const [result] = await db.query(
       `INSERT INTO rooms (
@@ -879,7 +878,7 @@ async create(room) {
         property_id,
         room_number,
         sharing_type,
-        room_type,
+        room_type, // Make sure this is included
         total_beds,
         occupied_beds,
         floor,

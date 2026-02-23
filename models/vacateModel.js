@@ -1,5 +1,4 @@
 const db = require('../config/db');
-const MasterModel = require('./masterModel');
 
 class VacateModel {
   // Get initial data for vacate flow
@@ -33,12 +32,8 @@ class VacateModel {
       
       const bedData = bedAssignment[0];
       
-      // Get vacate reasons
-      const vacateReasons = await MasterModel.getValuesByCode('VACATE_REASON');
-      
       return {
         bedAssignment: bedData,
-        vacateReasons,
         tenantPolicy: {
           lockinPeriodMonths: bedData.lockin_period_months || 0,
           lockinPenaltyAmount: bedData.lockin_penalty_amount || 0,
@@ -76,77 +71,76 @@ class VacateModel {
   }
   
   // Check lock-in status using tenant's lockin_period_months
-// In vacateModel.js - Update the lock-in status calculation
-async checkLockinStatusImmediately({
-  bedAssignmentId,
-  requestedVacateDate
-}) {
-  try {
-    // Get tenant's check_in_date and lockin_period_months
-    const [bedAssignment] = await db.query(
-      `SELECT t.check_in_date, t.lockin_period_months
-       FROM bed_assignments ba
-       JOIN tenants t ON ba.tenant_id = t.id
-       WHERE ba.id = ?`,
-      [bedAssignmentId]
-    );
-    
-    if (bedAssignment.length === 0) {
-      throw new Error("Bed assignment not found");
-    }
-    
-    const checkInDate = bedAssignment[0].check_in_date;
-    const lockinMonths = bedAssignment[0].lockin_period_months || 0;
-    
-    if (!checkInDate || lockinMonths === 0) {
+  async checkLockinStatusImmediately({
+    bedAssignmentId,
+    requestedVacateDate
+  }) {
+    try {
+      // Get tenant's check_in_date and lockin_period_months
+      const [bedAssignment] = await db.query(
+        `SELECT t.check_in_date, t.lockin_period_months
+         FROM bed_assignments ba
+         JOIN tenants t ON ba.tenant_id = t.id
+         WHERE ba.id = ?`,
+        [bedAssignmentId]
+      );
+      
+      if (bedAssignment.length === 0) {
+        throw new Error("Bed assignment not found");
+      }
+      
+      const checkInDate = bedAssignment[0].check_in_date;
+      const lockinMonths = bedAssignment[0].lockin_period_months || 0;
+      
+      if (!checkInDate || lockinMonths === 0) {
+        return {
+          isCompleted: true,
+          message: "No lock-in period or check-in date not set",
+          remainingMonths: 0,
+          lockinMonths: 0
+        };
+      }
+      
+      const checkIn = new Date(checkInDate);
+      const vacateDate = new Date(requestedVacateDate);
+      
+      // CORRECT CALCULATION: Add lock-in months to check-in date
+      const lockInEndDate = new Date(checkIn);
+      lockInEndDate.setMonth(checkIn.getMonth() + lockinMonths);
+      
+      const isCompleted = vacateDate >= lockInEndDate;
+      
+      if (isCompleted) {
+        return {
+          isCompleted: true,
+          message: `Lock-in period completed (vacate date is after ${lockInEndDate.toISOString().split('T')[0]})`,
+          remainingMonths: 0,
+          lockinMonths: lockinMonths,
+          completedMonths: lockinMonths,
+          lockInEndDate: lockInEndDate
+        };
+      }
+      
+      // Calculate remaining time
+      const timeDiff = lockInEndDate.getTime() - vacateDate.getTime();
+      const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      const remainingMonths = Math.ceil(remainingDays / 30);
+      
       return {
-        isCompleted: true,
-        message: "No lock-in period or check-in date not set",
-        remainingMonths: 0,
-        lockinMonths: 0
-      };
-    }
-    
-    const checkIn = new Date(checkInDate);
-    const vacateDate = new Date(requestedVacateDate);
-    
-    // CORRECT CALCULATION: Add lock-in months to check-in date
-    const lockInEndDate = new Date(checkIn);
-    lockInEndDate.setMonth(checkIn.getMonth() + lockinMonths);
-    
-    const isCompleted = vacateDate >= lockInEndDate;
-    
-    if (isCompleted) {
-      return {
-        isCompleted: true,
-        message: `Lock-in period completed (vacate date is after ${lockInEndDate.toISOString().split('T')[0]})`,
-        remainingMonths: 0,
+        isCompleted: false,
+        message: `Lock-in period not completed. ${remainingDays} day(s) remaining out of ${lockinMonths} months`,
+        remainingDays: remainingDays,
+        remainingMonths: remainingMonths,
         lockinMonths: lockinMonths,
-        completedMonths: lockinMonths,
+        completedMonths: Math.floor((lockinMonths * 30 - remainingDays) / 30),
         lockInEndDate: lockInEndDate
       };
+      
+    } catch (error) {
+      console.error("VacateService.checkLockinStatusImmediately error:", error);
+      throw error;
     }
-    
-    // Calculate remaining time
-    const timeDiff = lockInEndDate.getTime() - vacateDate.getTime();
-    const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
-    const remainingMonths = Math.ceil(remainingDays / 30);
-    
-    return {
-      isCompleted: false,
-      message: `Lock-in period not completed. ${remainingDays} day(s) remaining out of ${lockinMonths} months`,
-      remainingDays: remainingDays,
-      remainingMonths: remainingMonths,
-      lockinMonths: lockinMonths,
-      completedMonths: Math.floor((lockinMonths * 30 - remainingDays) / 30),
-      lockInEndDate: lockInEndDate
-    };
-    
-  } catch (error) {
-    console.error("VacateService.checkLockinStatusImmediately error:", error);
-    throw error;
   }
-}
   
   // Check notice period completion using tenant's notice_period_days
   async checkNoticeCompletion({

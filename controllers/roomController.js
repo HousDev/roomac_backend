@@ -198,14 +198,15 @@ async getRoomsByPropertyId(req, res) {
 
 async createRoom(req, res) {
   try {
-
     const body = req.body || {};
+
+    console.log("Received body:", body); // Add this to debug
 
     const {
       property_id,
       room_number,
       sharing_type,
-      room_type = "standard",
+      room_type, // Make sure this is included in destructuring
       total_beds,
       occupied_beds = 0,
       floor = 1,
@@ -220,19 +221,20 @@ async createRoom(req, res) {
       is_active = true
     } = body;
 
-    if (
-  property_id === undefined ||
-  room_number === undefined ||
-  sharing_type === undefined ||
-  total_beds === undefined ||
-  rent_per_bed === undefined
-) {
-  return res.status(400).json({
-    success: false,
-    message: "Required fields missing"
-  });
-}
+    console.log("Destructured room_type:", room_type); // Add this to debug
 
+    if (
+      property_id === undefined ||
+      room_number === undefined ||
+      sharing_type === undefined ||
+      total_beds === undefined ||
+      rent_per_bed === undefined
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Required fields missing"
+      });
+    }
 
     // Parse amenities safely
     let amenitiesArray = [];
@@ -252,32 +254,38 @@ async createRoom(req, res) {
 
     if (req.files?.photos) {
       req.compressedPhotos.forEach((file, index) => {
-photos.push({
-  url:  file.path,
-  label: photoLabels[index] || "Room View"
-});
+        photos.push({
+          url: file.path,
+          label: photoLabels[index] || "Room View"
+        });
       });
     }
-console.log(photos)
+
     // Video
     let video_url = null;
-    // if (req.files?.video?.[0]) {
-    //   video_url = req.files.video[0].fieldname;
-    // }
     if (req.compressedVideo) {
-  video_url = req.compressedVideo.path;
-}
+      video_url = req.compressedVideo.path;
+    }
 
-    console.log(video_url)
+    console.log("Creating room with data:", {
+      property_id,
+      room_number,
+      sharing_type,
+      room_type, // This should now show 'corner room'
+      total_beds,
+      floor,
+      rent_per_bed,
+      room_gender_preference
+    });
 
     const roomId = await RoomModel.create({
       property_id: parseInt(property_id),
       room_number,
       sharing_type,
-      room_type,
+      room_type: room_type || 'standard', // Make sure this is passed correctly
       total_beds: parseInt(total_beds),
       occupied_beds: parseInt(occupied_beds),
-      floor: parseInt(floor),
+      floor: floor.toString(),
       rent_per_bed: parseFloat(rent_per_bed),
       has_attached_bathroom: has_attached_bathroom === "true" || has_attached_bathroom === true,
       has_balcony: has_balcony === "true" || has_balcony === true,
@@ -473,6 +481,10 @@ console.log("Video:", req.compressedVideo);
 
       sharing_type: body.sharing_type || existingRoom.sharing_type,
 
+      room_type: body.room_type !== undefined 
+  ? body.room_type 
+  : existingRoom.room_type,
+
       total_beds: body.total_beds !== undefined 
         ? parseInt(body.total_beds) 
         : existingRoom.total_beds,
@@ -482,8 +494,8 @@ console.log("Video:", req.compressedVideo);
         : existingRoom.occupied_beds,
 
       floor: body.floor !== undefined 
-        ? parseInt(body.floor) 
-        : existingRoom.floor,
+  ? body.floor.toString() 
+  : existingRoom.floor?.toString() || '',
 
       rent_per_bed: body.rent_per_bed !== undefined 
         ? parseFloat(body.rent_per_bed) 
