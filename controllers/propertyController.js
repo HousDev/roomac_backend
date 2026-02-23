@@ -223,140 +223,7 @@ const PropertyController = {
     }
   },
 
-  // CREATE PROPERTY
-  // async create(req, res) {
-  //   try {
-  //     console.log("📥 CREATE Property Request:");
-  //     console.log("Body:", req.body);
-  //     console.log("Files:", req.files?.length || 0);
-
-  //     const body = req.body || {};
-
-  //     // VALIDATION - UPDATED TO INCLUDE STATE FIELD
-  //     if (!body.name || body.name.trim() === "") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Property name is required",
-  //       });
-  //     }
-
-  //     if (!body.city_id || body.city_id.trim() === "") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "City is required",
-  //       });
-  //     }
-
-  //     // ADD STATE VALIDATION
-  //     if (!body.state || body.state.trim() === "") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "State is required",
-  //       });
-  //     }
-
-  //     if (!body.area || body.area.trim() === "") {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Area is required",
-  //       });
-  //     }
-
-  //     // Build photo URLs from uploaded files
-  //     const photo_urls =
-  //       req.files && req.files.length > 0
-  //         ? req.files.map((f) => `/uploads/properties/${f.filename}`)
-  //         : [];
-
-  //     console.log("📸 Photo URLs to save:", photo_urls);
-
-  //     // Generate slug
-  //     const slug = body.name
-  //       .toLowerCase()
-  //       .replace(/\s+/g, "-")
-  //       .replace(/[^a-z0-9\-]/g, "");
-
-  //     // Parse arrays from FormData
-  //     const amenities = readArray(body, "amenities");
-  //     const services = readArray(body, "services");
-  //     // Parse tags from request
-  //   const tags = readArray(body, "tags");
-  //   console.log("🏷️ Parsed tags:", tags);
-
-
-  //     // Parse terms data
-  //     const termsData = parseTermsData(body.terms_json, body.terms_conditions);
-      
-  //     console.log("📝 Parsed terms data:", {
-  //       termsCount: termsData.terms_json?.length || 0,
-  //       hasTermsText: !!termsData.terms_conditions
-  //     });
-
-  //     // Create property with all fields - INCLUDING STATE
-  //     const newId = await PropertyModel.create({
-  //       name: body.name.trim(),
-  //       slug,
-  //       city_id: body.city_id.trim(),
-  //       state: body.state.trim(), // ADDED STATE FIELD
-  //       area: body.area.trim(),
-  //       address: body.address?.trim() || null,
-  //       total_rooms: parseInt(body.total_rooms || 0),
-  //       total_beds: parseInt(body.total_beds || 0),
-  //       occupied_beds: parseInt(body.occupied_beds || 0),
-  //       starting_price: parseFloat(body.starting_price || 0),
-  //       security_deposit: parseFloat(body.security_deposit || 0),
-  //       description: body.description?.trim() || null,
-  //       property_manager_name: body.property_manager_name?.trim() || null,
-  //       property_manager_phone: body.property_manager_phone?.trim() || null,
-  //       amenities: amenities,
-  //       services: services,
-  //       photo_urls: photo_urls,
-  //       property_rules: body.property_rules?.trim() || null,
-  //       is_active:
-  //         body.is_active !== undefined
-  //           ? body.is_active === true ||
-  //             body.is_active === "true" ||
-  //             body.is_active === "1"
-  //           : true,
-  //       rating: body.rating ? parseFloat(body.rating) : null,
-        
-  //       // Lock-in period fields
-  //       lockin_period_months: parseInt(body.lockin_period_months || 0),
-  //       lockin_penalty_amount: parseFloat(body.lockin_penalty_amount || 0),
-  //       lockin_penalty_type: body.lockin_penalty_type || 'fixed',
-        
-  //       // Notice period fields
-  //       notice_period_days: parseInt(body.notice_period_days || 0),
-  //       notice_penalty_amount: parseFloat(body.notice_penalty_amount || 0),
-  //       notice_penalty_type: body.notice_penalty_type || 'fixed',
-        
-  //       // Terms and conditions
-  //       terms_conditions: termsData.terms_conditions,
-  //       terms_json: termsData.terms_json,
-  //       additional_terms: body.additional_terms?.trim() || null,
-  //        tags: tags, 
-  //     });
-
-  //     console.log("✅ Property created with ID:", newId);
-
-  //     return res.status(201).json({
-  //       success: true,
-  //       message: "Property created successfully",
-  //       id: newId,
-  //     });
-  //   } catch (error) {
-  //     console.error("PropertyController.create error:", error);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Failed to create property",
-  //       error:
-  //         process.env.NODE_ENV === "development" ? error.message : undefined,
-  //     });
-  //   }
-  // },
-
-
-  // CREATE PROPERTY
+// CREATE PROPERTY
 async create(req, res) {
   try {
     console.log("📥 CREATE Property Request:");
@@ -455,7 +322,7 @@ async create(req, res) {
 
       total_rooms: parseInt(body.total_rooms || 0),
       total_beds: parseInt(body.total_beds || 0),
-      floor: parseInt(body.floor || 0),
+      floor: body.floor, 
 
       starting_price: parseFloat(body.starting_price || 0),
       security_deposit: parseFloat(body.security_deposit || 0),
@@ -466,15 +333,18 @@ async create(req, res) {
         body.property_manager_name?.trim() || null,
       property_manager_phone:
         body.property_manager_phone?.trim() || null,
-        property_manager_email: body.property_manager_email?.trim() || null,  // ← ADD
-property_manager_role: body.property_manager_role?.trim() || null,    // ← ADD
-staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,     // ← ADD
+      property_manager_email: body.property_manager_email?.trim() || null,
+      property_manager_role: body.property_manager_role?.trim() || null,
+      staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,
 
       amenities,
       services,
       photo_urls,
 
-      property_rules: body.property_rules?.trim() || null,
+      // FIX: Handle property_rules as array or string
+      property_rules: Array.isArray(body.property_rules) 
+        ? body.property_rules 
+        : (body.property_rules?.trim() || null),
 
       is_active:
         body.is_active !== undefined
@@ -517,8 +387,11 @@ staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,     // ← ADD
 
       terms_conditions: termsData.terms_conditions,
       terms_json: termsData.terms_json,
-      additional_terms:
-        body.additional_terms?.trim() || null,
+      
+      // FIX: Handle additional_terms as array or string
+      additional_terms: Array.isArray(body.additional_terms)
+        ? body.additional_terms
+        : (body.additional_terms?.trim() || null),
 
       // =====================
       // TAGS
@@ -550,257 +423,7 @@ staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,     // ← ADD
 },
 
 
-  // UPDATE PROPERTY
-//   async update(req, res) {
-//     try {
-//       const { id } = req.params;
-//       const body = req.body || {};
-
-//       console.log("📥 UPDATE Property Request for ID:", id);
-//       console.log("Request Body:", JSON.stringify(body, null, 2));
-//       console.log("Uploaded Files:", req.files?.length || 0);
-
-//       // Check if property exists
-//       const existing = await PropertyModel.findById(id);
-//       if (!existing) {
-//         return res
-//           .status(404)
-//           .json({ success: false, message: "Property not found" });
-//       }
-
-//       console.log("📸 Existing photos from DB:", existing.photo_urls);
-
-//       // Read removed photos from request
-//       const removedPhotos = readArray(body, "removed_photos");
-//       console.log("🗑️  Removed photos from request:", removedPhotos);
-
-//       // Delete removed photos from filesystem
-//       if (removedPhotos.length > 0) {
-//         console.log("🔄 Deleting photos from filesystem...");
-//         deletePhotoFiles(removedPhotos);
-//       }
-
-//       // Get existing photos from database
-//       const existingPhotoUrls = Array.isArray(existing.photo_urls)
-//         ? existing.photo_urls
-//         : [];
-
-//       // Filter out removed photos from existing
-//       const filteredExistingPhotoUrls = existingPhotoUrls.filter(
-//         (photo) => !removedPhotos.includes(photo)
-//       );
-
-//       console.log(
-//         "✅ Existing photos after removal:",
-//         filteredExistingPhotoUrls
-//       );
-
-//       // Add new uploaded photos
-//       const newPhotoUrls =
-//         req.files && req.files.length > 0
-//           ? req.files.map((f) => `/uploads/properties/${f.filename}`)
-//           : [];
-
-//       console.log("🆕 New uploaded photos:", newPhotoUrls);
-
-//       // Combine existing (filtered) and new photos
-//       const finalPhotoUrls = [...filteredExistingPhotoUrls, ...newPhotoUrls];
-
-//       console.log("🖼️  Final photo URLs for database:", finalPhotoUrls);
-
-//       // Parse terms data
-//       const termsData = parseTermsData(body.terms_json, body.terms_conditions);
-//       console.log("📝 Updated terms data:", {
-//         termsCount: termsData.terms_json?.length || 0,
-//         hasTermsText: !!termsData.terms_conditions
-//       });
-
-//       // Prepare update data
-//       const updateData = {
-//         photo_urls: finalPhotoUrls,
-//       };
-
-//       // Update other fields if provided
-//       if (body.name !== undefined && body.name.trim() !== "") {
-//         updateData.name = body.name.trim();
-//         updateData.slug = body.name
-//           .trim()
-//           .toLowerCase()
-//           .replace(/\s+/g, "-")
-//           .replace(/[^a-z0-9\-]/g, "");
-//       }
-
-//       if (body.city_id !== undefined && body.city_id.trim() !== "") {
-//         updateData.city_id = body.city_id.trim();
-//       }
-
-//       // ADD STATE FIELD UPDATE
-//       if (body.state !== undefined && body.state.trim() !== "") {
-//         updateData.state = body.state.trim();
-//           console.log("🏷️ Updated state:", updateData.state); // Add logging
-//       }
-
-//       if (body.area !== undefined && body.area.trim() !== "") {
-//         updateData.area = body.area.trim();
-//       }
-
-//       if (body.address !== undefined) {
-//         updateData.address = body.address.trim() || null;
-//       }
-
-//       console.log("🏷️ State value received:", body.state);
-// console.log("🏷️ State will be updated to:", updateData.state);
-
-//       // Handle numeric fields
-//       const numericFields = [
-//         "total_rooms",
-//         "total_beds",
-//         "occupied_beds",
-//         "starting_price",
-//         "security_deposit",
-//       ];
-
-//       numericFields.forEach((field) => {
-//         if (body[field] !== undefined) {
-//           updateData[field] = parseFloat(body[field]) || 0;
-//         }
-//       });
-
-//       // Handle text fields
-//       if (body.description !== undefined) {
-//         updateData.description = body.description.trim() || null;
-//       }
-
-//       if (body.property_manager_name !== undefined) {
-//         updateData.property_manager_name =
-//           body.property_manager_name.trim() || null;
-//       }
-
-//       if (body.property_manager_phone !== undefined) {
-//         updateData.property_manager_phone =
-//           body.property_manager_phone.trim() || null;
-//       }
-
-//       // Handle array fields
-//       if (body["amenities[]"] !== undefined || body.amenities !== undefined) {
-//         updateData.amenities = readArray(body, "amenities");
-//       }
-
-//       if (body["services[]"] !== undefined || body.services !== undefined) {
-//         updateData.services = readArray(body, "services");
-//       }
-
-//       // Handle other fields
-//       if (body.property_rules !== undefined) {
-//         updateData.property_rules = body.property_rules.trim() || null;
-//       }
-
-//       if (body.is_active !== undefined) {
-//         updateData.is_active =
-//           body.is_active === true ||
-//           body.is_active === "true" ||
-//           body.is_active === "1";
-//       }
-
-//       if (body.rating !== undefined && body.rating !== "") {
-//         updateData.rating = parseFloat(body.rating);
-//       }
-
-//       // Handle lock-in period fields
-//       if (body.lockin_period_months !== undefined) {
-//         updateData.lockin_period_months = parseInt(body.lockin_period_months) || 0;
-//       }
-      
-//       if (body.lockin_penalty_amount !== undefined) {
-//         updateData.lockin_penalty_amount = parseFloat(body.lockin_penalty_amount) || 0;
-//       }
-      
-//       if (body.lockin_penalty_type !== undefined) {
-//         updateData.lockin_penalty_type = body.lockin_penalty_type.trim();
-//       }
-
-//       // Handle notice period fields
-//       if (body.notice_period_days !== undefined) {
-//         updateData.notice_period_days = parseInt(body.notice_period_days) || 0;
-//       }
-      
-//       if (body.notice_penalty_amount !== undefined) {
-//         updateData.notice_penalty_amount = parseFloat(body.notice_penalty_amount) || 0;
-//       }
-      
-//       if (body.notice_penalty_type !== undefined) {
-//         updateData.notice_penalty_type = body.notice_penalty_type.trim();
-//       }
-
-//       // Handle terms and conditions
-//       if (body.terms_json !== undefined || body.terms_conditions !== undefined) {
-//         updateData.terms_conditions = termsData.terms_conditions;
-//         updateData.terms_json = termsData.terms_json;
-//       }
-      
-//       if (body.additional_terms !== undefined) {
-//         updateData.additional_terms = body.additional_terms.trim() || null;
-//       }
-
-//        // Parse tags from request
-//     if (body["tags[]"] !== undefined || body.tags !== undefined) {
-//       updateData.tags = readArray(body, "tags");
-//       console.log("🏷️ Updated tags:", updateData.tags);
-//     }
-
-//       // Update timestamp
-//       updateData.updated_at = new Date();
-
-//       console.log("📊 Update data to save in database:", updateData);
-
-//       // Perform database update
-//       const updated = await PropertyModel.update(id, updateData);
-
-//       if (!updated) {
-//         console.error("❌ Database update failed");
-//         return res.status(500).json({
-//           success: false,
-//           message: "Failed to update property in database",
-//         });
-//       }
-
-//       console.log("✅ Property updated successfully in database");
-
-//       // Fetch updated property to verify
-//       const updatedProperty = await PropertyModel.findById(id);
-      
-//       // Ensure terms_json is included in response
-//       if (!updatedProperty.terms_json && updatedProperty.terms_conditions) {
-//         updatedProperty.terms_json = parseTermsData(null, updatedProperty.terms_conditions).terms_json;
-//       }
-
-//       console.log("🔄 Updated property from DB:", {
-//         id: updatedProperty.id,
-//         name: updatedProperty.name,
-//         state: updatedProperty.state, // ADDED FOR DEBUGGING
-//         photo_urls: updatedProperty.photo_urls,
-//         photo_count: Array.isArray(updatedProperty.photo_urls)
-//           ? updatedProperty.photo_urls.length
-//           : 0,
-//         terms_count: updatedProperty.terms_json?.length || 0
-//       });
-
-//       return res.json({
-//         success: true,
-//         message: "Property updated successfully",
-//         data: updatedProperty,
-//       });
-//     } catch (error) {
-//       console.error("❌ PropertyController.update error:", error);
-//       return res.status(500).json({
-//         success: false,
-//         message: "Failed to update property",
-//         error:
-//           process.env.NODE_ENV === "development" ? error.message : undefined,
-//       });
-//     }
-//   },
-
+ 
 // UPDATE PROPERTY
 async update(req, res) {
   try {
@@ -906,7 +529,6 @@ async update(req, res) {
     const numericFields = [
       "total_rooms",
       "total_beds",
-      "floor",
       "starting_price",
       "security_deposit",
     ];
@@ -959,7 +581,7 @@ if (body.staff_id !== undefined && body.staff_id !== "") {
 
     // Handle other fields
     if (body.property_rules !== undefined) {
-      updateData.property_rules = body.property_rules.trim() || null;
+      updateData.property_rules = body.property_rules || null;
     }
 
     if (body.is_active !== undefined) {
@@ -1010,7 +632,7 @@ if (body.staff_id !== undefined && body.staff_id !== "") {
 
     if (body.additional_terms !== undefined) {
       updateData.additional_terms =
-        body.additional_terms.trim() || null;
+        body.additional_terms || null;
     }
 
     // Parse tags from request
@@ -1021,6 +643,7 @@ if (body.staff_id !== undefined && body.staff_id !== "") {
 
     // Update timestamp
     updateData.updated_at = new Date();
+    updateData.floor = body.floor;
 
     console.log("📊 Update data to save in database:", updateData);
 

@@ -1,125 +1,85 @@
-// models/masterModel.js
 const db = require("../config/db");
-
-/* ===================== TABS ===================== */
-
-exports.getTabs = async () => {
-  const [rows] = await db.query(`
-    SELECT 
-      t.id,
-      t.tab_name,
-      t.isactive,
-      COUNT(mi.id) AS item_count,
-      t.created_at
-    FROM master_tabs t
-    LEFT JOIN master_items mi ON mi.tab_id = t.id
-    GROUP BY t.id
-    ORDER BY t.tab_name
-  `);
-  return rows;
-};
-
-exports.createTab = async ({ tab_name, isactive = 1 }) => {
-  const [existing] = await db.query(
-    "SELECT id FROM master_tabs WHERE LOWER(tab_name)=LOWER(?)",
-    [tab_name]
-  );
-  if (existing.length) throw new Error("Tab already exists");
-
-  const [res] = await db.query(
-    "INSERT INTO master_tabs (tab_name, isactive) VALUES (?,?)",
-    [tab_name, isactive]
-  );
-  return { id: res.insertId, tab_name, isactive };
-};
-
-exports.updateTab = async (id, { tab_name, isactive }) => {
-  await db.query(
-    "UPDATE master_tabs SET tab_name=?, isactive=? WHERE id=?",
-    [tab_name, isactive, id]
-  );
-};
-
-exports.deleteTab = async (id) => {
-  const [items] = await db.query(
-    "SELECT id FROM master_items WHERE tab_id=?",
-    [id]
-  );
-  if (items.length) throw new Error("Delete items first");
-
-  await db.query("DELETE FROM master_tabs WHERE id=?", [id]);
-};
 
 /* ===================== MASTER ITEMS ===================== */
 
 exports.getItems = async () => {
   const [rows] = await db.query(`
     SELECT 
-      mi.*, 
-      mt.tab_name,
+      mi.*,
       COUNT(mv.id) AS value_count
     FROM master_items mi
-    JOIN master_tabs mt ON mt.id = mi.tab_id
     LEFT JOIN master_item_values mv ON mv.master_item_id = mi.id
     GROUP BY mi.id
-    ORDER BY mt.tab_name, mi.name
+    ORDER BY mi.tab_name, mi.name
   `);
   return rows;
 };
 
-exports.getItemsByTab = async (tab_id) => {
+exports.getItemsByTab = async (tab_name) => {
   const [rows] = await db.query(
-    `SELECT * FROM master_items WHERE tab_id=? ORDER BY name`,
-    [tab_id]
+    `SELECT * FROM master_items WHERE tab_name = ? ORDER BY name`,
+    [tab_name]
   );
   return rows;
 };
 
-exports.createItem = async ({ tab_id, name, isactive = 1 }) => {
+exports.createItem = async ({ tab_name, name, isactive = 1 }) => {
+  // Check if item already exists in this tab
   const [existing] = await db.query(
-    "SELECT id FROM master_items WHERE tab_id=? AND LOWER(name)=LOWER(?)",
-    [tab_id, name]
+    "SELECT id FROM master_items WHERE tab_name = ? AND LOWER(name) = LOWER(?)",
+    [tab_name, name]
   );
-  if (existing.length) throw new Error("Item already exists");
+  if (existing.length) throw new Error("Item already exists in this tab");
 
   const [res] = await db.query(
-    "INSERT INTO master_items (tab_id, name, isactive) VALUES (?,?,?)",
-    [tab_id, name, isactive]
+    "INSERT INTO master_items (tab_name, name, isactive) VALUES (?,?,?)",
+    [tab_name, name, isactive]
   );
-  return { id: res.insertId, tab_id, name, isactive };
+  return { id: res.insertId, tab_name, name, isactive };
 };
 
-exports.updateItem = async (id, { name, isactive }) => {
+exports.updateItem = async (id, { name, isactive, tab_name }) => {
+  // If tab_name is being updated, check for duplicates in the new tab
+  if (tab_name) {
+    const [existing] = await db.query(
+      "SELECT id FROM master_items WHERE tab_name = ? AND LOWER(name) = LOWER(?) AND id != ?",
+      [tab_name, name, id]
+    );
+    if (existing.length) throw new Error("Item already exists in this tab");
+  }
+
   await db.query(
-    "UPDATE master_items SET name=?, isactive=? WHERE id=?",
-    [name, isactive, id]
+    "UPDATE master_items SET name = ?, isactive = ?, tab_name = ? WHERE id = ?",
+    [name, isactive, tab_name, id]
   );
 };
 
 exports.deleteItem = async (id) => {
+  // Check if item has values
   const [vals] = await db.query(
-    "SELECT id FROM master_item_values WHERE master_item_id=?",
+    "SELECT id FROM master_item_values WHERE master_item_id = ?",
     [id]
   );
   if (vals.length) throw new Error("Delete values first");
 
-  await db.query("DELETE FROM master_items WHERE id=?", [id]);
+  await db.query("DELETE FROM master_items WHERE id = ?", [id]);
 };
 
 /* ===================== MASTER VALUES ===================== */
 
 exports.getValues = async (master_item_id) => {
   const [rows] = await db.query(
-    "SELECT * FROM master_item_values WHERE master_item_id=? ORDER BY name",
+    "SELECT * FROM master_item_values WHERE master_item_id = ? ORDER BY name",
     [master_item_id]
   );
   return rows;
 };
 
 exports.createValue = async ({ master_item_id, name, isactive = 1 }) => {
+  // Check if value already exists for this item
   const [existing] = await db.query(
     `SELECT id FROM master_item_values 
-     WHERE master_item_id=? AND LOWER(name)=LOWER(?)`,
+     WHERE master_item_id = ? AND LOWER(name) = LOWER(?)`,
     [master_item_id, name]
   );
   if (existing.length) throw new Error("Value already exists");
@@ -133,29 +93,30 @@ exports.createValue = async ({ master_item_id, name, isactive = 1 }) => {
 
 exports.updateValue = async (id, { name, isactive }) => {
   await db.query(
-    "UPDATE master_item_values SET name=?, isactive=? WHERE id=?",
+    "UPDATE master_item_values SET name = ?, isactive = ? WHERE id = ?",
     [name, isactive, id]
   );
 };
 
 exports.deleteValue = async (id) => {
-  await db.query("DELETE FROM master_item_values WHERE id=?", [id]);
+  await db.query("DELETE FROM master_item_values WHERE id = ?", [id]);
 };
+
+/* ===================== EXPORT FUNCTIONS ===================== */
 
 exports.exportMasterItems = async () => {
   const [rows] = await db.query(`
     SELECT
-      mi.id            AS item_id,
-      mi.name          AS item_name,
-      mt.tab_name      AS tab_name,
-      mi.isactive      AS item_status,
-      COUNT(mv.id)     AS value_count,
+      mi.id AS item_id,
+      mi.name AS item_name,
+      mi.tab_name,
+      mi.isactive AS item_status,
+      COUNT(mv.id) AS value_count,
       mi.created_at
     FROM master_items mi
-    JOIN master_tabs mt ON mt.id = mi.tab_id
     LEFT JOIN master_item_values mv ON mv.master_item_id = mi.id
     GROUP BY mi.id
-    ORDER BY mt.tab_name, mi.name
+    ORDER BY mi.tab_name, mi.name
   `);
   return rows;
 };
@@ -163,15 +124,14 @@ exports.exportMasterItems = async () => {
 exports.exportMasterItemValues = async (itemId) => {
   const [rows] = await db.query(`
     SELECT  
-      mv.id        AS value_id,
-      mv.name      AS value_name,
-      mv.isactive  AS value_status,
+      mv.id AS value_id,
+      mv.name AS value_name,
+      mv.isactive AS value_status,
       mv.created_at,
-      mi.name      AS item_name,
-      mt.tab_name  AS tab_name
+      mi.name AS item_name,
+      mi.tab_name
     FROM master_item_values mv
     JOIN master_items mi ON mi.id = mv.master_item_id
-    JOIN master_tabs mt ON mt.id = mi.tab_id
     WHERE mv.master_item_id = ?
     ORDER BY mv.name
   `, [itemId]);
@@ -179,64 +139,94 @@ exports.exportMasterItemValues = async (itemId) => {
   return rows;
 };
 
-// Fetch ALL masters (tabs + items + values)
+/* ===================== CONSUME MASTERS API ===================== */
+
+// Get all items grouped by tab_name for consumption
 exports.getAllMasters = async () => {
-    const sql = `
-      SELECT
-        mt.id   AS tab_id,
-        mt.tab_name,
-        mt.is_active AS tab_active,
+  const sql = `
+    SELECT
+      mi.id AS item_id,
+      mi.name AS item_name,
+      mi.tab_name,
+      mi.isactive AS item_active,
+      miv.id AS value_id,
+      miv.name AS value_name,
+      miv.isactive AS value_active
+    FROM master_items mi
+    LEFT JOIN master_item_values miv
+      ON miv.master_item_id = mi.id
+    WHERE mi.isactive = 1
+    ORDER BY mi.tab_name, mi.name, miv.name
+  `;
 
-        mi.id   AS item_id,
-        mi.name AS item_name,
-        mi.is_active AS item_active,
+  const [rows] = await db.query(sql);
+  
+  // Transform data into nested structure
+  const result = {};
+  
+  rows.forEach(row => {
+    if (!result[row.tab_name]) {
+      result[row.tab_name] = {};
+    }
+    
+    if (!result[row.tab_name][row.item_name] && row.item_id) {
+      result[row.tab_name][row.item_name] = [];
+    }
+    
+    if (row.value_id && row.value_name) {
+      result[row.tab_name][row.item_name].push({
+        id: row.value_id,
+        name: row.value_name,
+        isactive: row.value_active
+      });
+    }
+  });
+  
+  return result;
+};
 
-        miv.id   AS value_id,
-        miv.name AS value_name,
-        miv.is_active AS value_active
+// Get active items by tab_name
+exports.getItemsByTabName = async (tab_name) => {
+  const sql = `
+    SELECT id, name
+    FROM master_items
+    WHERE tab_name = ? AND isactive = 1
+    ORDER BY name
+  `;
+  const [rows] = await db.query(sql, [tab_name]);
+  return rows;
+};
 
-      FROM master_tabs mt
-      LEFT JOIN master_items mi
-        ON mi.tab_id = mt.id
-      LEFT JOIN master_item_values miv
-        ON miv.master_item_id = mi.id
-      ORDER BY mt.id, mi.id, miv.id
-    `;
+// Get values for a specific master item
+exports.getValuesByItemId = async (item_id) => {
+  const sql = `
+    SELECT id, name, isactive
+    FROM master_item_values
+    WHERE master_item_id = ? AND isactive = 1
+    ORDER BY name
+  `;
+  const [rows] = await db.query(sql, [item_id]);
+  return rows;
+};
 
-    const [rows] = await db.query(sql);
-    return rows;
-  },
-
-  // Fetch items by tab_id (NO hardcoding)
-  exports.getItemsByTabId = async (tab_id) => {
-    const sql = `
-      SELECT id, name
-      FROM master_items
-      WHERE tab_id = ? AND is_active = 1
-    `;
-    const [rows] = await db.query(sql, [tab_id]);
-    return rows;
-  }
-
-  exports.consumeMasters = async ({ tab, type }) => {
+// Flexible consume API - returns values based on tab and item name
+exports.consumeMasters = async ({ tab, type }) => {
   let sql = `
     SELECT
-      mt.tab_name,
+      mi.tab_name,
       mi.name AS type_name,
-      miv.id  AS value_id,
+      miv.id AS value_id,
       miv.name AS value_name
-    FROM master_tabs mt
-    JOIN master_items mi
-      ON mi.tab_id = mt.id AND mi.isactive = 1
+    FROM master_items mi
     JOIN master_item_values miv
       ON miv.master_item_id = mi.id AND miv.isactive = 1
-    WHERE mt.isactive = 1
+    WHERE mi.isactive = 1
   `;
 
   const params = [];
 
   if (tab) {
-    sql += ` AND mt.tab_name = ?`;
+    sql += ` AND mi.tab_name = ?`;
     params.push(tab);
   }
 
@@ -248,5 +238,34 @@ exports.getAllMasters = async () => {
   sql += ` ORDER BY mi.name, miv.name`;
 
   const [rows] = await db.query(sql, params);
+  return rows;
+};
+
+// Get distinct tab names (useful for frontend to know which tabs exist)
+exports.getDistinctTabs = async () => {
+  const [rows] = await db.query(`
+    SELECT DISTINCT tab_name
+    FROM master_items
+    WHERE isactive = 1
+    ORDER BY tab_name
+  `);
+  return rows.map(row => row.tab_name);
+};
+
+// Search items across all tabs
+exports.searchItems = async (searchTerm) => {
+  const sql = `
+    SELECT DISTINCT
+      mi.id,
+      mi.name,
+      mi.tab_name,
+      mi.isactive
+    FROM master_items mi
+    LEFT JOIN master_item_values miv ON miv.master_item_id = mi.id
+    WHERE mi.name LIKE ? OR miv.name LIKE ?
+    ORDER BY mi.tab_name, mi.name
+  `;
+  const searchPattern = `%${searchTerm}%`;
+  const [rows] = await db.query(sql, [searchPattern, searchPattern]);
   return rows;
 };

@@ -1,37 +1,36 @@
-// routes/masterRoutes.js
-const router = require("express").Router();
-const c = require("../controllers/masterController");
+const express = require('express');
+const router = express.Router();
+const masterController = require('../controllers/masterController');
 
-// CONSUMPTION API (forms, modules)
-router.get("/consume", c.consumeMasters);
-/* TABS */
-router.get("/tabs", c.getTabs);
-router.post("/tabs", c.createTab);
-router.put("/tabs/:id", c.updateTab);
-router.delete("/tabs/:id", c.deleteTab);
+// ==================== ITEM ROUTES ====================
+router.get('/items', masterController.getAllItems);
+router.get('/items/tab/:tab_name', masterController.getItemsByTab);
+router.post('/items', masterController.createItem);
+router.put('/items/:id', masterController.updateItem);
+router.delete('/items/:id', masterController.deleteItem);
+router.patch('/items/:id/toggle', masterController.toggleItemStatus);
+router.post('/items/bulk', masterController.bulkCreateItems);
 
-/* ITEMS */
-router.get("/items", c.getItems);
-router.get("/items/tab/:tab_id", c.getItemsByTab);
-router.post("/items", c.createItem);
-router.put("/items/:id", c.updateItem);
-router.delete("/items/:id", c.deleteItem);
+// ==================== VALUE ROUTES ====================
+router.get('/values/:master_item_id', masterController.getValuesByItemId);
+router.post('/values', masterController.createValue);
+router.put('/values/:id', masterController.updateValue);
+router.delete('/values/:id', masterController.deleteValue);
+router.patch('/values/:id/toggle', masterController.toggleValueStatus);
+router.post('/values/bulk', masterController.bulkCreateValues);
 
-/* VALUES */
-router.get("/values/:item_id", c.getValues);
-router.post("/values", c.createValue);
-router.put("/values/:id", c.updateValue);
-router.delete("/values/:id", c.deleteValue);
+// ==================== CONSUME ROUTES ====================
+router.get('/consume/all', masterController.getAllMasters);
+router.get('/consume/items/:tab_name', masterController.getActiveItemsByTab);
+router.get('/consume/values/:item_id', masterController.getActiveValuesByItemId);
+router.get('/consume', masterController.consumeMasters);
 
-/* EXPORT */
-router.get("/export/items", c.exportMasterItems);
-router.get("/export/values/:itemId", c.exportMasterItemValues);
+// ==================== UTILITY ROUTES ====================
+router.get('/tabs', masterController.getDistinctTabs);
+router.get('/search', masterController.searchItems);
 
-// Get everything (no hardcoding)
-router.get("/", c.getAll);
-
-// Get items by tab_id
-router.get("/:tab_id", c.getByTabId);
-router.get("/values", c.getMasterValues);
+// ==================== EXPORT ROUTES ====================
+router.get('/export/items', masterController.exportAllItems);
+router.get('/export/values/:itemId', masterController.exportItemValues);
 
 module.exports = router;
