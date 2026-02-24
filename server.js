@@ -136,7 +136,7 @@ const adminReceiptRoutes = require("./routes/adminReceiptRoutes");
 const masterRoutes = require("./routes/masterRoutes");
 const vacateRoutes = require("./routes/vacateRoutes");
 const changeBedRoutes = require("./routes/changeBedRoutes");
-const notificationRoutes = require("./routes/notificationRoutes");
+const notificationRoutes = require("./routes/adminNotificationRoutes");
 const adminVacateRequestRoutes = require("./routes/adminVacateRequestRoutes");
 const adminChangeBedRoutes = require("./routes/adminChangeBedRoutes");
 const tenantSettingsRoutes = require("./routes/tenantSettingsRoutes");
@@ -144,6 +144,7 @@ const adminDeletionRequestsRoutes = require("./routes/adminDeletionRequestsRoute
 const settingsRoutes = require("./routes/settingsRoutes");
 const profileRoutes = require("./routes/adminProfileRoutes");
 const addOnRoutes = require("./routes/addOnRoutes");
+const tenantNotificationsRoutes = require("./routes/tenantNotificationsRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const paymentsRoutes = require("./routes/payment.Routes");
 
@@ -232,6 +233,7 @@ app.use("/api/tenant-settings", tenantSettingsRoutes);
 app.use("/api/admin/deletion-requests", adminDeletionRequestsRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/tenant-notifications", tenantNotificationsRoutes);
 app.use("/api/admin/add-ons", addOnRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentsRoutes);

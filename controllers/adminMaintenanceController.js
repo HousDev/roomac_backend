@@ -1,5 +1,5 @@
-// controllers/adminMaintenanceController.js
 const db = require("../config/db");
+const notificationController = require("./tenantNotificationController");
 
 exports.getMaintenanceRequests = async (req, res) => {
   try {
@@ -138,21 +138,66 @@ exports.updateMaintenanceRequest = async (req, res) => {
 
     console.log('🔧 Updating maintenance request:', id, updateData);
 
+    // Get current maintenance request data to check if status changed
+    const [currentRequest] = await db.query(
+      `SELECT tenant_id, status FROM tenant_requests WHERE id = ? AND request_type = 'maintenance'`,
+      [id]
+    );
+
+    if (currentRequest.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Maintenance request not found"
+      });
+    }
+
+    const tenantId = currentRequest[0].tenant_id;
+    const oldStatus = currentRequest[0].status;
+    const newStatus = updateData.status;
+
     // Build update query for tenant_requests
     const updates = [];
     const params = [];
 
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key] !== undefined && updateData[key] !== null) {
-        updates.push(`${key} = ?`);
-        params.push(updateData[key]);
-      }
-    });
+    // Handle status update
+    if (updateData.status) {
+      updates.push('status = ?');
+      params.push(updateData.status);
+    }
+
+    // Handle admin notes - append to existing notes or create new
+    if (updateData.admin_notes) {
+      // Get current admin_notes first
+      const [current] = await db.query(
+        `SELECT admin_notes FROM tenant_requests WHERE id = ?`,
+        [id]
+      );
+      
+      const currentNotes = current[0]?.admin_notes || '';
+      const timestamp = new Date().toLocaleString();
+      const newNoteEntry = `\n[${timestamp}] Status changed to ${updateData.status || 'updated'}: ${updateData.admin_notes}`;
+      
+      const updatedNotes = currentNotes 
+        ? currentNotes + newNoteEntry
+        : newNoteEntry;
+      
+      updates.push('admin_notes = ?');
+      params.push(updatedNotes);
+    }
+
+    // Handle assigned_to update
+    if (updateData.assigned_to !== undefined) {
+      updates.push('assigned_to = ?');
+      params.push(updateData.assigned_to === null ? null : updateData.assigned_to);
+    }
 
     // Auto-set resolved_at if status is resolved
     if (updateData.status === 'resolved' && !updateData.resolved_at) {
       updates.push('resolved_at = NOW()');
     }
+
+    // Auto-set updated_at
+    updates.push('updated_at = NOW()');
 
     if (updates.length === 0) {
       return res.status(400).json({
@@ -202,6 +247,48 @@ exports.updateMaintenanceRequest = async (req, res) => {
           (request_id, issue_category, location, preferred_visit_time, access_permission)
           VALUES (?, ?, ?, ?, ?)
         `, [id, issue_category, location, preferred_visit_time, access_permission]);
+      }
+    }
+
+    // Send notification to tenant if status changed
+    if (newStatus && newStatus !== oldStatus) {
+      try {
+        // Include admin notes in notification if provided
+        await notificationController.notifyMaintenanceStatusUpdate(
+          id,
+          tenantId,
+          newStatus,
+          updateData.admin_notes
+        );
+        console.log(`📨 Notification sent to tenant ${tenantId} for maintenance request ${id}`);
+      } catch (notifError) {
+        console.error('❌ Failed to send notification:', notifError);
+        // Don't fail the main operation if notification fails
+      }
+    }
+
+    // If staff assigned, send assignment notification
+    if (updateData.assigned_to !== undefined && updateData.assigned_to) {
+      try {
+        // Get staff name
+        const [staffResult] = await db.query(
+          'SELECT name FROM staff WHERE id = ?',
+          [updateData.assigned_to]
+        );
+        
+        const staffName = staffResult[0]?.name || 'Staff';
+        
+        await notificationController.createNotification({
+          tenantId,
+          title: 'Maintenance Request Assigned',
+          message: `Your maintenance request #${id} has been assigned to ${staffName}.`,
+          notificationType: 'maintenance',
+          relatedEntityType: 'maintenance',
+          relatedEntityId: id,
+          priority: 'medium'
+        });
+      } catch (notifError) {
+        console.error('❌ Failed to send assignment notification:', notifError);
       }
     }
 
