@@ -56,27 +56,23 @@ async getChangeBedRequests(req, res) {
         t.email as tenant_email,
         t.phone as tenant_phone,
         
-        -- ========== CURRENT ROOM INFO ==========
+        -- CURRENT ROOM INFO
         cr.room_number as current_room_number,
         cr.rent_per_bed as current_rent,
         cr.total_bed as current_total_beds,
         cp.name as current_property_name,
         cp.address as current_property_address,
         
-        -- ========== REQUESTED ROOM INFO ==========
+        -- REQUESTED ROOM INFO
         rr.room_number as requested_room_number,
         rr.rent_per_bed as requested_rent,
         rr.total_bed as requested_total_beds,
-        rr.floor as requested_floor,
-        rr.has_ac as requested_has_ac,
-        rr.has_attached_bathroom as requested_has_attached_bathroom,
-        rr.has_balcony as requested_has_balcony,
         rp.name as requested_property_name,
         rp.address as requested_property_address,
         
-        -- Change reason
-        mv.value as change_reason,
-        mt.code as change_reason_code,
+        -- CHANGE REASON TEXT - CORRECT TABLE NAMES
+        miv.name as change_reason,
+        mi.name as change_reason_category,
         
         -- Occupied beds for requested room
         (
@@ -92,24 +88,25 @@ async getChangeBedRequests(req, res) {
       -- Join tenant info
       INNER JOIN tenants t ON tr.tenant_id = t.id
       
-      -- INNER JOIN change_bed_requests (change to INNER JOIN to ensure we only get requests with data)
+      -- IMPORTANT: Use INNER JOIN to ensure we only get requests that have change_bed_requests
       INNER JOIN change_bed_requests cbr ON tr.id = cbr.tenant_request_id
       
       -- Current room joins
       LEFT JOIN rooms cr ON cbr.current_room_id = cr.id
       LEFT JOIN properties cp ON cr.property_id = cp.id
       
-      -- Requested room joins - IMPORTANT: These must be present
+      -- Requested room joins
       LEFT JOIN rooms rr ON cbr.preferred_room_id = rr.id
       LEFT JOIN properties rp ON rr.property_id = rp.id
       
-      -- Change reason joins
-      LEFT JOIN master_values mv ON cbr.change_reason_id = mv.id
-      LEFT JOIN master_types mt ON mv.master_type_id = mt.id
+      -- JOIN WITH MASTER TABLES TO GET THE REASON TEXT
+      LEFT JOIN master_item_values miv ON cbr.change_reason_id = miv.id
+      LEFT JOIN master_items mi ON miv.master_item_id = mi.id
       
       WHERE tr.request_type = 'change_bed'
     `;
 
+    // Count query
     let countQuery = `
       SELECT COUNT(*) as total
       FROM tenant_requests tr
@@ -137,7 +134,8 @@ async getChangeBedRequests(req, res) {
         cp.name LIKE ? OR
         rp.name LIKE ? OR
         tr.title LIKE ? OR
-        tr.description LIKE ?
+        tr.description LIKE ? OR
+        miv.name LIKE ?
       )`;
       countQuery += ` AND (
         t.full_name LIKE ? OR 
@@ -148,9 +146,11 @@ async getChangeBedRequests(req, res) {
       )`;
       
       const searchTerm = `%${search}%`;
-      for (let i = 0; i < 7; i++) {
+      // For base query - 8 parameters
+      for (let i = 0; i < 8; i++) {
         queryParams.push(searchTerm);
       }
+      // For count query - 5 parameters
       for (let i = 0; i < 5; i++) {
         countParams.push(searchTerm);
       }
@@ -187,10 +187,9 @@ async getChangeBedRequests(req, res) {
     const formattedRequests = requests.map(req => {
       // Log each request's data for debugging
       console.log(`Request ID ${req.tenant_request_id}:`, {
-        requested_room_number: req.requested_room_number,
-        requested_rent: req.requested_rent,
-        requested_property_name: req.requested_property_name,
-        requested_occupied_beds: req.requested_occupied_beds
+        change_reason_id: req.change_reason_id,
+        change_reason: req.change_reason,
+        change_reason_category: req.change_reason_category
       });
 
       // Calculate rent difference
@@ -221,7 +220,7 @@ async getChangeBedRequests(req, res) {
         current_total_beds: req.current_total_beds,
         current_occupied_beds: req.current_occupied_beds || 0,
         
-        // Requested room details - ENSURE THESE ARE INCLUDED
+        // Requested room details
         preferred_property_id: req.preferred_property_id,
         preferred_room_id: req.preferred_room_id,
         requested_room_number: req.requested_room_number,
@@ -234,10 +233,10 @@ async getChangeBedRequests(req, res) {
         requested_has_attached_bathroom: req.requested_has_attached_bathroom,
         requested_has_balcony: req.requested_has_balcony,
         
-        // Change request details
+        // Change request details - WITH REASON TEXT FROM CORRECT TABLE
         change_reason_id: req.change_reason_id,
-        change_reason: req.change_reason,
-        change_reason_code: req.change_reason_code,
+        change_reason: req.change_reason || 'Not specified',
+        change_reason_category: req.change_reason_category,
         shifting_date: req.shifting_date,
         notes: req.notes,
         assigned_bed_number: req.assigned_bed_number,
@@ -329,7 +328,7 @@ async getChangeBedRequestById(req, res) {
         cp.name as current_property_name,
         cp.address as current_property_address,
         
-        -- REQUESTED ROOM INFO - ENSURE THESE ARE INCLUDED
+        -- REQUESTED ROOM INFO
         rr.room_number as requested_room_number,
         rr.rent_per_bed as requested_rent,
         rr.total_bed as requested_total_beds,
@@ -340,9 +339,9 @@ async getChangeBedRequestById(req, res) {
         rp.name as requested_property_name,
         rp.address as requested_property_address,
         
-        -- Change reason
-        mv.value as change_reason,
-        mt.code as change_reason_code,
+        -- CHANGE REASON TEXT - CORRECT TABLE NAMES
+        miv.name as change_reason,
+        mi.name as change_reason_category,
         
         -- Occupied beds for requested room
         (
@@ -365,13 +364,13 @@ async getChangeBedRequestById(req, res) {
       LEFT JOIN rooms cr ON cbr.current_room_id = cr.id
       LEFT JOIN properties cp ON cr.property_id = cp.id
       
-      -- Requested room joins - CRITICAL FOR DISPLAYING DATA
+      -- Requested room joins
       LEFT JOIN rooms rr ON cbr.preferred_room_id = rr.id
       LEFT JOIN properties rp ON rr.property_id = rp.id
       
-      -- Change reason joins
-      LEFT JOIN master_values mv ON cbr.change_reason_id = mv.id
-      LEFT JOIN master_types mt ON mv.master_type_id = mt.id
+      -- JOIN WITH MASTER TABLES TO GET THE REASON TEXT
+      LEFT JOIN master_item_values miv ON cbr.change_reason_id = miv.id
+      LEFT JOIN master_items mi ON miv.master_item_id = mi.id
       
       WHERE tr.request_type = 'change_bed'
         AND cbr.id = ?
@@ -392,12 +391,9 @@ async getChangeBedRequestById(req, res) {
     
     console.log('📊 Raw data for request:', {
       id: request.id,
-      requested_room_number: request.requested_room_number,
-      requested_rent: request.requested_rent,
-      requested_property_name: request.requested_property_name,
-      requested_occupied_beds: request.requested_occupied_beds,
+      change_reason_id: request.change_reason_id,
       change_reason: request.change_reason,
-      shifting_date: request.shifting_date
+      change_reason_category: request.change_reason_category
     });
 
     // Calculate rent difference
@@ -432,7 +428,7 @@ async getChangeBedRequestById(req, res) {
       current_has_attached_bathroom: request.current_has_attached_bathroom,
       current_has_balcony: request.current_has_balcony,
       
-      // Requested room details - ENSURE THESE ARE INCLUDED
+      // Requested room details
       preferred_property_id: request.preferred_property_id,
       preferred_room_id: request.preferred_room_id,
       requested_room_number: request.requested_room_number,
@@ -445,10 +441,10 @@ async getChangeBedRequestById(req, res) {
       requested_has_attached_bathroom: request.requested_has_attached_bathroom,
       requested_has_balcony: request.requested_has_balcony,
       
-      // Change request details
+      // Change request details - WITH REASON TEXT FROM CORRECT TABLE
       change_reason_id: request.change_reason_id,
       change_reason: request.change_reason || 'Not specified',
-      change_reason_code: request.change_reason_code,
+      change_reason_category: request.change_reason_category,
       shifting_date: request.shifting_date,
       notes: request.notes || 'No notes provided',
       assigned_bed_number: request.assigned_bed_number,
@@ -462,13 +458,7 @@ async getChangeBedRequestById(req, res) {
       tenant_phone: request.tenant_phone
     };
 
-    console.log('✅ Sending response with data:', {
-      requested_room_number: response.requested_room_number,
-      requested_rent: response.requested_rent,
-      requested_property_name: response.requested_property_name,
-      rent_difference: response.rent_difference,
-      change_reason: response.change_reason
-    });
+    console.log('✅ Sending response with change reason:', response.change_reason);
     
     res.json({
       success: true,
@@ -486,198 +476,195 @@ async getChangeBedRequestById(req, res) {
 
 
   // Update change bed request status
- // Update change bed request status - MODIFIED TO ADD NOTIFICATIONS
-  async updateRequestStatus(req, res) {
-    try {
-      const { id } = req.params;
-      const {
-        request_status,
-        assigned_bed_number,
-        rent_difference,
-        admin_notes,
-        process_request = false
-      } = req.body;
+// Update change bed request status
+async updateRequestStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const {
+      request_status,
+      assigned_bed_number,
+      rent_difference,
+      admin_notes,
+      process_request = false
+    } = req.body;
 
-      // Validate request exists and get tenant info
-      const [existingRequest] = await db.query(
-        `SELECT cbr.*, tr.tenant_id, t.full_name as tenant_name 
-         FROM change_bed_requests cbr
-         JOIN tenant_requests tr ON cbr.tenant_request_id = tr.id
-         JOIN tenants t ON tr.tenant_id = t.id
-         WHERE cbr.id = ?`,
-        [id]
-      );
+    console.log('📝 Updating change bed request:', { id, request_status, assigned_bed_number, rent_difference, admin_notes });
 
-      if (existingRequest.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Change bed request not found'
-        });
-      }
+    // Get current request data with tenant info
+    const [requestData] = await db.query(
+      `SELECT cbr.*, tr.tenant_id, tr.id as tenant_request_id 
+       FROM change_bed_requests cbr
+       JOIN tenant_requests tr ON cbr.tenant_request_id = tr.id
+       WHERE cbr.id = ?`,
+      [id]
+    );
 
-      const changeBedRequest = existingRequest[0];
-      const tenantId = changeBedRequest.tenant_id;
-      const oldStatus = changeBedRequest.request_status;
-      const newStatus = request_status;
-
-      // Start transaction
-      await db.query('START TRANSACTION');
-
-      try {
-        // Update change_bed_requests table
-        const updateFields = [];
-        const updateValues = [];
-
-        updateFields.push('request_status = ?');
-        updateValues.push(request_status);
-
-        if (assigned_bed_number !== undefined) {
-          updateFields.push('assigned_bed_number = ?');
-          updateValues.push(assigned_bed_number);
-        }
-
-        if (rent_difference !== undefined) {
-          updateFields.push('rent_difference = ?');
-          updateValues.push(rent_difference);
-        }
-
-        if (admin_notes !== undefined) {
-          updateFields.push('admin_notes = ?');
-          updateValues.push(admin_notes);
-        }
-
-        updateFields.push('updated_at = NOW()');
-        updateValues.push(id);
-
-        await db.query(
-          `UPDATE change_bed_requests SET ${updateFields.join(', ')} WHERE id = ?`,
-          updateValues
-        );
-
-        // Update tenant_requests status if needed
-        if (request_status === 'processed' || request_status === 'rejected') {
-          const tenantRequestStatus = request_status === 'processed' ? 'completed' : 'rejected';
-          
-          await db.query(
-            `UPDATE tenant_requests SET status = ?, updated_at = NOW() WHERE id = ?`,
-            [tenantRequestStatus, changeBedRequest.tenant_request_id]
-          );
-        }
-
-        // If status is approved and process_request is true, process the bed change
-        if (request_status === 'approved' && process_request) {
-          await this.processBedChange(changeBedRequest, assigned_bed_number);
-        }
-
-        await db.query('COMMIT');
-
-        // SEND NOTIFICATION TO TENANT
-        if (newStatus && newStatus !== oldStatus) {
-          try {
-            await this.sendStatusNotification(
-              changeBedRequest.tenant_request_id,
-              tenantId,
-              newStatus,
-              admin_notes,
-              changeBedRequest
-            );
-            console.log(`📨 Notification sent to tenant ${tenantId} for change bed request ${id}`);
-          } catch (notifError) {
-            console.error('❌ Failed to send notification:', notifError);
-            // Don't fail the main operation if notification fails
-          }
-        }
-
-        // If bed is assigned, send assignment notification
-        if (assigned_bed_number && request_status === 'approved') {
-          try {
-            await notificationController.createNotification({
-              tenantId,
-              title: 'Bed Number Assigned',
-              message: `For your change bed request #${changeBedRequest.tenant_request_id}, bed number ${assigned_bed_number} has been assigned in ${changeBedRequest.preferred_room_id ? 'the requested room' : 'your new room'}.`,
-              notificationType: 'change_bed',
-              relatedEntityType: 'change_bed',
-              relatedEntityId: changeBedRequest.tenant_request_id,
-              priority: 'medium'
-            });
-          } catch (notifError) {
-            console.error('❌ Failed to send assignment notification:', notifError);
-          }
-        }
-
-        res.json({
-          success: true,
-          message: 'Request status updated successfully'
-        });
-
-      } catch (error) {
-        await db.query('ROLLBACK');
-        throw error;
-      }
-
-    } catch (error) {
-      console.error('Error updating request status:', error);
-      res.status(500).json({
+    if (requestData.length === 0) {
+      return res.status(404).json({
         success: false,
-        message: error.message || 'Internal server error'
+        message: 'Change bed request not found'
       });
     }
+
+    const currentRequest = requestData[0];
+    const oldStatus = currentRequest.request_status;
+    const tenantId = currentRequest.tenant_id;
+
+    console.log('📊 Current request:', {
+      id: currentRequest.id,
+      tenant_id: tenantId,
+      old_status: oldStatus,
+      new_status: request_status
+    });
+
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // Update change_bed_requests
+      await db.query(
+        `UPDATE change_bed_requests 
+         SET request_status = ?,
+             assigned_bed_number = COALESCE(?, assigned_bed_number),
+             rent_difference = COALESCE(?, rent_difference),
+             admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[', NOW(), '] ', ?),
+             updated_at = NOW()
+         WHERE id = ?`,
+        [request_status, assigned_bed_number, rent_difference, admin_notes || '', id]
+      );
+
+      // If status is processed, update tenant_requests status
+      if (request_status === 'processed') {
+        await db.query(
+          `UPDATE tenant_requests 
+           SET status = 'completed', updated_at = NOW() 
+           WHERE id = ?`,
+          [currentRequest.tenant_request_id]
+        );
+      }
+
+      // If status is rejected, update tenant_requests status
+      if (request_status === 'rejected') {
+        await db.query(
+          `UPDATE tenant_requests 
+           SET status = 'rejected', updated_at = NOW() 
+           WHERE id = ?`,
+          [currentRequest.tenant_request_id]
+        );
+      }
+
+      // If approved and process_request is true, process the bed change
+      if (request_status === 'approved' && process_request) {
+        await this.processBedChange(currentRequest, assigned_bed_number);
+      }
+
+      await db.query('COMMIT');
+
+      // SEND NOTIFICATION TO TENANT
+      try {
+        await this.sendStatusNotification(
+          tenantId,
+          currentRequest.tenant_request_id,
+          oldStatus,
+          request_status,
+          admin_notes,
+          { assigned_bed_number, rent_difference }
+        );
+        console.log(`✅ Notification sent to tenant ${tenantId}`);
+      } catch (notifError) {
+        console.error('❌ Failed to send notification:', notifError);
+        // Don't fail the request if notification fails
+      }
+
+      res.json({
+        success: true,
+        message: `Request status updated to ${request_status}`
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      console.error('❌ Error in transaction:', error);
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Error updating request status:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error'
+    });
+  }
+}
+  // NEW METHOD: Send status notification
+// Send status notification
+async sendStatusNotification(requestId, tenantId, status, adminNotes, requestData) {
+  console.log('========================================');
+  console.log('📨 SEND STATUS NOTIFICATION CALLED');
+  console.log('Request ID:', requestId);
+  console.log('Tenant ID:', tenantId);
+  console.log('Status:', status);
+  console.log('Admin Notes:', adminNotes);
+  console.log('========================================');
+
+  const statusMessages = {
+    'pending': {
+      title: 'Change Bed Request Received',
+      message: adminNotes 
+        ? `Your change bed request #${requestId} has been received. Notes: ${adminNotes}`
+        : `Your change bed request #${requestId} has been received and is pending review.`
+    },
+    'approved': {
+      title: 'Change Bed Request Approved',
+      message: adminNotes
+        ? `Your change bed request #${requestId} has been approved! ${adminNotes}`
+        : `Your change bed request #${requestId} has been approved! We'll process it shortly.`
+    },
+    'rejected': {
+      title: 'Change Bed Request Rejected',
+      message: adminNotes
+        ? `Your change bed request #${requestId} has been rejected. Reason: ${adminNotes}`
+        : `Your change bed request #${requestId} has been rejected. Please contact support for more information.`
+    },
+    'processed': {
+      title: 'Change Bed Request Completed',
+      message: adminNotes
+        ? `Your change bed request #${requestId} has been processed successfully. ${adminNotes}`
+        : `Your change bed request #${requestId} has been processed. You have been moved to your new room.`
+    }
+  };
+
+  const notification = statusMessages[status];
+  
+  if (!notification) {
+    console.error(`❌ No message defined for status: ${status}`);
+    return null;
   }
 
-  // NEW METHOD: Send status notification
-  async sendStatusNotification(requestId, tenantId, status, adminNotes, requestData) {
-    const statusMessages = {
-      'pending': {
-        title: 'Change Bed Request Received',
-        message: adminNotes 
-          ? `Your change bed request #${requestId} has been received. Notes: ${adminNotes}`
-          : `Your change bed request #${requestId} has been received and is pending review.`
-      },
-      'approved': {
-        title: 'Change Bed Request Approved',
-        message: adminNotes
-          ? `Your change bed request #${requestId} has been approved! ${adminNotes}`
-          : `Your change bed request #${requestId} has been approved! We'll process it shortly.`
-      },
-      'rejected': {
-        title: 'Change Bed Request Rejected',
-        message: adminNotes
-          ? `Your change bed request #${requestId} has been rejected. Reason: ${adminNotes}`
-          : `Your change bed request #${requestId} has been rejected. Please contact support for more information.`
-      },
-      'processed': {
-        title: 'Change Bed Request Completed',
-        message: adminNotes
-          ? `Your change bed request #${requestId} has been processed successfully. ${adminNotes}`
-          : `Your change bed request #${requestId} has been processed. You have been moved to your new room.`
-      }
-    };
+  console.log('📨 Notification to create:');
+  console.log('  - Title:', notification.title);
+  console.log('  - Message:', notification.message);
 
-    const notification = statusMessages[status] || {
-      title: 'Change Bed Request Updated',
-      message: adminNotes
-        ? `Your change bed request #${requestId} status has been updated to ${status}. Notes: ${adminNotes}`
-        : `Your change bed request #${requestId} status has been updated to ${status}.`
-    };
+  // Add rent difference info if available
+  if (status === 'approved' && requestData.rent_difference) {
+    const diff = parseFloat(requestData.rent_difference);
+    const diffText = diff > 0 
+      ? ` Your new rent will be ₹${diff} higher.` 
+      : diff < 0 
+        ? ` Your new rent will be ₹${Math.abs(diff)} lower.` 
+        : ' Your rent will remain the same.';
+    
+    notification.message += diffText;
+    console.log('  - Added rent difference:', diffText);
+  }
 
-    // Add rent difference info if available
-    if (status === 'approved' && requestData.rent_difference) {
-      const diff = parseFloat(requestData.rent_difference);
-      const diffText = diff > 0 
-        ? `Your new rent will be ₹${diff} higher.` 
-        : diff < 0 
-          ? `Your new rent will be ₹${Math.abs(diff)} lower.` 
-          : 'Your rent will remain the same.';
-      
-      notification.message += ` ${diffText}`;
-    }
+  // Add assigned bed info if available
+  if (status === 'approved' && requestData.assigned_bed_number) {
+    notification.message += ` Bed number ${requestData.assigned_bed_number} has been reserved for you.`;
+    console.log('  - Added bed assignment info');
+  }
 
-    // Add assigned bed info if available
-    if (status === 'approved' && requestData.assigned_bed_number) {
-      notification.message += ` Bed number ${requestData.assigned_bed_number} has been reserved for you.`;
-    }
-
-    return await notificationController.createNotification({
+  try {
+    const result = await notificationController.createNotification({
       tenantId,
       title: notification.title,
       message: notification.message,
@@ -686,7 +673,16 @@ async getChangeBedRequestById(req, res) {
       relatedEntityId: requestId,
       priority: status === 'approved' ? 'high' : (status === 'rejected' ? 'medium' : 'low')
     });
+    
+    console.log('✅ Notification created successfully with ID:', result);
+    console.log('========================================');
+    return result;
+  } catch (error) {
+    console.error('❌ Error in notificationController.createNotification:', error);
+    console.error('❌ Error stack:', error.stack);
+    throw error;
   }
+}
 
   // Process bed change (move tenant to new bed)
   async processBedChange(changeBedRequest, assignedBedNumber) {

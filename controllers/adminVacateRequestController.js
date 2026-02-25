@@ -2,6 +2,7 @@
 const db = require('../config/db');
 const VacateRequestModel = require('../models/vacateRequestModel');
 const NotificationModel = require('../models/notificationModel');
+const notificationController = require("../controllers/tenantNotificationController");
 
 class AdminVacateRequestController {
   constructor() {
@@ -77,117 +78,129 @@ class AdminVacateRequestController {
   }
 
   // Update vacate request status
-async updateVacateRequestStatus(req, res) {
-  try {
-    const { id } = req.params;
-     // DEBUG: What's in req.user?
-    console.log('🔍 DEBUG req.user:', req.user);
-    console.log('🔍 DEBUG req.user.adminId:', req.user?.adminId);
-    console.log('🔍 DEBUG req.user type:', typeof req.user?.adminId);
-    console.log('🔍 DEBUG req.user.adminId value:', req.user?.adminId);
-    console.log('🔍 DEBUG Boolean(req.user?.adminId):', Boolean(req.user?.adminId));
-    const adminId = req.user?.adminId;
-    // Test different conditions
-    console.log('🧪 Testing conditions:');
-    console.log('  adminId exists?:', !!adminId);
-    console.log('  adminId === undefined?:', adminId === undefined);
-    console.log('  adminId === null?:', adminId === null);
-    console.log('  adminId === 0?:', adminId === 0);
-    console.log('  adminId === false?:', adminId === false);
-    console.log('  adminId === "":', adminId === "");
-    
-    // FIXED: Check if adminId is NOT present
-    if (!adminId) {
-      console.log('❌ No adminId found or adminId is falsy');
-      return res.status(401).json({
-        success: false,
-        message: 'Admin authentication required'
-      });
-    }
-    
-    const {
-      status,
-      admin_notes,
-      actual_vacate_date,
-      refund_amount,
-      penalty_waived,
-      penalty_deduction
-    } = req.body;
-    
-    console.log(`🔄 Admin: Updating vacate request ${id} by admin ${adminId}`);
-    console.log('Update data:', req.body);
-    
-    // Validate required fields
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        message: 'Status is required'
-      });
-    }
-    
-    // Validate status value
-    const validStatuses = ['pending', 'under_review', 'approved', 'rejected', 'completed'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
-      });
-    }
-    
-    // Get the request first to get tenant details
-    const request = await VacateRequestModel.getVacateRequestById(id);
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vacate request not found'
-      });
-    }
-    
-    // Prepare update data
-    const updateData = {
-      status,
-      admin_notes,
-      actual_vacate_date,
-      refund_amount
-    };
-    
-    // Calculate penalty deduction if waived
-    if (penalty_waived) {
-      // Get penalty calculation
-      const penalties = this.calculatePenalties(request);
-      if (penalties && penalties.total_penalty > 0) {
-        updateData.penalty_deduction = penalties.total_penalty;
+// Update vacate request status
+  async updateVacateRequestStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const adminId = req.user?.adminId;
+      
+      // FIXED: Check if adminId is NOT present
+      if (!adminId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Admin authentication required'
+        });
       }
-    } else if (penalty_deduction !== undefined) {
-      updateData.penalty_deduction = penalty_deduction;
-    }
-    
-    // Update the request
-    await VacateRequestModel.updateVacateRequestStatus(id, updateData, adminId);
-    
-    // Create notification for tenant
-    await this.createTenantNotification(request.tenant_id, status, request.vacate_request_id, adminId);
-    
-    res.json({
-      success: true,
-      message: `Vacate request status updated to ${status} successfully`,
-      data: {
-        request_id: id,
-        new_status: status,
-        updated_at: new Date(),
-        updated_by: adminId
+      
+      const {
+        status,
+        admin_notes,
+        actual_vacate_date,
+        refund_amount,
+        penalty_waived,
+        penalty_deduction
+      } = req.body;
+      
+      console.log(`🔄 Admin: Updating vacate request ${id} by admin ${adminId}`);
+      console.log('Update data:', req.body);
+      
+      // Validate required fields
+      if (!status) {
+        return res.status(400).json({
+          success: false,
+          message: 'Status is required'
+        });
       }
-    });
-    
-  } catch (error) {
-    console.error('🔥 Error updating vacate request status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update vacate request status',
-      error: error.message
-    });
+      
+      // Validate status value
+      const validStatuses = ['pending', 'under_review', 'approved', 'rejected', 'completed'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+        });
+      }
+      
+      // Get the request first to get tenant details and current status
+      const request = await VacateRequestModel.getVacateRequestById(id);
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: 'Vacate request not found'
+        });
+      }
+      
+      const oldStatus = request.vacate_status;
+      
+      // Prepare update data
+      const updateData = {
+        status,
+        admin_notes,
+        actual_vacate_date,
+        refund_amount
+      };
+      
+      // Calculate penalty deduction if waived
+      if (penalty_waived) {
+        // Get penalty calculation
+        const penalties = this.calculatePenalties(request);
+        if (penalties && penalties.total_penalty > 0) {
+          updateData.penalty_deduction = penalties.total_penalty;
+        }
+      } else if (penalty_deduction !== undefined) {
+        updateData.penalty_deduction = penalty_deduction;
+      }
+      
+      // Start transaction
+      await db.query('START TRANSACTION');
+
+      try {
+        // Update the request
+        await VacateRequestModel.updateVacateRequestStatus(id, updateData, adminId);
+        
+        // Send notification to tenant if status changed
+        if (status && status !== oldStatus) {
+          try {
+            await notificationController.notifyVacateStatusUpdate(
+              request.vacate_request_id,
+              request.tenant_id,
+              status,
+              admin_notes // Pass admin notes
+            );
+            console.log(`📨 Notification sent to tenant ${request.tenant_id} for vacate request ${id}`);
+          } catch (notifError) {
+            console.error('❌ Failed to send notification:', notifError);
+            // Don't fail the main operation if notification fails
+          }
+        }
+
+        await db.query('COMMIT');
+        
+        res.json({
+          success: true,
+          message: `Vacate request status updated to ${status} successfully`,
+          data: {
+            request_id: id,
+            new_status: status,
+            updated_at: new Date(),
+            updated_by: adminId
+          }
+        });
+        
+      } catch (error) {
+        await db.query('ROLLBACK');
+        throw error;
+      }
+      
+    } catch (error) {
+      console.error('🔥 Error updating vacate request status:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update vacate request status',
+        error: error.message
+      });
+    }
   }
-}
 
   // Calculate penalties (same as frontend logic)
   calculatePenalties(request) {
