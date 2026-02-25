@@ -1,5 +1,7 @@
+// controllers/adminLeaveRequestController.js
 const db = require('../config/db');
 const LeaveRequestModel = require('../models/leaveRequestModel');
+const notificationController = require("../controllers/tenantNotificationController");
 
 class LeaveRequestController {
   // Get all leave requests
@@ -192,109 +194,91 @@ class LeaveRequestController {
   }
 
   // Update leave request status
-  async updateLeaveRequestStatus(req, res) {
-    try {
-      // ✅ FIXED: Use adminId
-      const admin_id = req.user?.adminId;
-      const requestId = req.params.id;
-      const { status, admin_notes, assigned_to } = req.body;
+// Update the updateLeaveRequestStatus method
+async updateLeaveRequestStatus(req, res) {
+  try {
+    const admin_id = req.user?.adminId;
+    const requestId = req.params.id;
+    const { status, admin_notes, assigned_to } = req.body;
 
-      if (!admin_id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
-      }
-
-      // Validate status
-      const validStatuses = ['pending', 'in_progress', 'approved', 'rejected', 'completed', 'cancelled'];
-      if (!validStatuses.includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid status value'
-        });
-      }
-
-      console.log(`🔄 Admin ${admin_id} updating leave request ${requestId} to ${status}`);
-
-      // Check if request exists
-      const request = await LeaveRequestModel.findById(requestId);
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-          message: 'Leave request not found'
-        });
-      }
-
-      // Start transaction
-      await db.query('START TRANSACTION');
-
-      try {
-        // Update leave request status
-        await LeaveRequestModel.updateStatus(requestId, {
-          status,
-          admin_notes,
-          assigned_to
-        });
-
-        // Create notification for tenant
-        const statusMessages = {
-          approved: 'Your leave request has been approved',
-          rejected: 'Your leave request has been rejected',
-          in_progress: 'Your leave request is now in progress',
-          completed: 'Your leave request has been completed',
-          cancelled: 'Your leave request has been cancelled',
-          pending: 'Your leave request status has been updated to pending'
-        };
-
-        await db.query(
-          `INSERT INTO notifications (
-            recipient_id,
-            recipient_type,
-            title,
-            message,
-            notification_type,
-            related_entity_type,
-            related_entity_id,
-            priority,
-            is_read,
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            request.tenant_id,
-            'tenant',
-            'Leave Request Status Updated',
-            statusMessages[status] || 'Your leave request status has been updated',
-            'leave_request_update',
-            'tenant_request',
-            requestId,
-            'medium',
-            0
-          ]
-        );
-
-        await db.query('COMMIT');
-
-        console.log(`✅ Leave request ${requestId} updated to ${status}`);
-
-        res.json({
-          success: true,
-          message: 'Leave request status updated successfully'
-        });
-
-      } catch (error) {
-        await db.query('ROLLBACK');
-        throw error;
-      }
-
-    } catch (err) {
-      console.error('🔥 Error updating leave status:', err);
-      res.status(500).json({
+    if (!admin_id) {
+      return res.status(401).json({
         success: false,
-        message: err.message || 'Internal server error'
+        message: 'Authentication required'
       });
     }
+
+    // Validate status
+    const validStatuses = ['pending', 'in_progress', 'approved', 'rejected', 'completed', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value'
+      });
+    }
+
+    console.log(`🔄 Admin ${admin_id} updating leave request ${requestId} to ${status}`);
+
+    // Check if request exists and get current status
+    const request = await LeaveRequestModel.findById(requestId);
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Leave request not found'
+      });
+    }
+
+    const oldStatus = request.status;
+
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // Update leave request status
+      await LeaveRequestModel.updateStatus(requestId, {
+        status,
+        admin_notes,
+        assigned_to
+      });
+
+      // Send notification to tenant if status changed
+      if (status && status !== oldStatus) {
+        try {
+          await notificationController.notifyLeaveStatusUpdate(
+            requestId,
+            request.tenant_id,
+            status,
+            admin_notes // Pass admin notes
+          );
+          console.log(`📨 Notification sent to tenant ${request.tenant_id} for leave request ${requestId}`);
+        } catch (notifError) {
+          console.error('❌ Failed to send notification:', notifError);
+          // Don't fail the main operation if notification fails
+        }
+      }
+
+      await db.query('COMMIT');
+
+      console.log(`✅ Leave request ${requestId} updated to ${status}`);
+
+      res.json({
+        success: true,
+        message: 'Leave request status updated successfully'
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+
+  } catch (err) {
+    console.error('🔥 Error updating leave status:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error'
+    });
   }
+}
 
   // Get leave statistics
   async getLeaveStatistics(req, res) {

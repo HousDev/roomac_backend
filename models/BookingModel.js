@@ -239,6 +239,9 @@
 
 // module.exports = Booking;
 
+
+// model/BookingModel.js 
+// models/BookingModel.js
 const db = require("../config/db");
 
 const Booking = {
@@ -248,6 +251,7 @@ const Booking = {
         tenant_id,
         property_id,
         room_id,
+        is_couple,
         booking_type,
         tenant_name,
         email,
@@ -264,13 +268,14 @@ const Booking = {
         salutation,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
 
     const values = [
       data.tenantId || null,
       data.propertyId,
       data.roomId,
+      data.isCouple ? 1 : 0, // Add is_couple field
       data.bookingType, // daily | monthly
       data.fullName,
       data.email,
@@ -360,6 +365,11 @@ const Booking = {
       params.push(filters.booking_type);
     }
 
+    if (filters.is_couple !== undefined) {
+      sql += " AND is_couple = ?";
+      params.push(filters.is_couple ? 1 : 0);
+    }
+
     sql += " ORDER BY created_at DESC";
 
     const [rows] = await db.execute(sql, params);
@@ -389,7 +399,9 @@ const Booking = {
         COUNT(*) total,
         SUM(status='active') active,
         SUM(status='completed') completed,
-        SUM(status='cancelled') cancelled
+        SUM(status='cancelled') cancelled,
+        SUM(is_couple=1) couple_bookings,
+        SUM(is_couple=0) individual_bookings
       FROM bookings
       WHERE 1=1
     `;
@@ -402,6 +414,21 @@ const Booking = {
 
     const [rows] = await db.execute(sql, params);
     return rows[0];
+  },
+
+  async getCoupleBookings(propertyId) {
+    let sql = "SELECT * FROM bookings WHERE is_couple = 1";
+    let params = [];
+
+    if (propertyId) {
+      sql += " AND property_id = ?";
+      params.push(propertyId);
+    }
+
+    sql += " ORDER BY created_at DESC";
+
+    const [rows] = await db.execute(sql, params);
+    return rows;
   },
 };
 

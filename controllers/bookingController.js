@@ -384,6 +384,9 @@
 
 // module.exports = bookingController;
 
+
+// controllers/bookingController.js
+// controllers/bookingController.js
 const Booking = require("../models/BookingModel");
 const Payment = require("../models/PaymentModel");
 const TenantModel = require("../models/tenantModel");
@@ -406,10 +409,55 @@ const bookingController = {
           .json({ success: false, message: "Missing fields" });
       }
 
+      if (!data.gender) {
+        await conn.rollback();
+        conn.release();
+        return res
+          .status(400)
+          .json({ success: false, message: "Gender is required" });
+      }
+
       // normalize
       data.bookingType = data.bookingType === "short" ? "daily" : "monthly";
       data.paymentStatus = "pending";
       data.tenantId = null;
+      data.isCouple = data.isCouple || false;
+
+      // For couple bookings, validate that room allows couples
+      if (data.isCouple) {
+        const [roomRows] = await conn.execute(
+          "SELECT room_gender_preference FROM rooms WHERE id = ?",
+          [data.roomId]
+        );
+        
+        if (roomRows.length > 0) {
+          const preferences = roomRows[0].room_gender_preference;
+          let prefArray = [];
+          
+          if (preferences) {
+            prefArray = Array.isArray(preferences) 
+              ? preferences 
+              : typeof preferences === 'string' 
+                ? preferences.split(',').map(p => p.trim())
+                : [];
+          }
+          
+          const allowsCouples = prefArray.some(p => 
+            p.toLowerCase() === 'couples' || 
+            p.toLowerCase() === 'both' || 
+            p.toLowerCase() === 'mixed'
+          );
+          
+          if (!allowsCouples) {
+            await conn.rollback();
+            conn.release();
+            return res.status(400).json({ 
+              success: false, 
+              message: "Selected room does not allow couple bookings" 
+            });
+          }
+        }
+      }
 
       if (
         data.bookingType === "daily" &&
@@ -441,7 +489,7 @@ const bookingController = {
 
         if (!tenant) {
           const tenantId = await TenantModel.createFromBooking(
-            data,
+            { ...data, gender: data.gender },
             { sharing_type: data.sharingType },
             { name: data.propertyName },
           );
@@ -458,9 +506,10 @@ const bookingController = {
 
         await Booking.updatePaymentStatus(booking.id, "paid");
       } else {
-        enquiry = await EnquiryModel.createFromBooking(data, {
-          name: data.propertyName,
-        });
+        enquiry = await EnquiryModel.createFromBooking(
+          { ...data, gender: data.gender }, 
+          { name: data.propertyName }
+        );
       }
 
       await conn.commit();
@@ -471,10 +520,12 @@ const bookingController = {
         bookingId: booking.id,
         tenant,
         enquiry,
+        isCouple: data.isCouple,
       });
     } catch (err) {
       await conn.rollback();
       conn.release();
+      console.error("Booking creation error:", err);
       res.status(500).json({ success: false, error: err.message });
     }
   },
@@ -522,6 +573,12 @@ const bookingController = {
   async cancelBooking(req, res) {
     await Booking.updateStatus(req.params.id, "cancelled");
     res.json({ success: true });
+  },
+
+  // New endpoint to get couple bookings
+  async getCoupleBookings(req, res) {
+    const data = await Booking.getCoupleBookings(req.query.propertyId);
+    res.json({ success: true, data });
   },
 };
 
