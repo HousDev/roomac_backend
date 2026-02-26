@@ -1,3 +1,4 @@
+// model/vacateBedRequestModel.js
 const db = require('../config/db');
 
 class VacateBedModel {

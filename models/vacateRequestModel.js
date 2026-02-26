@@ -22,7 +22,7 @@ class VacateRequestModel {
           vbr.bed_id,
           ba.bed_number,
           vbr.primary_reason_id,
-          mv.value as primary_reason,
+          miv.name as primary_reason,
           vbr.secondary_reasons,
           vbr.overall_rating,
           vbr.food_rating,
@@ -66,7 +66,7 @@ class VacateRequestModel {
         INNER JOIN properties p ON vbr.property_id = p.id
         LEFT JOIN rooms r ON vbr.room_id = r.id
         LEFT JOIN bed_assignments ba ON vbr.bed_id = ba.id
-        LEFT JOIN master_values mv ON vbr.primary_reason_id = mv.id
+        LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id
         LEFT JOIN tenant_requests tr ON vbr.tenant_request_id = tr.id
         WHERE t.deleted_at IS NULL
       `;
@@ -103,6 +103,24 @@ class VacateRequestModel {
       const [rows] = await db.query(sql, params);
       
       console.log(`✅ Found ${rows.length} vacate requests`);
+
+      console.log(`✅ Found ${rows.length} vacate requests`);
+
+// Log the first row to see what's being returned
+if (rows.length > 0) {
+  console.log('📊 First row data:');
+  console.log('  - primary_reason_id:', rows[0].primary_reason_id);
+  console.log('  - primary_reason:', rows[0].primary_reason);
+  console.log('  - Raw primary_reason value type:', typeof rows[0].primary_reason);
+  
+  // Check if master_item_values has the data
+  const [masterCheck] = await db.query(
+    'SELECT id, name FROM master_item_values WHERE id IN (?, ?, ?, ?, ?, ?, ?)',
+    [57, 58, 59, 60, 61, 62, 63]
+  );
+  console.log('📋 Master item values check:', masterCheck);
+}
+
       
       // Parse JSON fields
       const parsedRows = rows.map(row => {
@@ -155,7 +173,7 @@ class VacateRequestModel {
           vbr.bed_id,
           ba.bed_number,
           vbr.primary_reason_id,
-          mv.value as primary_reason,
+          miv.name as primary_reason,
           vbr.secondary_reasons,
           vbr.overall_rating,
           vbr.food_rating,
@@ -196,7 +214,7 @@ class VacateRequestModel {
         INNER JOIN properties p ON vbr.property_id = p.id
         LEFT JOIN rooms r ON vbr.room_id = r.id
         LEFT JOIN bed_assignments ba ON vbr.bed_id = ba.id
-        LEFT JOIN master_values mv ON vbr.primary_reason_id = mv.id
+        LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id
         LEFT JOIN tenant_requests tr ON vbr.tenant_request_id = tr.id
         WHERE vbr.id = ? AND t.deleted_at IS NULL
       `;

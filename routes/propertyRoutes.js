@@ -1,7 +1,6 @@
 // propertyRoutes.js में
 const express = require("express");
 const router = express.Router();
-// const upload = require("../middleware/upload");
 const PropertyController = require("../controllers/propertyController");
 const { upload, compressImages } = require("../middleware/upload");
 
@@ -13,28 +12,17 @@ router.get("/:id", PropertyController.getById);
 router.get("/:id/debug", PropertyController.debug); 
 
 
-// router.post(
-//   "/",
-//   upload.array("photos", 10),
-//   PropertyController.create
-// );
 router.post(
   "/",
-  upload.array("photos", 10),   // multer upload
-  compressImages,              // 👈 compress here
-  PropertyController.create   // controller
+  upload.array("photos", 10),   
+  compressImages,              
+  PropertyController.create   
 );
-
-// router.put(
-//   "/:id",
-//   upload.array("photos", 10),
-//   PropertyController.update
-// );
 
 router.put(
   "/:id",
-  upload.array("photos", 10),   // multer upload
-  compressImages,              // 👈 compress new images
+  upload.array("photos", 10),   
+  compressImages,              
   PropertyController.update
 );
 
