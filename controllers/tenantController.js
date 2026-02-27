@@ -1,3 +1,4 @@
+// controllers/tenantController.js
 const bcrypt = require("bcrypt");
 const TenantModel = require("../models/tenantModel");
 const xlsx = require("xlsx");
@@ -113,7 +114,54 @@ const TenantController = {
     }
   },
 
- 
+  // async getById(req, res) {
+  //   try {
+  //     const id = req.params.id;
+  //     const tenant = await TenantModel.findById(id);
+  //     if (!tenant)
+  //       return res
+  //         .status(404)
+  //         .json({ success: false, message: "Tenant not found" });
+
+  //     const bookings = await TenantModel.getBookingsForTenantIds([tenant.id]);
+  //     const payments = await TenantModel.getPaymentsForTenantIds([tenant.id]);
+  //     const credentials = await TenantModel.getCredentialsByTenantIds([tenant.id]);
+
+  //     // Format bookings
+  //     const formattedBookings = bookings.map(b => ({
+  //       id: b.id,
+  //       status: b.status,
+  //       monthly_rent: Number(b.monthly_rent || 0),
+  //       properties: { 
+  //         name: b.property_name || null,
+  //         city: b.property_city || null,
+  //         state: b.property_state || null
+  //       },
+  //       room: {
+  //         room_number: b.room_number,
+  //         room_type: b.room_type,
+  //         sharing_type: b.sharing_type,
+  //         floor: b.floor
+  //       }
+  //     }));
+
+  //     return res.json({
+  //       success: true,
+  //       data: {
+  //         ...tenant,
+  //         bookings: formattedBookings || [],
+  //         payments: payments || [],
+  //         has_credentials: credentials && credentials.length ? true : false,
+  //         credential_email: credentials && credentials[0] ? credentials[0].email : null,
+  //       },
+  //     });
+  //   } catch (err) {
+  //     console.error("TenantController.getById error:", err);
+  //     return res
+  //       .status(500)
+  //       .json({ success: false, message: "Failed to fetch tenant" });
+  //   }
+  // },
 
   async getById(req, res) {
   try {
@@ -195,7 +243,191 @@ if (tenant.property_id) {
   }
 },
 
-
+// async create(req, res) {
+//   try {
+//     console.log('=== CREATE TENANT START ===');
+//     console.log('Body fields:', Object.keys(req.body || {}));
+//     console.log('Files received:', req.files ? Object.keys(req.files) : 'No files');
+    
+//     const body = req.body || {};
+    
+//     // Validate required fields
+//     if (!body.full_name) {
+//       return res.status(400).json({ success: false, message: "Full name is required" });
+//     }
+//     if (!body.email) {
+//       return res.status(400).json({ success: false, message: "Email is required" });
+//     }
+//     if (!body.phone) {
+//       return res.status(400).json({ success: false, message: "Phone number is required" });
+//     }
+    
+//     // Process uploaded files
+//     const uploadedFiles = {};
+//     const additionalDocs = [];
+    
+//     // Process main documents
+//     if (req.files) {
+//       // ID Proof
+//       if (req.files.id_proof_url && req.files.id_proof_url[0]) {
+//         uploadedFiles.id_proof_url = `/uploads/id_proofs/${req.files.id_proof_url[0].filename}`;
+//       }
+      
+//       // Address Proof
+//       if (req.files.address_proof_url && req.files.address_proof_url[0]) {
+//         uploadedFiles.address_proof_url = `/uploads/address_proofs/${req.files.address_proof_url[0].filename}`;
+//       }
+      
+//       // Photo
+//       if (req.files.photo_url && req.files.photo_url[0]) {
+//         uploadedFiles.photo_url = `/uploads/photos/${req.files.photo_url[0].filename}`;
+//       }
+      
+//       // Process additional documents - look for fields starting with 'additional_'
+//       Object.keys(req.files).forEach(field => {
+//         if (field.startsWith('additional_documents_') || field.startsWith('additional_doc_')) {
+//           req.files[field].forEach(file => {
+//             additionalDocs.push({
+//               filename: file.originalname,
+//               url: `/uploads/additional_docs/${file.filename}`,
+//               uploaded_at: new Date().toISOString()
+//             });
+//           });
+//         }
+//       });
+//     }
+    
+//     console.log('Uploaded file URLs:', uploadedFiles);
+//     console.log('Additional documents:', additionalDocs);
+    
+//     // Phone validation
+//     const phoneRegex = /^[6-9]\d{9}$/;
+//     if (body.phone && !phoneRegex.test(body.phone)) {
+//       return res.status(400).json({ success: false, message: "Invalid Indian mobile number" });
+//     }
+    
+//     // Emergency contact phone validation
+//     if (body.emergency_contact_phone) {
+//       if (!phoneRegex.test(body.emergency_contact_phone)) {
+//         return res.status(400).json({ success: false, message: "Invalid emergency contact phone number" });
+//       }
+//     }
+    
+//     // Age validation
+//     if (body.date_of_birth) {
+//       const dob = new Date(body.date_of_birth);
+//       if (isNaN(dob.getTime())) {
+//         return res.status(400).json({ success: false, message: "Invalid date of birth" });
+//       }
+//       const today = new Date();
+//       let age = today.getFullYear() - dob.getFullYear();
+//       const monthDiff = today.getMonth() - dob.getMonth();
+//       if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+//         age--;
+//       }
+//       if (age < 18) {
+//         return res.status(400).json({ success: false, message: "Tenant must be at least 18 years old" });
+//       }
+//     }
+    
+//     // Handle preferred_property_id
+//     let preferredPropertyId = body.preferred_property_id;
+//     if (preferredPropertyId) {
+//       preferredPropertyId = parseInt(preferredPropertyId, 10);
+//       if (isNaN(preferredPropertyId)) {
+//         preferredPropertyId = null;
+//       }
+//     } else {
+//       preferredPropertyId = null;
+//     }
+    
+//     // Prepare tenant data with emergency contact fields
+//     const tenantData = {
+//       full_name: body.full_name,
+//       email: body.email,
+//       phone: body.phone,
+//       country_code: body.country_code || '+91',
+//       gender: body.gender,
+//       date_of_birth: body.date_of_birth,
+//       occupation_category: body.occupation_category,
+//       exact_occupation: body.exact_occupation,
+//       occupation: body.occupation,
+//       portal_access_enabled: body.portal_access_enabled === 'true' || body.portal_access_enabled === '1' || body.portal_access_enabled === true,
+//       is_active: body.is_active === 'true' || body.is_active === '1' || body.is_active === true || true,
+//       id_proof_url: uploadedFiles.id_proof_url,
+//       address_proof_url: uploadedFiles.address_proof_url,
+//       photo_url: uploadedFiles.photo_url,
+//       address: body.address,
+//       city: body.city,
+//       state: body.state,
+//       pincode: body.pincode,
+//       preferred_sharing: body.preferred_sharing,
+//       preferred_room_type: body.preferred_room_type,
+//       preferred_property_id: preferredPropertyId,
+//       // NEW EMERGENCY CONTACT FIELDS
+//       emergency_contact_name: body.emergency_contact_name,
+//       emergency_contact_phone: body.emergency_contact_phone,
+//       emergency_contact_relation: body.emergency_contact_relation,
+//       // ADDITIONAL DOCUMENTS
+//       additional_documents: additionalDocs
+//     };
+    
+//     console.log('Creating tenant with data:', Object.keys(tenantData));
+    
+//     // Create tenant
+//     const tenantId = await TenantModel.create(tenantData);
+    
+//     // Create credentials if requested
+//     if (body.password && (body.create_credentials === "true" || body.create_credentials === true)) {
+//       try {
+//         const password_hash = await bcrypt.hash(body.password, 10);
+//         await TenantModel.createCredential({
+//           tenant_id: tenantId,
+//           email: body.email,
+//           password_hash,
+//         });
+//         console.log('Credentials created for tenant:', tenantId);
+//       } catch (credErr) {
+//         console.error("Failed to create credentials:", credErr.message);
+//       }
+//     }
+    
+//     return res.status(201).json({
+//       success: true,
+//       message: "Tenant created successfully",
+//       id: tenantId,
+//       file_urls: uploadedFiles,
+//       additional_documents: additionalDocs
+//     });
+    
+//   } catch (err) {
+//     console.error("TenantController.create error:", err);
+    
+//     // Clean up uploaded files on error
+//     if (req.files) {
+//       Object.values(req.files).forEach(fileArray => {
+//         if (fileArray && fileArray.length > 0) {
+//           fileArray.forEach(file => {
+//             if (file.path && fs.existsSync(file.path)) {
+//               try {
+//                 fs.unlinkSync(file.path);
+//               } catch (unlinkErr) {
+//                 console.error('Failed to delete file:', unlinkErr);
+//               }
+//             }
+//           });
+//         }
+//       });
+//     }
+    
+//     if (err.code === 'ER_DUP_ENTRY') {
+//       return res.status(400).json({ success: false, message: "Email already exists" });
+//     }
+//     return res
+//       .status(500)
+//       .json({ success: false, message: "Failed to create tenant: " + err.message });
+//   }
+// },
 
 async create(req, res) {
   try {
@@ -428,6 +660,317 @@ async create(req, res) {
 
 
 
+  // async update(req, res) {
+  //   try {
+  //     const id = req.params.id;
+  //     const body = req.body || {};
+  //     const files = req.files || {};
+
+  //     console.log('Update tenant id:', id);
+  //     console.log('Update tenant body:', body);
+  //     console.log('Update tenant files:', Object.keys(files));
+
+  //     // Get existing tenant to preserve existing files
+  //     const existingTenant = await TenantModel.findById(id);
+  //     if (!existingTenant) {
+  //       // Clean up uploaded files if tenant not found
+  //       if (req.files) {
+  //         Object.values(req.files).forEach(fileArray => {
+  //           if (fileArray && fileArray.length > 0) {
+  //             fileArray.forEach(file => {
+  //               if (file.path && fs.existsSync(file.path)) {
+  //                 fs.unlinkSync(file.path);
+  //               }
+  //             });
+  //           }
+  //         });
+  //       }
+  //       return res.status(404).json({ success: false, message: "Tenant not found" });
+  //     }
+
+  //     // Handle file uploads - keep existing if new not provided
+  //     const updateData = {};
+      
+  //     // ID Proof
+  //     if (files.id_proof_file && files.id_proof_file[0]) {
+  //       updateData.id_proof_url = `/uploads/id_proofs/${files.id_proof_file[0].filename}`;
+  //       // Delete old file if exists
+  //       if (existingTenant.id_proof_url) {
+  //         const oldPath = existingTenant.id_proof_url.replace('/uploads/', 'uploads/');
+  //         if (fs.existsSync(oldPath)) {
+  //           fs.unlinkSync(oldPath);
+  //         }
+  //       }
+  //     }
+      
+  //     // Address Proof
+  //     if (files.address_proof_file && files.address_proof_file[0]) {
+  //       updateData.address_proof_url = `/uploads/address_proofs/${files.address_proof_file[0].filename}`;
+  //       if (existingTenant.address_proof_url) {
+  //         const oldPath = existingTenant.address_proof_url.replace('/uploads/', 'uploads/');
+  //         if (fs.existsSync(oldPath)) {
+  //           fs.unlinkSync(oldPath);
+  //         }
+  //       }
+  //     }
+      
+  //     // Photo
+  //     if (files.photo_file && files.photo_file[0]) {
+  //       updateData.photo_url = `/uploads/photos/${files.photo_file[0].filename}`;
+  //       if (existingTenant.photo_url) {
+  //         const oldPath = existingTenant.photo_url.replace('/uploads/', 'uploads/');
+  //         if (fs.existsSync(oldPath)) {
+  //           fs.unlinkSync(oldPath);
+  //         }
+  //       }
+  //     }
+
+  //     // Add other fields
+  //     const fields = [
+  //       'full_name', 'email', 'phone', 'country_code', 'gender', 'date_of_birth',
+  //       'occupation_category', 'exact_occupation', 'occupation', 'address',
+  //       'city', 'state', 'pincode', 'preferred_sharing', 'preferred_room_type',
+  //       'preferred_property_id'
+  //     ];
+
+  //     fields.forEach(field => {
+  //       if (body[field] !== undefined) {
+  //         updateData[field] = body[field];
+  //       }
+  //     });
+
+  //     if (typeof body.is_active !== "undefined") {
+  //       updateData.is_active = body.is_active === 'true' || body.is_active === '1' || body.is_active === true;
+  //     }
+  //     if (typeof body.portal_access_enabled !== "undefined") {
+  //       updateData.portal_access_enabled = body.portal_access_enabled === 'true' || body.portal_access_enabled === '1' || body.portal_access_enabled === true;
+  //     }
+
+  //     // Validate phone if provided
+  //     if (body.phone) {
+  //       const phoneRegex = /^[6-9]\d{9}$/;
+  //       if (!phoneRegex.test(body.phone)) {
+  //         return res.status(400).json({ success: false, message: "Invalid Indian mobile number" });
+  //       }
+  //     }
+
+  //     // Update tenant
+  //     const ok = await TenantModel.update(id, updateData);
+  //     if (!ok) {
+  //       return res.status(404).json({ success: false, message: "Tenant not found or no changes" });
+  //     }
+
+  //     // Update/create credentials if password is provided
+  //     if (body.password && (body.update_credentials === "true" || body.update_credentials === true)) {
+  //       try {
+  //         const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
+          
+  //         // Check if credentials exist
+  //         const credentials = await TenantModel.getCredentialsByTenantIds([id]);
+  //         if (credentials && credentials.length > 0) {
+  //           await TenantModel.updateCredential(id, { password_hash });
+  //           console.log('Credentials updated for tenant:', id);
+  //         } else {
+  //           await TenantModel.createCredential({
+  //             tenant_id: id,
+  //             email: body.email || existingTenant.email,
+  //             password_hash,
+  //           });
+  //           console.log('Credentials created for tenant:', id);
+  //         }
+  //       } catch (credErr) {
+  //         console.error("Failed to update credentials:", credErr);
+  //         // Continue even if credential update fails
+  //       }
+  //     }
+
+  //     return res.json({ success: true, message: "Tenant updated successfully" });
+  //   } catch (err) {
+  //     console.error("TenantController.update error:", err);
+      
+  //     // Clean up uploaded files on error
+  //     if (req.files) {
+  //       Object.values(req.files).forEach(fileArray => {
+  //         if (fileArray && fileArray.length > 0) {
+  //           fileArray.forEach(file => {
+  //             if (file.path && fs.existsSync(file.path)) {
+  //               fs.unlinkSync(file.path);
+  //             }
+  //           });
+  //         }
+  //       });
+  //     }
+      
+  //     return res.status(500).json({ success: false, message: "Failed to update tenant: " + err.message });
+  //   }
+  // },
+
+//   async update(req, res) {
+//   try {
+//     const id = req.params.id;
+//     const body = req.body || {};
+//     const files = req.files || {};
+
+//     console.log('Update tenant id:', id);
+//     console.log('Update tenant body fields:', Object.keys(body));
+//     console.log('Update tenant files:', Object.keys(files));
+
+//     // Get existing tenant to preserve existing files
+//     const existingTenant = await TenantModel.findById(id);
+//     if (!existingTenant) {
+//       // Clean up uploaded files if tenant not found
+//       if (req.files) {
+//         Object.values(req.files).forEach(fileArray => {
+//           if (fileArray && fileArray.length > 0) {
+//             fileArray.forEach(file => {
+//               if (file.path && fs.existsSync(file.path)) {
+//                 fs.unlinkSync(file.path);
+//               }
+//             });
+//           }
+//         });
+//       }
+//       return res.status(404).json({ success: false, message: "Tenant not found" });
+//     }
+
+//     // Handle file uploads - keep existing if new not provided
+//     const updateData = {};
+    
+//     // Process main documents
+//     const processMainDocument = (fieldName, folder, existingUrl) => {
+//       if (files[fieldName] && files[fieldName][0]) {
+//         const file = files[fieldName][0];
+//         updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
+//         // Delete old file if exists
+//         if (existingUrl) {
+//           const oldPath = existingUrl.replace('/uploads/', 'uploads/');
+//           if (fs.existsSync(oldPath)) {
+//             try {
+//               fs.unlinkSync(oldPath);
+//             } catch (unlinkErr) {
+//               console.error(`Failed to delete old ${fieldName}:`, unlinkErr);
+//             }
+//           }
+//         }
+//         return true;
+//       }
+//       return false;
+//     };
+    
+//     processMainDocument('id_proof_url', 'id_proofs', existingTenant.id_proof_url);
+//     processMainDocument('address_proof_url', 'address_proofs', existingTenant.address_proof_url);
+//     processMainDocument('photo_url', 'photos', existingTenant.photo_url);
+    
+//     // Process additional documents
+//     let additionalDocs = existingTenant.additional_documents || [];
+//     Object.keys(files).forEach(field => {
+//       if (field.startsWith('additional_doc_')) {
+//         files[field].forEach(file => {
+//           const newDoc = {
+//             filename: file.originalname,
+//             url: `/uploads/additional_docs/${file.filename}`,
+//             uploaded_at: new Date().toISOString()
+//           };
+//           additionalDocs.push(newDoc);
+//         });
+//       }
+//     });
+    
+//     // Only update additional_documents if we have new ones
+//     if (additionalDocs.length > (existingTenant.additional_documents?.length || 0)) {
+//       updateData.additional_documents = additionalDocs;
+//     }
+    
+//     // Add other fields
+//     const fields = [
+//       'full_name', 'email', 'phone', 'country_code', 'gender', 'date_of_birth',
+//       'occupation_category', 'exact_occupation', 'occupation', 'address',
+//       'city', 'state', 'pincode', 'preferred_sharing', 'preferred_room_type',
+//       'preferred_property_id',
+//       // NEW EMERGENCY CONTACT FIELDS
+//       'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation'
+//     ];
+
+//     fields.forEach(field => {
+//       if (body[field] !== undefined) {
+//         updateData[field] = body[field];
+//       }
+//     });
+
+//     // Handle boolean fields
+//     if (typeof body.is_active !== "undefined") {
+//       updateData.is_active = body.is_active === 'true' || body.is_active === '1' || body.is_active === true;
+//     }
+//     if (typeof body.portal_access_enabled !== "undefined") {
+//       updateData.portal_access_enabled = body.portal_access_enabled === 'true' || body.portal_access_enabled === '1' || body.portal_access_enabled === true;
+//     }
+
+//     // Validate phone if provided
+//     if (body.phone) {
+//       const phoneRegex = /^[6-9]\d{9}$/;
+//       if (!phoneRegex.test(body.phone)) {
+//         return res.status(400).json({ success: false, message: "Invalid Indian mobile number" });
+//       }
+//     }
+    
+//     // Validate emergency contact phone if provided
+//     if (body.emergency_contact_phone) {
+//       const phoneRegex = /^[6-9]\d{9}$/;
+//       if (!phoneRegex.test(body.emergency_contact_phone)) {
+//         return res.status(400).json({ success: false, message: "Invalid emergency contact phone number" });
+//       }
+//     }
+
+//     // Update tenant
+//     const ok = await TenantModel.update(id, updateData);
+//     if (!ok) {
+//       return res.status(404).json({ success: false, message: "Tenant not found or no changes" });
+//     }
+
+//     // Update/create credentials if password is provided
+//     if (body.password && (body.update_credentials === "true" || body.update_credentials === true)) {
+//       try {
+//         const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
+        
+//         // Check if credentials exist
+//         const credentials = await TenantModel.getCredentialsByTenantIds([id]);
+//         if (credentials && credentials.length > 0) {
+//           await TenantModel.updateCredential(id, { password_hash });
+//           console.log('Credentials updated for tenant:', id);
+//         } else {
+//           await TenantModel.createCredential({
+//             tenant_id: id,
+//             email: body.email || existingTenant.email,
+//             password_hash,
+//           });
+//           console.log('Credentials created for tenant:', id);
+//         }
+//       } catch (credErr) {
+//         console.error("Failed to update credentials:", credErr);
+//         // Continue even if credential update fails
+//       }
+//     }
+
+//     return res.json({ success: true, message: "Tenant updated successfully", additional_documents: additionalDocs });
+//   } catch (err) {
+//     console.error("TenantController.update error:", err);
+    
+//     // Clean up uploaded files on error
+//     if (req.files) {
+//       Object.values(req.files).forEach(fileArray => {
+//         if (fileArray && fileArray.length > 0) {
+//           fileArray.forEach(file => {
+//             if (file.path && fs.existsSync(file.path)) {
+//               fs.unlinkSync(file.path);
+//             }
+//           });
+//         }
+//       });
+//     }
+    
+//     return res.status(500).json({ success: false, message: "Failed to update tenant: " + err.message });
+//   }
+// },
 
 async update(req, res) {
   try {
