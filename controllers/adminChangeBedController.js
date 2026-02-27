@@ -3,6 +3,15 @@ const db = require('../config/db');
 const notificationController = require("./tenantNotificationController"); 
 
 class ChangeBedRequestController {
+constructor() {
+    // Bind methods to maintain 'this' context
+    this.sendStatusNotification = this.sendStatusNotification.bind(this);
+    this.updateRequestStatus = this.updateRequestStatus.bind(this);
+    this.getChangeBedRequests = this.getChangeBedRequests.bind(this);
+    this.getChangeBedRequestById = this.getChangeBedRequestById.bind(this);
+    this.processBedChange = this.processBedChange.bind(this);
+    this.getStatistics = this.getStatistics.bind(this);
+  }
   
 async getChangeBedRequests(req, res) {
   try {
@@ -523,15 +532,15 @@ async updateRequestStatus(req, res) {
     try {
       // Update change_bed_requests
       await db.query(
-        `UPDATE change_bed_requests 
-         SET request_status = ?,
-             assigned_bed_number = COALESCE(?, assigned_bed_number),
-             rent_difference = COALESCE(?, rent_difference),
-             admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n[', NOW(), '] ', ?),
-             updated_at = NOW()
-         WHERE id = ?`,
-        [request_status, assigned_bed_number, rent_difference, admin_notes || '', id]
-      );
+  `UPDATE change_bed_requests 
+   SET request_status = ?,
+       assigned_bed_number = COALESCE(?, assigned_bed_number),
+       rent_difference = COALESCE(?, rent_difference),
+       admin_notes = ?,
+       updated_at = NOW()
+   WHERE id = ?`,
+  [request_status, assigned_bed_number, rent_difference, admin_notes || '', id]
+);
 
       // If status is processed, update tenant_requests status
       if (request_status === 'processed') {
@@ -563,8 +572,8 @@ async updateRequestStatus(req, res) {
       // SEND NOTIFICATION TO TENANT
       try {
         await this.sendStatusNotification(
-          tenantId,
           currentRequest.tenant_request_id,
+          tenantId,
           oldStatus,
           request_status,
           admin_notes,
@@ -597,14 +606,29 @@ async updateRequestStatus(req, res) {
 }
   // NEW METHOD: Send status notification
 // Send status notification
-async sendStatusNotification(requestId, tenantId, status, adminNotes, requestData) {
+async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNotes, requestData, status) {
   console.log('========================================');
   console.log('📨 SEND STATUS NOTIFICATION CALLED');
   console.log('Request ID:', requestId);
   console.log('Tenant ID:', tenantId);
-  console.log('Status:', status);
+  console.log('Old Status:', oldStatus);
+  console.log('New Status:', newStatus);
   console.log('Admin Notes:', adminNotes);
   console.log('========================================');
+
+  // Verify tenant exists
+  const [tenantCheck] = await db.query(
+    'SELECT id, full_name FROM tenants WHERE id = ?',
+    [tenantId]
+  );
+  
+  if (!tenantCheck || tenantCheck.length === 0) {
+    console.error(`❌ Tenant ID ${tenantId} not found in database!`);
+    return null;
+  }
+  
+  console.log(`✅ Tenant verified: ${tenantCheck[0].full_name} (ID: ${tenantCheck[0].id})`);
+
 
   const statusMessages = {
     'pending': {
@@ -633,7 +657,7 @@ async sendStatusNotification(requestId, tenantId, status, adminNotes, requestDat
     }
   };
 
-  const notification = statusMessages[status];
+  const notification = statusMessages[newStatus];
   
   if (!notification) {
     console.error(`❌ No message defined for status: ${status}`);
@@ -664,19 +688,47 @@ async sendStatusNotification(requestId, tenantId, status, adminNotes, requestDat
   }
 
   try {
-    const result = await notificationController.createNotification({
-      tenantId,
-      title: notification.title,
-      message: notification.message,
-      notificationType: 'change_bed',
-      relatedEntityType: 'change_bed',
-      relatedEntityId: requestId,
-      priority: status === 'approved' ? 'high' : (status === 'rejected' ? 'medium' : 'low')
-    });
+    // Log the exact SQL we're about to execute
+    const sql = `
+      INSERT INTO notifications (
+        recipient_id,
+        recipient_type,
+        title,
+        message,
+        notification_type,
+        related_entity_type,
+        related_entity_id,
+        priority,
+        is_read,
+        created_at
+      ) VALUES (?, 'tenant', ?, ?, 'change_bed', 'change_bed', ?, ?, 0, NOW())
+    `;
     
-    console.log('✅ Notification created successfully with ID:', result);
-    console.log('========================================');
-    return result;
+    const params = [
+      tenantId,
+      notification.title,
+      notification.message,
+      requestId,
+      status === 'approved' ? 'high' : (status === 'rejected' ? 'medium' : 'low')
+    ];
+    
+    console.log('📝 Executing SQL:', sql);
+    console.log('📝 With params:', params);
+    
+    const [result] = await db.query(sql, params);
+    
+    console.log('✅ Notification inserted successfully!');
+    console.log('✅ Insert ID:', result.insertId);
+    
+    // Verify the notification was inserted
+    const [verify] = await db.query(
+      'SELECT * FROM notifications WHERE id = ?',
+      [result.insertId]
+    );
+    
+    console.log('✅ Verified notification in DB:', verify[0]);
+    
+    return result.insertId;
   } catch (error) {
     console.error('❌ Error in notificationController.createNotification:', error);
     console.error('❌ Error stack:', error.stack);

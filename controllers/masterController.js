@@ -212,7 +212,6 @@ exports.consumeMasters = async (req, res) => {
   try {
     const { tab, type } = req.query;
     const result = await masterModel.consumeMasters({ tab, type });
-    console.log('Consume Masters Result:', result); // Debug log
     res.status(200).json({
       success: true,
       data: result

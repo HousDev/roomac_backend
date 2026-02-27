@@ -149,6 +149,7 @@ const bookingRoutes = require("./routes/bookingRoutes");
 const paymentsRoutes = require("./routes/payment.Routes");
 
 const  paymentRoutes =require ("./routes/paymentRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 dotenv.config();
 
 const app = express();
@@ -239,6 +240,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentsRoutes);
 
 app.use("/api/payment", paymentRoutes);
+app.use("/api/reports", reportRoutes);
 
 /* =========================
    SERVER START

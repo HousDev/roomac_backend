@@ -1,3 +1,5 @@
+
+// contorllers/vacateBedRequestContorller.js
 const db = require('../config/db');
 const VacateBedRequest = require('../models/vacateBedRequestModel');
 
