@@ -114,6 +114,8 @@ const TenantController = {
     }
   },
 
+ 
+
   async getById(req, res) {
   try {
     const id = req.params.id;
@@ -139,10 +141,19 @@ const TenantController = {
         .json({ success: false, message: "Tenant not found" });
 
     // Get property details if property_id exists
-    let propertyDetails = null;
-    if (tenant.property_id) {
-      propertyDetails = await getPropertyWithTerms(tenant.property_id);
-    }
+    // Get property details if property_id exists
+let propertyDetails = null;
+if (tenant.property_id) {
+  try {
+    const [propRows] = await pool.query(
+      'SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?',
+      [tenant.property_id]
+    );
+    propertyDetails = propRows[0] || null;
+  } catch (propErr) {
+    console.error('Failed to fetch property details:', propErr);
+  }
+}
 
     const bookings = await TenantModel.getBookingsForTenantIds([tenant.id]);
     const payments = await TenantModel.getPaymentsForTenantIds([tenant.id]);
@@ -184,6 +195,7 @@ const TenantController = {
       .json({ success: false, message: "Failed to fetch tenant" });
   }
 },
+
 
 
 async create(req, res) {
@@ -414,6 +426,8 @@ async create(req, res) {
     });
   }
 },
+
+
 
 
 async update(req, res) {
