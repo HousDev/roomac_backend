@@ -24,4 +24,6 @@ router.get('/test', adminAuth, (req, res) => {
   res.json({ success: true, message: 'Deletion requests API is working' });
 });
 
+// Bulk delete deletion requests
+router.post('/bulk-delete', adminAuth, AdminDeletionRequestsController.bulkDeleteDeletionRequests);
 module.exports = router;

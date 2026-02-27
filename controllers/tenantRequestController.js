@@ -715,46 +715,47 @@ if (request_type === 'change_bed' && change_bed_data) {
           tenant_request_id: requestId
         });
 
-        await db.query(
-          `INSERT INTO vacate_bed_requests (
-            tenant_id,
-            property_id,
-            bed_id,
-            room_id,
-            primary_reason_id,
-            miv.name as primary_reason,
-            secondary_reasons,
-            overall_rating,
-            food_rating,
-            cleanliness_rating,
-            management_rating,
-            improvement_suggestions,
-            expected_vacate_date,  
-            lockin_penalty_accepted,
-            notice_penalty_accepted,
-            status,
-            created_at,
-            tenant_request_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), ?)`,
-          [
-            tenant_id,
-            tenantData.property_id,
-            tenantData.bed_assignment_id,
-            tenantData.room_id,
-            primary_reason_id,
-            primary_reason_name,
-            secondary_reasons.length > 0 ? JSON.stringify(secondary_reasons) : null,
-            overall_rating,
-            food_rating,
-            cleanliness_rating,
-            management_rating,
-            improvement_suggestions,
-            expected_vacate_date || null,  
-            lockin_penalty_accepted ? 1 : 0,
-            notice_penalty_accepted ? 1 : 0,
-            requestId
-          ]
-        );
+     await db.query(
+  `INSERT INTO vacate_bed_requests (
+    tenant_id,
+    property_id,
+    bed_id,
+    room_id,
+    primary_reason_id,
+    primary_reason_text,
+    secondary_reasons,
+    overall_rating,
+    food_rating,
+    cleanliness_rating,
+    management_rating,
+    improvement_suggestions,
+    expected_vacate_date,  
+    lockin_penalty_accepted,
+    notice_penalty_accepted,
+    status,
+    created_at,
+    updated_at,
+    tenant_request_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?)`,
+  [
+    tenant_id,
+    tenantData.property_id,
+    tenantData.bed_assignment_id,
+    tenantData.room_id,
+    primary_reason_id,
+    primary_reason_name,  
+    secondary_reasons.length > 0 ? JSON.stringify(secondary_reasons) : null,
+    overall_rating,
+    food_rating,
+    cleanliness_rating,
+    management_rating,
+    improvement_suggestions,
+    expected_vacate_date || null,  
+    lockin_penalty_accepted ? 1 : 0,
+    notice_penalty_accepted ? 1 : 0,
+    requestId  
+  ]
+);
 
         console.log('✅ vacate_bed_request record created successfully');
       }

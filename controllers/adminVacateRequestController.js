@@ -45,6 +45,73 @@ class AdminVacateRequestController {
     }
   }
 
+  // Add this function for bulk delete
+async bulkDeleteVacateRequests(req, res) {
+  try {
+    const adminId = req.user?.adminId;
+    const { ids } = req.body;
+
+    // FIXED: Check if adminId is NOT present
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin authentication required'
+      });
+    }
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of vacate request IDs to delete"
+      });
+    }
+
+    console.log(`🗑️ Admin ${adminId} bulk deleting vacate requests:`, ids);
+
+    // Start a transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // First, delete any related records (if any)
+      // For example, if you have vacate_request_details table:
+      // await db.query(
+      //   `DELETE FROM vacate_request_details WHERE vacate_request_id IN (?)`,
+      //   [ids]
+      // );
+      
+      // Then delete the vacate requests
+      const [result] = await db.query(
+        `DELETE FROM vacate_bed_requests WHERE id IN (?)`,
+        [ids]
+      );
+
+      await db.query('COMMIT');
+
+      console.log(`✅ Successfully deleted ${result.affectedRows} vacate requests`);
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} vacate requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+
+  } catch (err) {
+    console.error('🔥 Error bulk deleting vacate requests:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: err.message || "Failed to delete vacate requests"
+    });
+  }
+}
+
   // Get single vacate request by ID
   async getVacateRequestById(req, res) {
     try {

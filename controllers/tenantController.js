@@ -114,11 +114,9 @@ const TenantController = {
     }
   },
 
-<<<<<<<<< Temporary merge branch 1
  
 
-=========
->>>>>>>>> Temporary merge branch 2
+
   async getById(req, res) {
   try {
     const id = req.params.id;
@@ -199,10 +197,9 @@ if (tenant.property_id) {
   }
 },
 
-<<<<<<<<< Temporary merge branch 1
 
-=========
->>>>>>>>> Temporary merge branch 2
+
+
 
 async create(req, res) {
   try {
@@ -434,11 +431,10 @@ async create(req, res) {
 },
 
 
-<<<<<<<<< Temporary merge branch 1
 
 
-=========
->>>>>>>>> Temporary merge branch 2
+
+
 async update(req, res) {
   try {
     const id = req.params.id;

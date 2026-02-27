@@ -14,4 +14,6 @@ router.get("/:id", adminAuth, controller.getLeaveRequestById);
 // Update leave request status
 router.put("/:id/status", adminAuth, controller.updateLeaveRequestStatus);
 
+router.post("/bulk-delete", adminAuth, controller.bulkDeleteLeaveRequests);
+
 module.exports = router;

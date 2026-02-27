@@ -18,4 +18,6 @@ router.get("/staff/active", adminAuth, controller.getActiveStaff);
 // Get complaint categories
 router.get("/categories/all", adminAuth, controller.getComplaintCategories);
 
+// Add bulk delete route
+router.post("/bulk-delete", adminAuth, controller.bulkDeleteComplaints);
 module.exports = router;
