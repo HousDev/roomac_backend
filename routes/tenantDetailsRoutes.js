@@ -31,5 +31,7 @@ router.get('/bed-history/:tenantId', TenantDetailsController.getBedAssignmentHis
 
 router.get('/additional-documents', tenantAuth, TenantDetailsController.getAdditionalDocuments);
 router.get('/additional-documents/:tenantId', TenantDetailsController.getAdditionalDocuments);
+router.get("/debug/:tenantId", TenantDetailsController.debugProfile);
+router.get("/debug", tenantAuth, TenantDetailsController.debugProfile);
 
 module.exports = router;

@@ -137,6 +137,51 @@ async getBedAssignmentHistory(req, res) {
     });
   }
 },
+
+async debugProfile(req, res) {
+  try {
+    const tenantId = req.user?.tenantId || req.params.tenantId;
+    
+    if (!tenantId) {
+      return res.status(400).json({ success: false, message: "Tenant ID required" });
+    }
+
+    console.log('🔍 DEBUG - Getting full profile for tenant ID:', tenantId);
+    
+    const [rows] = await pool.query(`
+      SELECT 
+        t.*,
+        ba.room_id,
+        ba.bed_number,
+        r.room_number,
+        r.floor,
+        r.room_type,
+        r.rent_per_bed,
+        p.id as property_id,
+        p.name as property_name,
+        p.address as property_address,
+        p.property_manager_name,
+        p.property_manager_phone
+      FROM tenants t
+      LEFT JOIN bed_assignments ba ON ba.tenant_id = t.id
+      LEFT JOIN rooms r ON r.id = ba.room_id
+      LEFT JOIN properties p ON p.id = r.property_id
+      WHERE t.id = ?
+    `, [tenantId]);
+    
+    console.log('📊 DEBUG - Full query result:', JSON.stringify(rows[0], null, 2));
+    
+    res.json({
+      success: true,
+      data: rows[0]
+    });
+  } catch (error) {
+    console.error('❌ DEBUG error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+
 };
 
 module.exports = TenantDetailsController;

@@ -150,6 +150,7 @@ const paymentsRoutes = require("./routes/payment.Routes");
 
 const  paymentRoutes =require ("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const propertyAnalyticsRoutes = require("./routes/propertyAnalyticsRoutes");
 dotenv.config();
 
 const app = express();
@@ -241,6 +242,7 @@ app.use("/api/payments", paymentsRoutes);
 
 app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/properties", propertyAnalyticsRoutes);
 
 /* =========================
    SERVER START
