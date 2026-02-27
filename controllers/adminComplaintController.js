@@ -122,6 +122,61 @@ exports.getComplaints = async (req, res) => {
   }
 };
 
+exports.bulkDeleteComplaints = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of complaint IDs to delete"
+      });
+    }
+    
+    console.log(`🗑️ Bulk deleting complaints:`, ids);
+    
+    // Start a transaction
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // First, delete complaint request details
+      await connection.query(
+        `DELETE FROM complaint_request_details WHERE request_id IN (?)`,
+        [ids]
+      );
+      
+      // Then delete the tenant requests
+      const [result] = await connection.query(
+        `DELETE FROM tenant_requests WHERE id IN (?) AND request_type = 'complaint'`,
+        [ids]
+      );
+      
+      await connection.commit();
+      
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} complaints`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (err) {
+    console.error('❌ Error bulk deleting complaints:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to delete complaints",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
 exports.getComplaintById = async (req, res) => {
   try {
     const { id } = req.params;

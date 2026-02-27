@@ -83,6 +83,64 @@ exports.getReceiptRequests = async (req, res) => {
   }
 };
 
+// Add this function for bulk delete
+exports.bulkDeleteReceiptRequests = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of receipt request IDs to delete"
+      });
+    }
+    
+    console.log(`🗑️ Bulk deleting receipt requests:`, ids);
+    
+    // Start a transaction
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // First, check if there are any receipt details tables to delete from
+      // You may need to adjust this based on your database schema
+      // For example, if you have receipt_details table:
+      // await connection.query(
+      //   `DELETE FROM receipt_details WHERE request_id IN (?)`,
+      //   [ids]
+      // );
+      
+      // Then delete the tenant requests
+      const [result] = await connection.query(
+        `DELETE FROM tenant_requests WHERE id IN (?) AND request_type = 'receipt'`,
+        [ids]
+      );
+      
+      await connection.commit();
+      
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} receipt requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (err) {
+    console.error('❌ Error bulk deleting receipt requests:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to delete receipt requests",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
 exports.updateReceiptRequest = async (req, res) => {
   try {
     const { id } = req.params;

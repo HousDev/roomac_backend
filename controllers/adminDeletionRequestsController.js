@@ -53,6 +53,57 @@ async getPendingDeletionRequests(req, res) {
 },
 
 
+// Bulk delete deletion requests
+async bulkDeleteDeletionRequests(req, res) {
+  try {
+    const { ids } = req.body;
+    const adminId = req.user.adminId || req.user.id;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of request IDs to delete'
+      });
+    }
+
+    console.log(`🗑️ Admin ${adminId} bulk deleting deletion requests:`, ids);
+
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // Delete the tenant deletion requests
+      const [result] = await db.query(
+        `DELETE FROM tenant_deletion_requests WHERE id IN (?)`,
+        [ids]
+      );
+
+      await db.query('COMMIT');
+
+      console.log(`✅ Successfully deleted ${result.affectedRows} deletion requests`);
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} deletion requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('Error bulk deleting deletion requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete deletion requests'
+    });
+  }
+},
   // Get all deletion requests (with filters)
   async getAllDeletionRequests(req, res) {
     try {

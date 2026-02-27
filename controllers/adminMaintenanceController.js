@@ -131,6 +131,62 @@ exports.getMaintenanceRequests = async (req, res) => {
   }
 };
 
+exports.bulkDeleteMaintenanceRequests = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of maintenance request IDs to delete"
+      });
+    }
+    
+    console.log(`🗑️ Bulk deleting maintenance requests:`, ids);
+    
+    // Start a transaction
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // First, delete maintenance request details
+      await connection.query(
+        `DELETE FROM maintenance_request_details WHERE request_id IN (?)`,
+        [ids]
+      );
+      
+      // Then delete the tenant requests
+      const [result] = await connection.query(
+        `DELETE FROM tenant_requests WHERE id IN (?) AND request_type = 'maintenance'`,
+        [ids]
+      );
+      
+      await connection.commit();
+      
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} maintenance requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (err) {
+    console.error('❌ Error bulk deleting maintenance requests:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to delete maintenance requests",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
 exports.updateMaintenanceRequest = async (req, res) => {
   try {
     const { id } = req.params;

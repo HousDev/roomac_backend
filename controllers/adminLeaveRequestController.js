@@ -192,7 +192,70 @@ class LeaveRequestController {
       });
     }
   }
+// Add this function for bulk delete
+async bulkDeleteLeaveRequests(req, res) {
+  try {
+    const admin_id = req.user?.adminId;
+    const { ids } = req.body;
 
+    if (!admin_id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of leave request IDs to delete"
+      });
+    }
+
+    console.log(`🗑️ Admin ${admin_id} bulk deleting leave requests:`, ids);
+
+    // Start a transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // First, delete leave request details
+      await db.query(
+        `DELETE FROM leave_request_details WHERE request_id IN (?)`,
+        [ids]
+      );
+      
+      // Then delete the tenant requests
+      const [result] = await db.query(
+        `DELETE FROM tenant_requests WHERE id IN (?) AND request_type = 'leave'`,
+        [ids]
+      );
+
+      await db.query('COMMIT');
+
+      console.log(`✅ Successfully deleted ${result.affectedRows} leave requests`);
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} leave requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+
+  } catch (err) {
+    console.error('🔥 Error bulk deleting leave requests:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: err.message || "Failed to delete leave requests"
+    });
+  }
+}
   // Update leave request status
 // Update the updateLeaveRequestStatus method
 async updateLeaveRequestStatus(req, res) {

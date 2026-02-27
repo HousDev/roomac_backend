@@ -6,5 +6,6 @@ const controller = require("../controllers/adminReceiptController");
 router.get("/", adminAuth, controller.getReceiptRequests);
 router.put("/:id", adminAuth, controller.updateReceiptRequest);
 router.post("/:id/generate", adminAuth, controller.generateReceipt);
+router.post("/bulk-delete", adminAuth, controller.bulkDeleteReceiptRequests);
 
 module.exports = router;

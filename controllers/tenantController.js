@@ -116,6 +116,7 @@ const TenantController = {
 
  
 
+
   async getById(req, res) {
   try {
     const id = req.params.id;
@@ -195,6 +196,8 @@ if (tenant.property_id) {
       .json({ success: false, message: "Failed to fetch tenant" });
   }
 },
+
+
 
 
 
@@ -426,6 +429,8 @@ async create(req, res) {
     });
   }
 },
+
+
 
 
 

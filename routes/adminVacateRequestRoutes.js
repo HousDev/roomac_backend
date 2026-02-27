@@ -23,4 +23,6 @@ router.get("/stats/summary", controller.getVacateRequestStats);
 // Get properties for filter dropdown
 router.get("/properties/filter", controller.getPropertiesForFilter);
 
+router.post("/bulk-delete", controller.bulkDeleteVacateRequests);
+
 module.exports = router;

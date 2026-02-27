@@ -483,6 +483,73 @@ async getChangeBedRequestById(req, res) {
   }
 }
 
+// Add bulk delete function
+async bulkDeleteChangeBedRequests(req, res) {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of request IDs to delete"
+      });
+    }
+
+    console.log(`🗑️ Bulk deleting change bed requests:`, ids);
+
+    // Start a transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // First, delete the change_bed_requests
+      const [result] = await db.query(
+        `DELETE FROM change_bed_requests WHERE id IN (?)`,
+        [ids]
+      );
+
+      // Then, find and delete the related tenant_requests
+      // Note: This assumes you want to delete the tenant_requests as well
+      // If you want to keep them, remove this part
+      const [tenantRequests] = await db.query(
+        `SELECT tenant_request_id FROM change_bed_requests WHERE id IN (?)`,
+        [ids]
+      );
+      
+      if (tenantRequests.length > 0) {
+        const tenantRequestIds = tenantRequests.map(tr => tr.tenant_request_id);
+        await db.query(
+          `DELETE FROM tenant_requests WHERE id IN (?)`,
+          [tenantRequestIds]
+        );
+      }
+
+      await db.query('COMMIT');
+
+      console.log(`✅ Successfully deleted ${result.affectedRows} change bed requests`);
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.affectedRows} change bed requests`,
+        data: {
+          deletedCount: result.affectedRows,
+          deletedIds: ids
+        }
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    }
+
+  } catch (err) {
+    console.error('🔥 Error bulk deleting change bed requests:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: err.message || "Failed to delete change bed requests"
+    });
+  }
+}
+
 
   // Update change bed request status
 // Update change bed request status

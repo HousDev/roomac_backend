@@ -62,5 +62,7 @@ router.get("/debug/reason/:id", adminAuth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// Add bulk delete route
+router.post("/bulk-delete", adminAuth, ChangeBedRequestController.bulkDeleteChangeBedRequests);
 
 module.exports = router;
