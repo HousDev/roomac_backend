@@ -1,3 +1,4 @@
+// controllers/tenantController.js
 const bcrypt = require("bcrypt");
 const TenantModel = require("../models/tenantModel");
 const xlsx = require("xlsx");

@@ -1,8 +1,3 @@
-
-
-
-
-
 // controllers.roomController.js
 const RoomModel = require('../models/roomModel');
 const multer = require("multer");

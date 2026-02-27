@@ -684,6 +684,7 @@ if (request_type === 'change_bed' && change_bed_data) {
       if (request_type === 'vacate_bed' && vacate_data) {
         const {
           primary_reason_id,
+          primary_reason_name,
           secondary_reasons = [],
           overall_rating,
           food_rating,
@@ -701,6 +702,7 @@ if (request_type === 'change_bed' && change_bed_data) {
           bed_id: tenantData.bed_assignment_id,
           room_id: tenantData.room_id,
           primary_reason_id,
+          primary_reason_name,
           secondary_reasons,
           overall_rating,
           food_rating,
@@ -720,6 +722,7 @@ if (request_type === 'change_bed' && change_bed_data) {
             bed_id,
             room_id,
             primary_reason_id,
+            miv.name as primary_reason,
             secondary_reasons,
             overall_rating,
             food_rating,
@@ -739,6 +742,7 @@ if (request_type === 'change_bed' && change_bed_data) {
             tenantData.bed_assignment_id,
             tenantData.room_id,
             primary_reason_id,
+            primary_reason_name,
             secondary_reasons.length > 0 ? JSON.stringify(secondary_reasons) : null,
             overall_rating,
             food_rating,
@@ -1231,94 +1235,93 @@ if (request_type === 'change_bed' && change_bed_data) {
     console.log('🔍 Getting requests for tenant ID:', tenant_id);
 
 const [requests] = await db.query(
-  `SELECT 
-    tr.*, 
-    vbr.id as vacate_bed_request_id,
-    vbr.primary_reason_id,
-    vbr.secondary_reasons,
-    vbr.overall_rating,
-    vbr.food_rating,
-    vbr.cleanliness_rating,
-    vbr.management_rating,
-    vbr.improvement_suggestions,
-    vbr.expected_vacate_date,
-    vbr.lockin_penalty_accepted,
-    vbr.notice_penalty_accepted,
-    vbr.status as vacate_status,
-    mv.value as primary_reason_name,
-    
-    -- Change bed data
-    cbr.id as change_bed_request_id,
-    cbr.preferred_property_id,
-    cbr.preferred_room_id,
-    cbr.change_reason_id,
-    cbr.shifting_date,
-    cbr.notes as change_bed_notes,
-    cbr.assigned_bed_number,
-    cbr.rent_difference,
-    cbr.admin_notes as change_bed_admin_notes,
-    cbr.request_status as change_bed_status,
-    r2.room_number as preferred_room_number,
-    p2.name as preferred_property_name,
-    mv2.value as change_reason,
-    mt1.code as change_reason_code, -- CHANGED: mt1 instead of mt
+      `SELECT 
+        tr.*, 
+        vbr.id as vacate_bed_request_id,
+        vbr.primary_reason_id,
+        miv.name as primary_reason,  -- CHANGED: from mv.value to miv.name
+        vbr.secondary_reasons,
+        vbr.overall_rating,
+        vbr.food_rating,
+        vbr.cleanliness_rating,
+        vbr.management_rating,
+        vbr.improvement_suggestions,
+        vbr.expected_vacate_date,
+        vbr.lockin_penalty_accepted,
+        vbr.notice_penalty_accepted,
+        vbr.status as vacate_status,
+        
+        -- Change bed data
+        cbr.id as change_bed_request_id,
+        cbr.preferred_property_id,
+        cbr.preferred_room_id,
+        cbr.change_reason_id,
+        cbr.shifting_date,
+        cbr.notes as change_bed_notes,
+        cbr.assigned_bed_number,
+        cbr.rent_difference,
+        cbr.admin_notes as change_bed_admin_notes,
+        cbr.request_status as change_bed_status,
+        r2.room_number as preferred_room_number,
+        p2.name as preferred_property_name,
+        miv2.name as change_reason,  -- CHANGED: from mv2.value to miv2.name
 
-    -- Leave data
-    lrd.id as leave_request_detail_id,
-    lrd.leave_type,
-    lrd.leave_start_date,
-    lrd.leave_end_date,
-    lrd.total_days,
-    lrd.contact_address_during_leave,
-    lrd.emergency_contact_number,
-    lrd.room_locked,
-    lrd.keys_submitted,
-    lrd.created_at as leave_detail_created_at,
+        -- Leave data
+        lrd.id as leave_request_detail_id,
+        lrd.leave_type,
+        lrd.leave_start_date,
+        lrd.leave_end_date,
+        lrd.total_days,
+        lrd.contact_address_during_leave,
+        lrd.emergency_contact_number,
+        lrd.room_locked,
+        lrd.keys_submitted,
+        lrd.created_at as leave_detail_created_at,
 
-    -- Maintenance data
-    mrd.id as maintenance_request_detail_id,
-    mrd.issue_category,
-    mrd.location,
-    mrd.preferred_visit_time,
-    mrd.access_permission,
-    mrd.resolved_at as maintenance_resolved_at,
+        -- Maintenance data
+        mrd.id as maintenance_request_detail_id,
+        mrd.issue_category,
+        mrd.location,
+        mrd.preferred_visit_time,
+        mrd.access_permission,
+        mrd.resolved_at as maintenance_resolved_at,
 
-    -- Complaint data
-    crd.id as complaint_request_detail_id,
-    crd.category_master_type_id,
-    crd.reason_master_value_id,
-    crd.custom_reason,
-    mt2.name as complaint_category_name, -- CHANGED: mt2 instead of mt
-    mv3.value as complaint_reason_name -- CHANGED: mv3 instead of mv
-    
-   FROM tenant_requests tr
-   
-   -- Left join for vacate bed requests
-   LEFT JOIN vacate_bed_requests vbr ON tr.id = vbr.tenant_request_id AND tr.request_type = 'vacate_bed'
-   LEFT JOIN master_values mv ON vbr.primary_reason_id = mv.id
-   
-   -- Left join for change bed requests
-   LEFT JOIN change_bed_requests cbr ON tr.id = cbr.tenant_request_id AND tr.request_type = 'change_bed'
-   LEFT JOIN rooms r2 ON cbr.preferred_room_id = r2.id
-   LEFT JOIN properties p2 ON cbr.preferred_property_id = p2.id
-   LEFT JOIN master_values mv2 ON cbr.change_reason_id = mv2.id
-   LEFT JOIN master_types mt1 ON mv2.master_type_id = mt1.id -- CHANGED: mt1 alias
+        -- Complaint data
+        crd.id as complaint_request_detail_id,
+        crd.category_master_type_id,
+        crd.reason_master_value_id,
+        crd.custom_reason,
+        mt2.name as complaint_category_name,
+        miv3.name as complaint_reason_name  -- CHANGED: from mv3.value to miv3.name
+        
+       FROM tenant_requests tr
+       
+       -- Left join for vacate bed requests
+       LEFT JOIN vacate_bed_requests vbr ON tr.id = vbr.tenant_request_id AND tr.request_type = 'vacate_bed'
+       LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id  -- CHANGED: master_values → master_item_values
+       
+       -- Left join for change bed requests
+       LEFT JOIN change_bed_requests cbr ON tr.id = cbr.tenant_request_id AND tr.request_type = 'change_bed'
+       LEFT JOIN rooms r2 ON cbr.preferred_room_id = r2.id
+       LEFT JOIN properties p2 ON cbr.preferred_property_id = p2.id
+       LEFT JOIN master_item_values miv2 ON cbr.change_reason_id = miv2.id  -- CHANGED: master_values → master_item_values
 
-   -- Left join for leave requests
-   LEFT JOIN leave_request_details lrd ON tr.id = lrd.request_id AND tr.request_type = 'leave'
+       -- Left join for leave requests
+       LEFT JOIN leave_request_details lrd ON tr.id = lrd.request_id AND tr.request_type = 'leave'
 
-   -- Left join for maintenance requests
-   LEFT JOIN maintenance_request_details mrd ON tr.id = mrd.request_id AND tr.request_type = 'maintenance'
+       -- Left join for maintenance requests
+       LEFT JOIN maintenance_request_details mrd ON tr.id = mrd.request_id AND tr.request_type = 'maintenance'
 
-   -- Left join for complaint requests
-   LEFT JOIN complaint_request_details crd ON tr.id = crd.request_id AND tr.request_type = 'complaint'
-   LEFT JOIN master_types mt2 ON crd.category_master_type_id = mt2.id -- CHANGED: mt2 alias
-   LEFT JOIN master_values mv3 ON crd.reason_master_value_id = mv3.id -- CHANGED: mv3 alias
-   
-   WHERE tr.tenant_id = ?
-   ORDER BY tr.created_at DESC`,
-  [tenant_id]
-);
+       -- Left join for complaint requests
+       LEFT JOIN complaint_request_details crd ON tr.id = crd.request_id AND tr.request_type = 'complaint'
+       LEFT JOIN master_types mt2 ON crd.category_master_type_id = mt2.id
+       LEFT JOIN master_item_values miv3 ON crd.reason_master_value_id = miv3.id  -- CHANGED: master_values → master_item_values
+       
+       WHERE tr.tenant_id = ?
+       ORDER BY tr.created_at DESC`,
+      [tenant_id]
+    );
+
 
     console.log(`✅ Found ${requests.length} requests for tenant`);
 
@@ -1355,6 +1358,7 @@ const [requests] = await db.query(
         
         req.vacate_data = {
           primary_reason_id: req.primary_reason_id,
+           primary_reason: req.primary_reason,
           secondary_reasons: secondaryReasons,
           overall_rating: req.overall_rating,
           food_rating: req.food_rating,

@@ -1,3 +1,4 @@
+// routes/roomRoutes.js
 const express = require("express");
 const router = express.Router();
 const RoomController = require("../controllers/roomController");
@@ -10,8 +11,8 @@ router.get("/property/:propertyId", RoomController.getRoomsByPropertyId);
 router.get("/:id", RoomController.getRoomById);
 router.post(
   "/",
-  roomUpload.upload,           // multer upload
-  roomUpload.compressRoomMedia, // compression middleware
+  roomUpload.upload,           
+  roomUpload.compressRoomMedia, 
   RoomController.createRoom
 );
 router.put(
