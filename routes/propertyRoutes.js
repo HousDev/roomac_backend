@@ -31,4 +31,5 @@ router.post("/bulk-delete", PropertyController.bulkDelete);
 router.post("/bulk-status", PropertyController.bulkStatus);
 router.post("/bulk-tags", PropertyController.bulkUpdateTags); 
 
+
 module.exports = router;
