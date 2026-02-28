@@ -425,6 +425,7 @@ async create(req, res) {
 
  
 // UPDATE PROPERTY
+// UPDATE PROPERTY
 async update(req, res) {
   try {
     const { id } = req.params;
@@ -444,8 +445,20 @@ async update(req, res) {
 
     console.log("📸 Existing photos from DB:", existing.photo_urls);
 
-    // Read removed photos from request
-    const removedPhotos = readArray(body, "removed_photos");
+    // CRITICAL FIX: Parse removed_photos properly - handle both array and string formats
+    let removedPhotos = [];
+    if (body.removed_photos) {
+      if (Array.isArray(body.removed_photos)) {
+        removedPhotos = body.removed_photos;
+      } else if (typeof body.removed_photos === 'string') {
+        try {
+          removedPhotos = JSON.parse(body.removed_photos);
+        } catch {
+          removedPhotos = body.removed_photos.split(',').map(p => p.trim());
+        }
+      }
+    }
+    
     console.log("🗑️  Removed photos from request:", removedPhotos);
 
     // Delete removed photos from filesystem
@@ -549,26 +562,24 @@ async update(req, res) {
         body.property_manager_name.trim() || null;
     }
 
-// FIND THIS:
-if (body.property_manager_phone !== undefined) {
-  updateData.property_manager_phone =
-    body.property_manager_phone.trim() || null;
-}
+    if (body.property_manager_phone !== undefined) {
+      updateData.property_manager_phone =
+        body.property_manager_phone.trim() || null;
+    }
 
-// ← ADD THESE 3 BLOCKS RIGHT HERE:
-if (body.property_manager_email !== undefined) {
-  updateData.property_manager_email =
-    body.property_manager_email.trim() || null;
-}
+    if (body.property_manager_email !== undefined) {
+      updateData.property_manager_email =
+        body.property_manager_email.trim() || null;
+    }
 
-if (body.property_manager_role !== undefined) {
-  updateData.property_manager_role =
-    body.property_manager_role.trim() || null;
-}
+    if (body.property_manager_role !== undefined) {
+      updateData.property_manager_role =
+        body.property_manager_role.trim() || null;
+    }
 
-if (body.staff_id !== undefined && body.staff_id !== "") {
-  updateData.staff_id = parseInt(body.staff_id) || null;
-}
+    if (body.staff_id !== undefined && body.staff_id !== "") {
+      updateData.staff_id = parseInt(body.staff_id) || null;
+    }
 
     // Handle array fields
     if (body["amenities[]"] !== undefined || body.amenities !== undefined) {
@@ -662,6 +673,12 @@ if (body.staff_id !== undefined && body.staff_id !== "") {
 
     // Fetch updated property to verify
     const updatedProperty = await PropertyModel.findById(id);
+
+    // CRITICAL FIX: Ensure we return the clean photo URLs without duplicates
+    if (updatedProperty.photo_urls) {
+      // Remove any potential duplicates
+      updatedProperty.photo_urls = [...new Set(updatedProperty.photo_urls)];
+    }
 
     // Ensure terms_json is included in response
     if (!updatedProperty.terms_json && updatedProperty.terms_conditions) {
@@ -1127,6 +1144,7 @@ async getBulkTagsInfo(req, res) {
     });
   }
 }
+
 };
 
 module.exports = PropertyController;
