@@ -3,6 +3,9 @@ require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const UserModel = require("../models/authModel");
+const db = require("../config/db");
+const { error } = require("pdf-lib");
+
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
@@ -65,11 +68,13 @@ const AuthController = {
         expiresIn: JWT_EXPIRES_IN,
       });
 
+      console.log("tokennnnnnnnnnnnn",token)
+
       return res.status(200).json({
         success: true,
         message: "Login successful",
         token,
-        user: { id: user.id, email: user.email },
+        user: { id: user.id, email: user.email , role:user.role},
       });
     } catch (err) {
       console.error("AuthController.login error:", err);
@@ -78,6 +83,18 @@ const AuthController = {
         .json({ success: false, message: "Internal server error" });
     }
   },
+
+  async getUserDetails(req, res){
+    const {email} = req.params;
+    try{
+      const [user] = await db.query(`select s.* , r.name as role_name from staff as s  LEFT JOIN master_item_values r ON r.id = s.role where email = ?   `,[email])
+    console.log(user)
+      return res.status(200).json({message:"successsfulyyyy ", user:user[0]})
+  }catch(error) {
+    console.log(error)
+      return res.status(500).json({message:"internal server error "})
+    }
+  }
 };
 
 module.exports = AuthController;

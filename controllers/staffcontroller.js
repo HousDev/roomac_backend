@@ -163,9 +163,10 @@
 //   }
 // };
 
+
 // controllers/staffController.js
 const staffModel = require("../models/staffModel");
-const db = require("../config/db"); // Add this import
+const db = require("../config/db");
 const path = require("path");
 const fs = require("fs");
 
@@ -195,13 +196,16 @@ exports.getStaff = async (req, res) => {
   try {
     const staff = await staffModel.getAll();
     
-    // Convert file paths to URLs
-    const staffWithUrls = staff.map(member => ({
-      ...member,
-      aadhar_document_url: member.aadhar_document_url ? buildFileUrl(path.basename(member.aadhar_document_url)) : null,
-      pan_document_url: member.pan_document_url ? buildFileUrl(path.basename(member.pan_document_url)) : null,
-      photo_url: member.photo_url ? buildFileUrl(path.basename(member.photo_url)) : null
-    }));
+    // Remove passwords from response
+    const staffWithUrls = staff.map(member => {
+      const { password, ...memberWithoutPassword } = member;
+      return {
+        ...memberWithoutPassword,
+        aadhar_document_url: member.aadhar_document_url ? buildFileUrl(path.basename(member.aadhar_document_url)) : null,
+        pan_document_url: member.pan_document_url ? buildFileUrl(path.basename(member.pan_document_url)) : null,
+        photo_url: member.photo_url ? buildFileUrl(path.basename(member.photo_url)) : null
+      };
+    });
 
     res.json({
       success: true,
@@ -216,11 +220,14 @@ exports.getStaff = async (req, res) => {
   }
 };
 
-// CREATE STAFF with file upload
+// CREATE STAFF with file upload and password
+// CREATE STAFF with file upload and password
 exports.createStaff = async (req, res) => {
   try {
     const files = req.files;
     const body = req.body;
+
+    console.log("Creating staff with data:", { ...body, password: '***' }); // Debug log
 
     // Parse boolean fields
     const is_whatsapp_same = body.is_whatsapp_same === 'true' || body.is_whatsapp_same === '1' || body.is_whatsapp_same === true;
@@ -236,13 +243,14 @@ exports.createStaff = async (req, res) => {
       salutation: body.salutation || "mr",
       name: body.name,
       email: body.email,
+      password: body.password,
       phone: body.phone,
       whatsapp_number: whatsapp_number || null,
       is_whatsapp_same: is_whatsapp_same ? 1 : 0,
       role: body.role,
       employee_id: body.employee_id,
-      salary: body.salary,
-      department: body.department || null,
+      salary: body.salary || 0,
+      department: body.department === 'no-department' ? null : body.department,
       joining_date: body.joining_date,
       blood_group: body.blood_group || "not_specified",
       aadhar_number: body.aadhar_number || null,
@@ -257,7 +265,6 @@ exports.createStaff = async (req, res) => {
       bank_name: body.bank_name || null,
       bank_ifsc_code: body.bank_ifsc_code || null,
       upi_id: body.upi_id || null,
-      is_active: 1
     };
 
     // Handle file uploads
@@ -274,21 +281,28 @@ exports.createStaff = async (req, res) => {
     }
 
     // Validate required fields
-    if (!staffData.name || !staffData.email || !staffData.phone) {
+    if (!staffData.name || !staffData.email || !staffData.phone || !staffData.password) {
       return res.status(400).json({
         success: false,
-        message: "Name, email, and phone are required fields"
+        message: "Name, email, phone, and password are required fields"
       });
     }
 
-    const result = await staffModel.create(staffData);
+    // Create staff and user record
+    const result = await require("../models/staffModel").create(staffData);
     
+    if (!result) {
+      throw new Error("Failed to create staff record");
+    }
+
+    // Prepare response data (remove password)
+    const { password, ...staffWithoutPassword } = result;
+
     res.status(201).json({
       success: true,
       message: "Staff created successfully",
       data: {
-        id: result.insertId,
-        ...staffData,
+        ...staffWithoutPassword,
         aadhar_document_url: staffData.aadhar_document_url ? buildFileUrl(staffData.aadhar_document_url) : null,
         pan_document_url: staffData.pan_document_url ? buildFileUrl(staffData.pan_document_url) : null,
         photo_url: staffData.photo_url ? buildFileUrl(staffData.photo_url) : null
@@ -297,12 +311,32 @@ exports.createStaff = async (req, res) => {
 
   } catch (error) {
     console.error("Error creating staff:", error);
+    
+    // Handle duplicate entry error
+    if (error.code === 'ER_DUP_ENTRY') {
+      if (error.sqlMessage.includes('email')) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already exists"
+        });
+      }
+      if (error.sqlMessage.includes('employee_id')) {
+        return res.status(400).json({
+          success: false,
+          message: "Employee ID already exists"
+        });
+      }
+    }
+    
     res.status(500).json({
       success: false,
-      message: error.code === 'ER_DUP_ENTRY' ? 'Email or Employee ID already exists' : 'Failed to create staff'
+      message: error.message || "Failed to create staff"
     });
   }
 };
+
+// UPDATE STAFF with file upload (without password)
+// controllers/staffController.js - Update function
 
 // UPDATE STAFF with file upload
 exports.updateStaff = async (req, res) => {
@@ -311,26 +345,26 @@ exports.updateStaff = async (req, res) => {
     const files = req.files;
     const body = req.body;
 
-    // Get existing staff data using the model method
-    const [existingStaff] = await db.query("SELECT * FROM staff WHERE id = ?", [id]);
-    if (!existingStaff || existingStaff.length === 0) {
+    console.log("Updating staff:", id, { ...body, password: body.password ? '***' : undefined });
+
+    // Get existing staff data
+    const staffModel = require("../models/staffModel");
+    const existing = await staffModel.getById(id);
+    
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: "Staff not found"
       });
     }
-
-    const existing = existingStaff[0];
     
     // Parse boolean fields
     const is_whatsapp_same = body.is_whatsapp_same === 'true' || body.is_whatsapp_same === '1' || body.is_whatsapp_same === true;
     
     // Apply WhatsApp logic
-    let whatsapp_number = body.whatsapp_number || existing.whatsapp_number;
+    let whatsapp_number = body.whatsapp_number !== undefined ? body.whatsapp_number : existing.whatsapp_number;
     if (is_whatsapp_same) {
       whatsapp_number = body.phone || existing.phone;
-    } else if (body.whatsapp_number === '') {
-      whatsapp_number = null;
     }
 
     // Prepare update data
@@ -339,7 +373,7 @@ exports.updateStaff = async (req, res) => {
       name: body.name !== undefined ? body.name : existing.name,
       email: body.email !== undefined ? body.email : existing.email,
       phone: body.phone !== undefined ? body.phone : existing.phone,
-      whatsapp_number,
+      whatsapp_number: whatsapp_number,
       is_whatsapp_same: is_whatsapp_same ? 1 : 0,
       role: body.role !== undefined ? body.role : existing.role,
       employee_id: body.employee_id !== undefined ? body.employee_id : existing.employee_id,
@@ -362,16 +396,20 @@ exports.updateStaff = async (req, res) => {
       is_active: body.is_active !== undefined ? (body.is_active === 'true' || body.is_active === '1' || body.is_active === true ? 1 : 0) : existing.is_active
     };
 
-    // Handle file uploads - only update if new file is provided
+    // Handle password if provided
+    if (body.password && body.password.trim() !== '') {
+      updateData.password = body.password;
+    }
+
+    // Handle file uploads
     if (files) {
-      // Delete old files if new ones are uploaded
+      const { deleteOldFile, buildFileUrl } = require('./staffController');
+      
       if (files.aadhar_document && files.aadhar_document[0]) {
         if (existing.aadhar_document_url) {
           deleteOldFile(existing.aadhar_document_url);
         }
         updateData.aadhar_document_url = files.aadhar_document[0].filename;
-      } else {
-        updateData.aadhar_document_url = existing.aadhar_document_url;
       }
       
       if (files.pan_document && files.pan_document[0]) {
@@ -379,8 +417,6 @@ exports.updateStaff = async (req, res) => {
           deleteOldFile(existing.pan_document_url);
         }
         updateData.pan_document_url = files.pan_document[0].filename;
-      } else {
-        updateData.pan_document_url = existing.pan_document_url;
       }
       
       if (files.photo && files.photo[0]) {
@@ -388,42 +424,55 @@ exports.updateStaff = async (req, res) => {
           deleteOldFile(existing.photo_url);
         }
         updateData.photo_url = files.photo[0].filename;
-      } else {
-        updateData.photo_url = existing.photo_url;
       }
-    } else {
-      // Keep existing document URLs if not provided
-      updateData.aadhar_document_url = existing.aadhar_document_url;
-      updateData.pan_document_url = existing.pan_document_url;
-      updateData.photo_url = existing.photo_url;
     }
 
-    const result = await staffModel.update(id, updateData);
-    
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Staff not found or no changes made"
-      });
-    }
+    // Update staff and user records
+    const updatedStaff = await staffModel.update(id, updateData);
+
+    // Prepare response (remove password)
+    const { password, ...staffWithoutPassword } = updatedStaff;
 
     res.json({
       success: true,
       message: "Staff updated successfully",
       data: {
-        id,
-        ...updateData,
-        aadhar_document_url: updateData.aadhar_document_url ? buildFileUrl(updateData.aadhar_document_url) : null,
-        pan_document_url: updateData.pan_document_url ? buildFileUrl(updateData.pan_document_url) : null,
-        photo_url: updateData.photo_url ? buildFileUrl(updateData.photo_url) : null
+        ...staffWithoutPassword,
+        aadhar_document_url: updatedStaff.aadhar_document_url ? buildFileUrl(updatedStaff.aadhar_document_url) : null,
+        pan_document_url: updatedStaff.pan_document_url ? buildFileUrl(updatedStaff.pan_document_url) : null,
+        photo_url: updatedStaff.photo_url ? buildFileUrl(updatedStaff.photo_url) : null
       }
     });
 
   } catch (error) {
     console.error("Error updating staff:", error);
+    
+    // Handle specific errors
+    if (error.message.includes("Email already exists")) {
+      return res.status(400).json({
+        success: false,
+        message: "Email already exists in users table"
+      });
+    }
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      if (error.sqlMessage.includes('email')) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already exists"
+        });
+      }
+      if (error.sqlMessage.includes('employee_id')) {
+        return res.status(400).json({
+          success: false,
+          message: "Employee ID already exists"
+        });
+      }
+    }
+    
     res.status(500).json({
       success: false,
-      message: error.code === 'ER_DUP_ENTRY' ? 'Email or Employee ID already exists' : 'Failed to update staff'
+      message: error.message || "Failed to update staff"
     });
   }
 };
@@ -433,22 +482,19 @@ exports.deleteStaff = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get staff data first to delete files
-    const [existingStaff] = await db.query("SELECT * FROM staff WHERE id = ?", [id]);
-    if (!existingStaff || existingStaff.length === 0) {
+    const existing = await staffModel.getById(id);
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: "Staff not found"
       });
     }
-
-    const staff = existingStaff[0];
     
     // Delete associated files
     const documents = [
-      { field: 'aadhar_document_url', value: staff.aadhar_document_url },
-      { field: 'pan_document_url', value: staff.pan_document_url },
-      { field: 'photo_url', value: staff.photo_url }
+      { field: 'aadhar_document_url', value: existing.aadhar_document_url },
+      { field: 'pan_document_url', value: existing.pan_document_url },
+      { field: 'photo_url', value: existing.photo_url }
     ];
 
     documents.forEach(doc => {
@@ -457,7 +503,6 @@ exports.deleteStaff = async (req, res) => {
           const filePath = path.join(__dirname, '../uploads/staff-documents', path.basename(doc.value));
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            console.log(`Deleted file: ${filePath}`);
           }
         } catch (error) {
           console.error(`Error deleting file ${doc.field}:`, error);
@@ -501,42 +546,30 @@ exports.deleteDocument = async (req, res) => {
       });
     }
 
-    // Get existing staff data
-    const [existingStaff] = await db.query("SELECT * FROM staff WHERE id = ?", [id]);
-    if (!existingStaff || existingStaff.length === 0) {
+    const existing = await staffModel.getById(id);
+    if (!existing) {
       return res.status(404).json({
         success: false,
         message: "Staff not found"
       });
     }
 
-    const staff = existingStaff[0];
     const fieldName = `${documentType}_url`;
-    const fileName = staff[fieldName];
+    const fileName = existing[fieldName];
 
-    // Delete the file if exists
     if (fileName) {
       try {
         const filePath = path.join(__dirname, '../uploads/staff-documents', path.basename(fileName));
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
-          console.log(`Deleted document: ${filePath}`);
         }
       } catch (error) {
         console.error(`Error deleting document file:`, error);
       }
     }
 
-    // Update database to remove file reference using the model
     const updateData = { [fieldName]: null };
-    const result = await staffModel.update(id, updateData);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Staff not found"
-      });
-    }
+    await staffModel.update(id, updateData);
 
     res.json({
       success: true,

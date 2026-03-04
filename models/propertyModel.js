@@ -16,14 +16,14 @@ function parseRow(row) {
   // Parse tags FIRST
   try {
     if (row.tags) {
-      console.log(`🔍 Parsing tags for property ${row.id}:`, row.tags);
+      // console.log(`🔍 Parsing tags for property ${row.id}:`, row.tags);
       
       if (typeof row.tags === 'string') {
         // Try to parse as JSON
         if (row.tags.trim().startsWith('[') || row.tags.trim().startsWith('{')) {
           try {
             row.tags = JSON.parse(row.tags);
-            console.log(`✅ JSON parsed tags:`, row.tags);
+            // console.log(`✅ JSON parsed tags:`, row.tags);
           } catch (e) {
             console.error(`❌ JSON parse error:`, e);
             // Fallback to comma-separated
@@ -39,22 +39,22 @@ function parseRow(row) {
         // Comma-separated string
         else if (row.tags.includes(',')) {
           row.tags = row.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-          console.log(`✅ Comma-separated parsed tags:`, row.tags);
+          // console.log(`✅ Comma-separated parsed tags:`, row.tags);
         }
         // Single tag string
         else if (row.tags.trim() !== '') {
           row.tags = [row.tags.trim()];
-          console.log(`✅ Single tag parsed:`, row.tags);
+          // console.log(`✅ Single tag parsed:`, row.tags);
         }
         // Empty string
         else {
           row.tags = [];
-          console.log(`✅ Empty tags array`);
+          // console.log(`✅ Empty tags array`);
         }
       } 
       // If already array (from previous parse)
       else if (Array.isArray(row.tags)) {
-        console.log(`✅ Already array tags:`, row.tags);
+        // console.log(`✅ Already array tags:`, row.tags);
         // Keep as is
       }
       // If object (might be from MySQL JSON)
@@ -62,7 +62,7 @@ function parseRow(row) {
         try {
           // Convert object to array
           row.tags = Object.values(row.tags).filter(v => typeof v === 'string' && v.trim() !== '');
-          console.log(`✅ Object converted to array tags:`, row.tags);
+          // console.log(`✅ Object converted to array tags:`, row.tags);
         } catch (e) {
           console.error(`❌ Object conversion error:`, e);
           row.tags = [];

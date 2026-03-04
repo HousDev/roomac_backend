@@ -183,6 +183,7 @@ app.use(
       "http://localhost:3000",
       "http://localhost:5173",
       "https://roomac.in",
+      "https://www.roomac.in",
     ],
     credentials: true,
   }),
