@@ -120,7 +120,7 @@ class TenantAuthController {
       'SELECT * FROM users WHERE email = ? ',
       [email]
     );
-
+    console.log(admins)
     if (admins.length === 0) {
       return res.status(401).json({
         success: false,
@@ -142,7 +142,7 @@ class TenantAuthController {
     const token = generateToken({
       id: admin.id,
       email: admin.email,
-      role: 'admin',
+      role: admin.role,
      type: 'admin'
 
     });
@@ -150,11 +150,12 @@ class TenantAuthController {
     return res.json({
       success: true,
       token,
-      role: 'admin',
+      role: admin.role,
       user: {
         id: admin.id,
         full_name: admin.full_name,
-        email: admin.email
+        email: admin.email,
+        role:admin.role
       },
       message: 'Admin login successful'
     });
