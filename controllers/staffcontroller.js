@@ -170,25 +170,32 @@ const db = require("../config/db");
 const path = require("path");
 const fs = require("fs");
 
-// Helper function to build file URL
-const buildFileUrl = (filename) => {
-  if (!filename) return null;
-  return `/uploads/staff-documents/${filename}`;
+// Delete old file if it exists
+const deleteOldFile = (fileUrl) => {
+    if (!fileUrl) return;
+    
+    try {
+        // Extract filename from URL
+        const filename = path.basename(fileUrl);
+        const filePath = path.join(__dirname, '../uploads/staff-documents', filename);
+        
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log('Deleted old file:', filePath);
+        }
+    } catch (error) {
+        console.error('Error deleting old file:', error);
+    }
 };
 
-// Helper function to delete old file
-const deleteOldFile = (fileUrl) => {
-  if (fileUrl) {
-    try {
-      const oldPath = path.join(__dirname, '../uploads/staff-documents', path.basename(fileUrl));
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-        console.log(`Deleted old file: ${oldPath}`);
-      }
-    } catch (error) {
-      console.error(`Error deleting old file: ${error.message}`);
+// Build file URL for response
+const buildFileUrl = (filename) => {
+    if (!filename) return null;
+    // Check if it's already a full URL
+    if (filename.startsWith('http') || filename.startsWith('/uploads')) {
+        return filename;
     }
-  }
+    return `/uploads/staff-documents/${filename}`;
 };
 
 // GET ALL STAFF
@@ -335,9 +342,6 @@ exports.createStaff = async (req, res) => {
   }
 };
 
-// UPDATE STAFF with file upload (without password)
-// controllers/staffController.js - Update function
-
 // UPDATE STAFF with file upload
 exports.updateStaff = async (req, res) => {
   try {
@@ -401,10 +405,9 @@ exports.updateStaff = async (req, res) => {
       updateData.password = body.password;
     }
 
-    // Handle file uploads
+    // Handle file uploads - REMOVED THE REQUIRE LINE
     if (files) {
-      const { deleteOldFile, buildFileUrl } = require('./staffController');
-      
+      // Use the functions defined at the top of the file directly
       if (files.aadhar_document && files.aadhar_document[0]) {
         if (existing.aadhar_document_url) {
           deleteOldFile(existing.aadhar_document_url);

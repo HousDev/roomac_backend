@@ -138,86 +138,324 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
 
     if (search) {
       where.push(
-        "(name LIKE ? OR area LIKE ? OR property_manager_name LIKE ? OR address LIKE ? OR state LIKE ? OR city_id LIKE ?)"
+        "(p.name LIKE ? OR p.area LIKE ? OR p.property_manager_name LIKE ? OR p.address LIKE ? OR p.state LIKE ? OR p.city_id LIKE ?)"
       );
       const q = `%${search}%`;
       params.push(q, q, q, q, q, q);
     }
 
     if (area) {
-      where.push("area = ?");
+      where.push("p.area = ?");
       params.push(area);
     }
 
     if (state) {
-      where.push("state = ?");
+      where.push("p.state = ?");
       params.push(state);
     }
 
     if (typeof is_active !== "undefined" && is_active !== null) {
-      where.push("is_active = ?");
+      where.push("p.is_active = ?");
       params.push(is_active ? 1 : 0);
     }
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // ✅ ADD DEBUG: Log the SQL query
-    console.log("🔍 SQL Query for properties:", 
-      `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    // Get master item IDs for each category
+    const [masterItems] = await db.query(
+      `SELECT id, name FROM master_items WHERE name IN ('Tags', 'Property Rules', 'Additional Terms') AND tab_name = 'Properties'`
     );
     
-    // const [rows] = await db.query(
-    //   `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    //   [...params, pageSize, offset]
-    // );
+    const masterItemMap = {};
+    masterItems.forEach(item => {
+      masterItemMap[item.name] = item.id;
+    });
 
+    // Main query to get properties
     const [rows] = await db.query(
-  `SELECT id, name, slug, city_id, state, area, address, total_rooms, total_beds, 
-   floor, starting_price, security_deposit, description, 
-   property_manager_name, property_manager_phone, property_manager_email,
-   property_manager_role, staff_id, amenities, services, photo_urls, 
-   property_rules, is_active, rating, created_at, updated_at,
-   lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
-   notice_period_days, notice_penalty_amount, notice_penalty_type,
-   additional_terms, tags
-   FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-  [...params, pageSize, offset]
-);
- 
-console.log("rowwsssssssssssss",rows)
-
-    // ✅ ADD DEBUG: Show raw database data
-    console.log("📊 Raw database rows with tags:", 
-      rows.map(r => ({ 
-        id: r.id, 
-        name: r.name, 
-        rawTags: r.tags,
-        rawTagsType: typeof r.tags,
-        rawTagsValue: r.tags 
-      }))
+      `SELECT 
+        p.id, p.name, p.slug, p.city_id, p.state, p.area, p.address, 
+        p.total_rooms, p.total_beds, p.floor, p.starting_price, 
+        p.security_deposit, p.description, p.property_manager_name, 
+        p.property_manager_phone, p.property_manager_email,
+        p.property_manager_role, p.staff_id, p.amenities, p.services, 
+        p.photo_urls, p.property_rules, p.is_active, p.rating, 
+        p.created_at, p.updated_at, p.lockin_period_months, 
+        p.lockin_penalty_amount, p.lockin_penalty_type,
+        p.notice_period_days, p.notice_penalty_amount, p.notice_penalty_type,
+        p.additional_terms, p.tags, p.terms_conditions , mi.name as role_name
+      FROM properties p
+      left join  master_item_values as mi on p.property_manager_role = mi.id
+         ${whereSql} 
+      ORDER BY p.created_at DESC 
+      LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
     );
-
+ console.log("roowwsssssssssssssss", rows[0])
+    // Get count for pagination
     const [countRows] = await db.query(
-      `SELECT COUNT(*) AS total FROM properties ${whereSql}`,
+      `SELECT COUNT(*) AS total FROM properties p ${whereSql}`,
       params
     );
 
+    // Fetch all master values for mapping
+    const [allMasterValues] = await db.query(
+      `SELECT mv.id, mv.name, mv.master_item_id, mi.name as category_name
+       FROM master_item_values mv
+       JOIN master_items mi ON mv.master_item_id = mi.id
+       WHERE mi.id IN (?, ?, ?)`,
+      [masterItemMap['Tags'] || 0, masterItemMap['Property Rules'] || 0, masterItemMap['Additional Terms'] || 0]
+    );
+
+    // Create lookup maps
+    const valueMap = {
+      tags: {},
+      propertyRules: {},
+      additionalTerms: {}
+    };
+
+    allMasterValues.forEach(value => {
+      if (value.category_name === 'Tags') {
+        valueMap.tags[value.id] = value.name;
+      } else if (value.category_name === 'Property Rules') {
+        valueMap.propertyRules[value.id] = value.name;
+      } else if (value.category_name === 'Additional Terms') {
+        valueMap.additionalTerms[value.id] = value.name;
+      }
+    });
+
+    // Helper function to parse JSON and keep original IDs, add mapped values
+    const parseField = (field) => {
+      if (!field) return { ids: [], values: [] };
+      
+      try {
+        // If it's already an array
+        if (Array.isArray(field)) {
+          return {
+            ids: field,
+            values: field.map(id => {
+              const numId = parseInt(id);
+              return valueMap.propertyRules[numId] || 
+                     valueMap.tags[numId] || 
+                     valueMap.additionalTerms[numId] || 
+                     id;
+            })
+          };
+        }
+        
+        // Try to parse as JSON
+        const parsed = JSON.parse(field);
+        if (Array.isArray(parsed)) {
+          return {
+            ids: parsed,
+            values: parsed.map(id => {
+              const numId = parseInt(id);
+              return valueMap.propertyRules[numId] || 
+                     valueMap.tags[numId] || 
+                     valueMap.additionalTerms[numId] || 
+                     id;
+            })
+          };
+        }
+        // Single value
+        const numId = parseInt(parsed);
+        return {
+          ids: [parsed],
+          values: [valueMap.propertyRules[numId] || 
+                   valueMap.tags[numId] || 
+                   valueMap.additionalTerms[numId] || 
+                   parsed]
+        };
+      } catch (e) {
+        // If parsing fails and it's a string, check if it's a single ID
+        if (typeof field === 'string' && field.trim()) {
+          const numId = parseInt(field);
+          if (!isNaN(numId)) {
+            return {
+              ids: [field],
+              values: [valueMap.propertyRules[numId] || 
+                       valueMap.tags[numId] || 
+                       valueMap.additionalTerms[numId] || 
+                       field]
+            };
+          }
+          // If it's a plain text string, return as is
+          return {
+            ids: [],
+            values: [field]
+          };
+        }
+        return { ids: [], values: [] };
+      }
+    };
+
+    // Parse and map each property
+    const parsedRows = rows.map(row => {
+      // Parse tags - keep original IDs, add mapped values
+      let tagsResult = { ids: [], values: [] };
+      if (row.tags) {
+        try {
+          if (Array.isArray(row.tags)) {
+            tagsResult = {
+              ids: row.tags,
+              values: row.tags.map(id => {
+                const numId = parseInt(id);
+                return valueMap.tags[numId] || id;
+              })
+            };
+          } else {
+            const parsed = JSON.parse(row.tags);
+            if (Array.isArray(parsed)) {
+              tagsResult = {
+                ids: parsed,
+                values: parsed.map(id => {
+                  const numId = parseInt(id);
+                  return valueMap.tags[numId] || id;
+                })
+              };
+            } else {
+              const numId = parseInt(parsed);
+              tagsResult = {
+                ids: [parsed],
+                values: [valueMap.tags[numId] || parsed]
+              };
+            }
+          }
+        } catch (e) {
+          tagsResult = { ids: [], values: [row.tags] };
+        }
+      }
+
+      // Parse property_rules - keep original IDs, add mapped values
+      let propertyRulesResult = { ids: [], values: [] };
+      if (row.property_rules) {
+        try {
+          if (Array.isArray(row.property_rules)) {
+            propertyRulesResult = {
+              ids: row.property_rules,
+              values: row.property_rules.map(id => {
+                const numId = parseInt(id);
+                return valueMap.propertyRules[numId] || id;
+              })
+            };
+          } else {
+            const parsed = JSON.parse(row.property_rules);
+            if (Array.isArray(parsed)) {
+              propertyRulesResult = {
+                ids: parsed,
+                values: parsed.map(id => {
+                  const numId = parseInt(id);
+                  return valueMap.propertyRules[numId] || id;
+                })
+              };
+            } else {
+              const numId = parseInt(parsed);
+              propertyRulesResult = {
+                ids: [parsed],
+                values: [valueMap.propertyRules[numId] || parsed]
+              };
+            }
+          }
+        } catch (e) {
+          propertyRulesResult = { ids: [], values: [row.property_rules] };
+        }
+      }
+
+      // Parse additional_terms - keep original IDs, add mapped values
+      let additionalTermsResult = { ids: [], values: [] };
+      if (row.additional_terms) {
+        try {
+          if (Array.isArray(row.additional_terms)) {
+            additionalTermsResult = {
+              ids: row.additional_terms,
+              values: row.additional_terms.map(id => {
+                const numId = parseInt(id);
+                return valueMap.additionalTerms[numId] || id;
+              })
+            };
+          } else {
+            const parsed = JSON.parse(row.additional_terms);
+            if (Array.isArray(parsed)) {
+              additionalTermsResult = {
+                ids: parsed,
+                values: parsed.map(id => {
+                  const numId = parseInt(id);
+                  return valueMap.additionalTerms[numId] || id;
+                })
+              };
+            } else {
+              const numId = parseInt(parsed);
+              additionalTermsResult = {
+                ids: [parsed],
+                values: [valueMap.additionalTerms[numId] || parsed]
+              };
+            }
+          }
+        } catch (e) {
+          additionalTermsResult = { ids: [], values: [row.additional_terms] };
+        }
+      }
+
+      // Parse amenities, services, photo_urls (keep as is)
+      let amenities = [];
+      try {
+        amenities = row.amenities ? JSON.parse(row.amenities) : [];
+      } catch (e) {
+        amenities = row.amenities || [];
+      }
+
+      let services = [];
+      try {
+        services = row.services ? JSON.parse(row.services) : [];
+      } catch (e) {
+        services = row.services || [];
+      }
+
+      let photoUrls = [];
+      try {
+        photoUrls = row.photo_urls ? JSON.parse(row.photo_urls) : [];
+      } catch (e) {
+        photoUrls = row.photo_urls || [];
+      }
+
+      return {
+        ...row,
+        // Original IDs (keep as is)
+        tags: row.tags,
+        property_rules: row.property_rules,
+        additional_terms: row.additional_terms,
+        
+        // Mapped values (add these)
+        tags_mapped: tagsResult.values,
+        property_rules_mapped: propertyRulesResult.values,
+        additional_terms_mapped: additionalTermsResult.values,
+        
+        // Parsed arrays
+        amenities,
+        services,
+        photo_urls: photoUrls,
+        
+        // Ensure numeric fields are numbers
+        total_rooms: Number(row.total_rooms) || 0,
+        total_beds: Number(row.total_beds) || 0,
+        starting_price: parseFloat(row.starting_price) || 0,
+        security_deposit: parseFloat(row.security_deposit) || 0,
+        lockin_period_months: parseInt(row.lockin_period_months) || 0,
+        lockin_penalty_amount: parseFloat(row.lockin_penalty_amount) || 0,
+        notice_period_days: parseInt(row.notice_period_days) || 0,
+        notice_penalty_amount: parseFloat(row.notice_penalty_amount) || 0,
+        is_active: Boolean(row.is_active),
+        terms_conditions: row.terms_conditions,
+        role_name: row.role_name
+      };
+    });
+
     const total = countRows[0]?.total || 0;
     
-    const parsedRows = rows.map(parseRow);
-    
-    // ✅ ADD DEBUG: Show parsed data
-    console.log("📊 Parsed rows with tags:", 
-      parsedRows.map(r => ({ 
-        id: r.id, 
-        name: r.name, 
-        tags: r.tags,
-        tagsType: typeof r.tags,
-        tagsLength: r.tags.length 
-      }))
-    );
-    
+   
+
     return { rows: parsedRows, total };
+    
   } catch (err) {
     console.error("PropertyModel.findAll error:", err);
     throw err;
@@ -232,31 +470,193 @@ async findById(id) {
     // Convert id to number if it's a string
     const propertyId = parseInt(id);
     
-//     const [rows] = await db.query(
-//   `SELECT p.*, s.photo_url AS manager_photo_url, s.salutation AS manager_salutation
-//    FROM properties p
-//    LEFT JOIN staff s ON p.staff_id = s.id
-//    WHERE p.id = ? LIMIT 1`,
-//   [propertyId]
-// );
+    // Get master item IDs for each category
+    const [masterItems] = await db.query(
+      `SELECT id, name FROM master_items WHERE name IN ('Tags', 'Property Rules', 'Additional Terms') AND tab_name = 'Properties'`
+    );
+    
+    const masterItemMap = {};
+    masterItems.forEach(item => {
+      masterItemMap[item.name] = item.id;
+    });
 
-const [rows] = await db.query(
-  `SELECT p.*, 
-    s.photo_url AS manager_photo_url,
-    s.salutation AS manager_salutation,
-    s.name AS staff_name,
-    s.phone AS staff_phone,
-    s.email AS staff_email,
-    s.role AS staff_role
-   FROM properties p
-   LEFT JOIN staff s ON p.staff_id = s.id
-   WHERE p.id = ? LIMIT 1`,
-  [propertyId]
-);
+    // Main query to get property with staff details
+    const [rows] = await db.query(
+      `SELECT p.*, 
+        s.photo_url AS manager_photo_url,
+        s.salutation AS manager_salutation,
+        s.name AS staff_name,
+        s.phone AS staff_phone,
+        s.email AS staff_email,
+        s.role AS staff_role,
+        mi.name as role_name
+        FROM properties p
+        left join  master_item_values as mi on p.property_manager_role = mi.id
+      LEFT JOIN staff s ON p.staff_id = s.id
+      WHERE p.id = ? LIMIT 1`,
+      [propertyId]
+    );
     
     console.log(`🔍 Found ${rows.length} properties`);
     
-    return rows[0] ? parseRow(rows[0]) : null;
+    if (!rows[0]) return null;
+
+    // Fetch all master values for mapping
+    const [allMasterValues] = await db.query(
+      `SELECT mv.id, mv.name, mv.master_item_id, mi.name as category_name
+       FROM master_item_values mv
+       JOIN master_items mi ON mv.master_item_id = mi.id
+       WHERE mi.id IN (?, ?, ?)`,
+      [masterItemMap['Tags'] || 0, masterItemMap['Property Rules'] || 0, masterItemMap['Additional Terms'] || 0]
+    );
+
+    // Create lookup maps
+    const valueMap = {
+      tags: {},
+      propertyRules: {},
+      additionalTerms: {}
+    };
+
+    allMasterValues.forEach(value => {
+      if (value.category_name === 'Tags') {
+        valueMap.tags[value.id] = value.name;
+      } else if (value.category_name === 'Property Rules') {
+        valueMap.propertyRules[value.id] = value.name;
+      } else if (value.category_name === 'Additional Terms') {
+        valueMap.additionalTerms[value.id] = value.name;
+      }
+    });
+
+    // Helper function to parse JSON and map IDs to names
+    const parseAndMapField = (field, map) => {
+      if (!field) return { ids: [], values: [] };
+      
+      try {
+        // If it's already an array
+        if (Array.isArray(field)) {
+          return {
+            ids: field,
+            values: field.map(id => {
+              const numId = parseInt(id);
+              return map[numId] || id;
+            })
+          };
+        }
+        
+        // Try to parse as JSON
+        const parsed = JSON.parse(field);
+        if (Array.isArray(parsed)) {
+          return {
+            ids: parsed,
+            values: parsed.map(id => {
+              const numId = parseInt(id);
+              return map[numId] || id;
+            })
+          };
+        }
+        // Single value
+        const numId = parseInt(parsed);
+        return {
+          ids: [parsed],
+          values: [map[numId] || parsed]
+        };
+      } catch (e) {
+        // If parsing fails and it's a string, check if it's a single ID
+        if (typeof field === 'string' && field.trim()) {
+          const numId = parseInt(field);
+          if (!isNaN(numId)) {
+            return {
+              ids: [field],
+              values: [map[numId] || field]
+            };
+          }
+          // If it's a plain text string, return as is
+          return {
+            ids: [],
+            values: [field]
+          };
+        }
+        return { ids: [], values: [] };
+      }
+    };
+
+    const row = rows[0];
+
+    // Parse and map tags
+    const tagsResult = parseAndMapField(row.tags, valueMap.tags);
+    
+    // Parse and map property_rules
+    const propertyRulesResult = parseAndMapField(row.property_rules, valueMap.propertyRules);
+    
+    // Parse and map additional_terms
+    const additionalTermsResult = parseAndMapField(row.additional_terms, valueMap.additionalTerms);
+
+    // Parse amenities, services, photo_urls
+    let amenities = [];
+    try {
+      amenities = row.amenities ? JSON.parse(row.amenities) : [];
+    } catch (e) {
+      amenities = row.amenities || [];
+    }
+
+    let services = [];
+    try {
+      services = row.services ? JSON.parse(row.services) : [];
+    } catch (e) {
+      services = row.services || [];
+    }
+
+    let photoUrls = [];
+    try {
+      photoUrls = row.photo_urls ? JSON.parse(row.photo_urls) : [];
+    } catch (e) {
+      photoUrls = row.photo_urls || [];
+    }
+
+    // Build the response object with both original IDs and mapped values
+    const parsedRow = {
+      ...row,
+      // Original IDs (keep as is)
+      tags: row.tags,
+      property_rules: row.property_rules,
+      additional_terms: row.additional_terms,
+      
+      // Mapped values (add these)
+      tags_mapped: tagsResult.values,
+      property_rules_mapped: propertyRulesResult.values,
+      additional_terms_mapped: additionalTermsResult.values,
+      
+      // Parsed arrays
+      amenities,
+      services,
+      photo_urls: photoUrls,
+      
+      // Ensure numeric fields are numbers
+      total_rooms: Number(row.total_rooms) || 0,
+      total_beds: Number(row.total_beds) || 0,
+      starting_price: parseFloat(row.starting_price) || 0,
+      security_deposit: parseFloat(row.security_deposit) || 0,
+      lockin_period_months: parseInt(row.lockin_period_months) || 0,
+      lockin_penalty_amount: parseFloat(row.lockin_penalty_amount) || 0,
+      notice_period_days: parseInt(row.notice_period_days) || 0,
+      notice_penalty_amount: parseFloat(row.notice_penalty_amount) || 0,
+      is_active: Boolean(row.is_active),
+      role_name:row.role_name
+    };
+
+    console.log('Property with mapped values:', {
+      id: parsedRow.id,
+      name: parsedRow.name,
+      tags: parsedRow.tags, // Original IDs
+      tags_mapped: parsedRow.tags_mapped, // Actual names
+      property_rules: parsedRow.property_rules, // Original IDs
+      property_rules_mapped: parsedRow.property_rules_mapped, // Actual names
+      additional_terms: parsedRow.additional_terms, // Original IDs
+      additional_terms_mapped: parsedRow.additional_terms_mapped // Actual names
+    });
+
+    return parsedRow;
+    
   } catch (err) {
     console.error("PropertyModel.findById error:", err);
     throw err;
