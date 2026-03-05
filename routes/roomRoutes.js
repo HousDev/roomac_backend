@@ -4,6 +4,7 @@ const router = express.Router();
 const RoomController = require("../controllers/roomController");
 const tenantAuth = require("../middleware/tenantAuth");
 const roomUpload = require("../middleware/roomUpload");
+const uploadImport = require("../middleware/uploadImport"); 
 
 
 router.get("/", RoomController.getAllRooms);
@@ -38,6 +39,10 @@ router.post('/bulk-update', RoomController.bulkUpdateRooms);
 router.post('/filter', RoomController.getFilteredRooms);
 router.get('/filters/data', RoomController.getRoomFiltersData);
 
-
+router.post(
+  "/import",
+  uploadImport.single("file"),
+  RoomController.import
+);
 
 module.exports = router;

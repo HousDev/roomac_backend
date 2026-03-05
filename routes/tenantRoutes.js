@@ -8,12 +8,21 @@ const {
   handleUploadError 
 } = require("../middleware/uploadDocument");
 const adminAuth = require("../middleware/adminAuth");
+const uploadImport = require("../middleware/uploadImport");
 
 // Debug middleware to log all requests
 router.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
+
+// Import route - add this BEFORE other POST routes
+router.post(
+  "/import",
+  uploadImport.single("file"),
+  TenantController.import
+);
+
 
 // Public routes (no file upload)
 router.get("/diagnostic", TenantController.diagnostic);

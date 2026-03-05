@@ -1,6 +1,8 @@
 // controllers.roomController.js
 const RoomModel = require('../models/roomModel');
 const multer = require("multer");
+const XLSX = require('xlsx');
+const db = require("../config/db");
 const path = require("path");
 const fs = require("fs");
 
@@ -1128,7 +1130,193 @@ async getFilteredRooms(req, res) {
       message: "Failed to fetch filtered rooms: " + err.message
     });
   }
-}
+},
+
+ async import(req, res) {
+    try {
+      console.log("📥 Room import request received");
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No file uploaded"
+        });
+      }
+
+      console.log("📁 File received:", req.file.originalname);
+
+      // Read Excel file
+      const workbook = XLSX.readFile(req.file.path);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+
+      console.log(`📊 Found ${data.length} rows in Excel`);
+
+      const created = [];
+      const errors = [];
+
+      // Get all properties for validation
+      const [properties] = await db.query(`SELECT id, name FROM properties WHERE is_active = 1`);
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNum = i + 2; // +2 for header row
+
+        console.log(`🔍 Processing row ${rowNum}:`, row);
+
+        try {
+          // Validate required fields
+          const propertyId = row['Property ID'] || row['property_id'] || row['PROPERTY ID'];
+          const propertyName = row['Property Name'] || row['property_name'];
+          const roomNumber = row['Room Number'] || row['room_number'];
+          const sharingType = row['Sharing Type'] || row['sharing_type'];
+          const totalBeds = row['Total Beds'] || row['total_beds'];
+          const rentPerBed = row['Rent Per Bed'] || row['rent_per_bed'];
+
+          if (!propertyId && !propertyName) {
+            errors.push(`Row ${rowNum}: Either Property ID or Property Name is required`);
+            continue;
+          }
+
+          // Find property ID if only name is provided
+          let finalPropertyId = propertyId;
+          if (!finalPropertyId && propertyName) {
+            const property = properties.find(p => 
+              p.name.toLowerCase().includes(propertyName.toLowerCase())
+            );
+            if (property) {
+              finalPropertyId = property.id;
+            } else {
+              errors.push(`Row ${rowNum}: Property "${propertyName}" not found`);
+              continue;
+            }
+          }
+
+          if (!roomNumber) {
+            errors.push(`Row ${rowNum}: Room Number is required`);
+            continue;
+          }
+
+          if (!sharingType) {
+            errors.push(`Row ${rowNum}: Sharing Type is required`);
+            continue;
+          }
+
+          if (!totalBeds) {
+            errors.push(`Row ${rowNum}: Total Beds is required`);
+            continue;
+          }
+
+          if (!rentPerBed) {
+            errors.push(`Row ${rowNum}: Rent Per Bed is required`);
+            continue;
+          }
+
+          // Parse amenities
+          let amenities = [];
+          const amenitiesStr = row['Amenities'] || row['amenities'] || '';
+          if (amenitiesStr) {
+            amenities = amenitiesStr.split(',').map(a => a.trim()).filter(a => a);
+          }
+
+          // Parse gender preference
+          let genderPreference = [];
+          const genderPref = row['Gender Preference'] || row['gender_preference'] || 'any';
+          if (genderPref) {
+            if (genderPref.includes(',')) {
+              genderPreference = genderPref.split(',').map(g => g.trim());
+            } else {
+              genderPreference = [genderPref.trim()];
+            }
+          }
+
+          // Parse boolean fields
+          const hasAttachedBathroom = (row['Has Attached Bathroom'] || row['has_attached_bathroom'] || 'No').toString().toLowerCase() === 'yes';
+          const hasBalcony = (row['Has Balcony'] || row['has_balcony'] || 'No').toString().toLowerCase() === 'yes';
+          const hasAC = (row['Has AC'] || row['has_ac'] || 'No').toString().toLowerCase() === 'yes';
+          const allowCouples = (row['Allow Couples'] || row['allow_couples'] || 'No').toString().toLowerCase() === 'yes';
+          
+          // Parse status
+          const status = row['Status'] || row['status'] || 'Active';
+          const isActive = status.toString().toLowerCase() === 'active';
+
+          // Prepare room data
+          const roomData = {
+            property_id: parseInt(finalPropertyId),
+            room_number: roomNumber.toString().trim(),
+            sharing_type: sharingType.toString().toLowerCase().trim(),
+            room_type: (row['Room Type'] || row['room_type'] || 'Standard').toString().trim(),
+            total_beds: parseInt(totalBeds),
+            floor: (row['Floor'] || row['floor'] || '1').toString().trim(),
+            rent_per_bed: parseFloat(rentPerBed),
+            has_attached_bathroom: hasAttachedBathroom,
+            has_balcony: hasBalcony,
+            has_ac: hasAC,
+            amenities: amenities,
+            room_gender_preference: genderPreference,
+            allow_couples: allowCouples,
+            description: (row['Description'] || row['description'] || '').toString().trim(),
+            is_active: isActive,
+            occupied_beds: 0,
+            photo_urls: [],
+            video_url: null
+          };
+
+          console.log(`✅ Creating room:`, roomData);
+
+          // Create room
+          const roomId = await RoomModel.create(roomData);
+
+          created.push({
+            id: roomId,
+            room_number: roomData.room_number,
+            property_id: roomData.property_id
+          });
+
+        } catch (err) {
+          console.error(`❌ Error processing row ${rowNum}:`, err);
+          errors.push(`Row ${rowNum}: ${err.message}`);
+        }
+      }
+
+      // Clean up uploaded file
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log("✅ Temporary file deleted");
+      } catch (err) {
+        console.error("Error deleting temp file:", err);
+      }
+
+      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
+
+      return res.json({
+        success: true,
+        message: `Successfully imported ${created.length} rooms`,
+        count: created.length,
+        errors: errors.length > 0 ? errors : undefined
+      });
+
+    } catch (error) {
+      console.error("❌ Import error:", error);
+      
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (err) {
+          console.error("Error deleting temp file:", err);
+        }
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to import rooms",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
 
 }
 

@@ -1,6 +1,7 @@
 // controllers/propertyController.js 
 const PropertyModel = require("../models/propertyModel");
 const db = require("../config/db");
+const XLSX = require('xlsx');
 const fs = require("fs");
 const path = require("path");
 
@@ -1143,7 +1144,221 @@ async getBulkTagsInfo(req, res) {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
-}
+},
+
+async import(req, res) {
+    try {
+      console.log("📥 Import request received");
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No file uploaded"
+        });
+      }
+
+      console.log("📁 File received:", req.file.originalname);
+
+      // Read Excel file
+      const workbook = XLSX.readFile(req.file.path);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+
+      console.log(`📊 Found ${data.length} rows in Excel`);
+
+      const created = [];
+      const errors = [];
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNum = i + 2; // +2 for header row
+
+        console.log(`🔍 Processing row ${rowNum}:`, row);
+
+        try {
+          // Validate required fields
+          const propertyName = row['Property Name'] || row['property name'] || row['PROPERTY NAME'];
+          if (!propertyName) {
+            errors.push(`Row ${rowNum}: Property Name is required`);
+            continue;
+          }
+
+          const city = row['City'] || row['city'] || row['CITY'];
+          if (!city) {
+            errors.push(`Row ${rowNum}: City is required`);
+            continue;
+          }
+
+          const state = row['State'] || row['state'] || row['STATE'];
+          if (!state) {
+            errors.push(`Row ${rowNum}: State is required`);
+            continue;
+          }
+
+          const area = row['Area'] || row['area'] || row['AREA'];
+          if (!area) {
+            errors.push(`Row ${rowNum}: Area is required`);
+            continue;
+          }
+
+          const startingPrice = row['Starting Price'] || row['starting price'] || row['STARTING PRICE'];
+          if (!startingPrice) {
+            errors.push(`Row ${rowNum}: Starting Price is required`);
+            continue;
+          }
+
+          const status = row['Status'] || row['status'] || row['STATUS'] || 'Active';
+          const statusLower = status.toString().toLowerCase();
+          if (!['active', 'inactive'].includes(statusLower)) {
+            errors.push(`Row ${rowNum}: Status must be "Active" or "Inactive" (got "${status}")`);
+            continue;
+          }
+
+          // Generate slug
+          const slug = propertyName.toString()
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9\-]/g, '');
+
+          // Parse tags
+          let tags = [];
+          const tagsField = row['Tags'] || row['tags'] || row['TAGS'];
+          if (tagsField) {
+            tags = tagsField.toString().split(',').map(t => t.trim()).filter(t => t);
+          }
+
+          // Prepare data for insertion
+          const propertyData = {
+            name: propertyName.toString().trim(),
+            slug,
+            city_id: city.toString().trim(),
+            state: state.toString().trim(),
+            area: area.toString().trim(),
+            address: (row['Address'] || row['address'] || '').toString().trim() || null,
+            total_rooms: parseInt(row['Total Rooms'] || row['total rooms'] || 0),
+            total_beds: parseInt(row['Total Beds'] || row['total beds'] || 0),
+            floor: (row['Floor'] || row['floor'] || '').toString().trim() || null,
+            starting_price: parseFloat(startingPrice) || 0,
+            security_deposit: parseFloat(row['Security Deposit'] || row['security deposit'] || 0) || 0,
+            description: (row['Description'] || row['description'] || '').toString().trim() || null,
+            property_manager_name: (row['Property Manager Name'] || row['property manager name'] || '').toString().trim() || null,
+            property_manager_phone: (row['Property Manager Phone'] || row['property manager phone'] || '').toString().trim() || null,
+            property_manager_email: (row['Property Manager Email'] || row['property manager email'] || '').toString().trim() || null,
+            lockin_period_months: parseInt(row['Lock-in Period Months'] || row['lock-in period months'] || 0) || 0,
+            lockin_penalty_amount: parseFloat(row['Lock-in Penalty Amount'] || row['lock-in penalty amount'] || 0) || 0,
+            lockin_penalty_type: (row['Lock-in Penalty Type'] || row['lock-in penalty type'] || 'fixed').toString().trim(),
+            notice_period_days: parseInt(row['Notice Period Days'] || row['notice period days'] || 0) || 0,
+            notice_penalty_amount: parseFloat(row['Notice Penalty Amount'] || row['notice penalty amount'] || 0) || 0,
+            notice_penalty_type: (row['Notice Penalty Type'] || row['notice penalty type'] || 'fixed').toString().trim(),
+            is_active: statusLower === 'active',
+            tags,
+            amenities: [],
+            services: [],
+            photo_urls: [],
+            property_rules: null,
+            additional_terms: null,
+            terms_conditions: null,
+            terms_json: null
+          };
+
+          console.log(`✅ Inserting property:`, propertyData.name);
+
+          // Insert into database
+          const [result] = await db.query(
+            `INSERT INTO properties 
+            (name, slug, city_id, state, area, address, total_rooms, total_beds, floor,
+             starting_price, security_deposit, description, property_manager_name,
+             property_manager_phone, property_manager_email, lockin_period_months,
+             lockin_penalty_amount, lockin_penalty_type, notice_period_days,
+             notice_penalty_amount, notice_penalty_type, is_active, tags,
+             amenities, services, photo_urls, property_rules, additional_terms,
+             terms_conditions, terms_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              propertyData.name,
+              propertyData.slug,
+              propertyData.city_id,
+              propertyData.state,
+              propertyData.area,
+              propertyData.address,
+              propertyData.total_rooms,
+              propertyData.total_beds,
+              propertyData.floor,
+              propertyData.starting_price,
+              propertyData.security_deposit,
+              propertyData.description,
+              propertyData.property_manager_name,
+              propertyData.property_manager_phone,
+              propertyData.property_manager_email,
+              propertyData.lockin_period_months,
+              propertyData.lockin_penalty_amount,
+              propertyData.lockin_penalty_type,
+              propertyData.notice_period_days,
+              propertyData.notice_penalty_amount,
+              propertyData.notice_penalty_type,
+              propertyData.is_active ? 1 : 0,
+              JSON.stringify(propertyData.tags),
+              JSON.stringify(propertyData.amenities),
+              JSON.stringify(propertyData.services),
+              JSON.stringify(propertyData.photo_urls),
+              propertyData.property_rules,
+              propertyData.additional_terms,
+              propertyData.terms_conditions,
+              propertyData.terms_json
+            ]
+          );
+
+          created.push({
+            id: result.insertId,
+            name: propertyData.name
+          });
+
+          console.log(`✅ Created property ID: ${result.insertId}`);
+
+        } catch (err) {
+          console.error(`❌ Error processing row ${rowNum}:`, err);
+          errors.push(`Row ${rowNum}: ${err.message}`);
+        }
+      }
+
+      // Clean up uploaded file
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log("✅ Temporary file deleted");
+      } catch (err) {
+        console.error("Error deleting temp file:", err);
+      }
+
+      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
+
+      return res.json({
+        success: true,
+        message: `Successfully imported ${created.length} properties`,
+        count: created.length,
+        errors: errors.length > 0 ? errors : undefined
+      });
+
+    } catch (error) {
+      console.error("❌ Import error:", error);
+      
+      // Clean up uploaded file if exists
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (err) {
+          console.error("Error deleting temp file:", err);
+        }
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to import properties",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
 
 };
 
