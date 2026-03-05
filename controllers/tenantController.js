@@ -1315,6 +1315,218 @@ async listWithAssignments(req, res) {
     }
 },
 
+
+ async import(req, res) {
+    try {
+      console.log("📥 Tenant import request received");
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No file uploaded"
+        });
+      }
+
+      console.log("📁 File received:", req.file.originalname);
+
+      // Read Excel file
+      const workbook = xlsx.readFile(req.file.path);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet);
+
+      console.log(`📊 Found ${data.length} rows in Excel`);
+
+      const created = [];
+      const errors = [];
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNum = i + 2; // +2 for header row
+
+        console.log(`🔍 Processing row ${rowNum}:`, row);
+
+        try {
+          // Validate required fields
+          const fullName = row['Full Name'] || row['full_name'] || row['FULL NAME'];
+          if (!fullName) {
+            errors.push(`Row ${rowNum}: Full Name is required`);
+            continue;
+          }
+
+          const email = row['Email'] || row['email'] || row['EMAIL'];
+          if (!email) {
+            errors.push(`Row ${rowNum}: Email is required`);
+            continue;
+          }
+
+          const phone = row['Phone'] || row['phone'] || row['PHONE'];
+          if (!phone) {
+            errors.push(`Row ${rowNum}: Phone is required`);
+            continue;
+          }
+
+          // Validate phone number (Indian format)
+          const phoneStr = phone.toString().replace(/\D/g, '');
+          if (!/^[6-9]\d{9}$/.test(phoneStr)) {
+            errors.push(`Row ${rowNum}: Invalid Indian mobile number (must be 10 digits starting with 6-9)`);
+            continue;
+          }
+
+          const gender = row['Gender'] || row['gender'] || row['GENDER'];
+          if (!gender || !['Male', 'Female', 'Other'].includes(gender)) {
+            errors.push(`Row ${rowNum}: Gender is required (Male/Female/Other)`);
+            continue;
+          }
+
+          const address = row['Address'] || row['address'] || row['ADDRESS'];
+          if (!address) {
+            errors.push(`Row ${rowNum}: Address is required`);
+            continue;
+          }
+
+          const city = row['City'] || row['city'] || row['CITY'];
+          if (!city) {
+            errors.push(`Row ${rowNum}: City is required`);
+            continue;
+          }
+
+          const state = row['State'] || row['state'] || row['STATE'];
+          if (!state) {
+            errors.push(`Row ${rowNum}: State is required`);
+            continue;
+          }
+
+          // Parse boolean fields
+          const portalAccess = (row['Portal Access'] || row['portal_access'] || 'Yes').toString().toLowerCase();
+          const portalAccessEnabled = portalAccess === 'yes' || portalAccess === 'true' || portalAccess === '1';
+
+          const status = (row['Status'] || row['status'] || 'Active').toString().toLowerCase();
+          const isActive = status === 'active' || status === 'yes' || status === '1';
+
+          // Parse lock-in period
+          const lockinPeriodMonths = parseInt(row['Lock-in Period (months)'] || row['lockin_period_months'] || 0);
+          const lockinPenaltyAmount = parseFloat(row['Lock-in Penalty Amount'] || row['lockin_penalty_amount'] || 0);
+          const lockinPenaltyType = (row['Lock-in Penalty Type'] || row['lockin_penalty_type'] || 'fixed').toString().toLowerCase();
+
+          // Parse notice period
+          const noticePeriodDays = parseInt(row['Notice Period (days)'] || row['notice_period_days'] || 0);
+          const noticePenaltyAmount = parseFloat(row['Notice Penalty Amount'] || row['notice_penalty_amount'] || 0);
+          const noticePenaltyType = (row['Notice Penalty Type'] || row['notice_penalty_type'] || 'fixed').toString().toLowerCase();
+
+          // Parse preferred property ID
+          let preferredPropertyId = null;
+          const propId = row['Preferred Property ID'] || row['preferred_property_id'] || row['Preferred Property'];
+          if (propId) {
+            preferredPropertyId = parseInt(propId);
+          }
+
+          // Prepare tenant data
+          const tenantData = {
+            salutation: row['Salutation'] || row['salutation'] || null,
+            full_name: fullName.toString().trim(),
+            email: email.toString().toLowerCase().trim(),
+            country_code: row['Country Code'] || row['country_code'] || '+91',
+            phone: phoneStr,
+            gender: gender,
+            date_of_birth: row['Date of Birth'] || row['date_of_birth'] || null,
+            occupation_category: row['Occupation Category'] || row['occupation_category'] || null,
+            exact_occupation: row['Exact Occupation'] || row['exact_occupation'] || null,
+            address: address.toString().trim(),
+            city: city.toString().trim(),
+            state: state.toString().trim(),
+            pincode: row['Pincode'] || row['pincode'] || null,
+            emergency_contact_name: row['Emergency Contact Name'] || row['emergency_contact_name'] || null,
+            emergency_contact_phone: row['Emergency Contact Phone'] || row['emergency_contact_phone'] || null,
+            emergency_contact_relation: row['Emergency Contact Relation'] || row['emergency_contact_relation'] || null,
+            preferred_sharing: row['Preferred Sharing'] || row['preferred_sharing'] || null,
+            preferred_room_type: row['Preferred Room Type'] || row['preferred_room_type'] || null,
+            preferred_property_id: preferredPropertyId,
+            check_in_date: row['Check-in Date'] || row['check_in_date'] || null,
+            portal_access_enabled: portalAccessEnabled,
+            is_active: isActive,
+            lockin_period_months: lockinPeriodMonths,
+            lockin_penalty_amount: lockinPenaltyAmount,
+            lockin_penalty_type: lockinPenaltyType,
+            notice_period_days: noticePeriodDays,
+            notice_penalty_amount: noticePenaltyAmount,
+            notice_penalty_type: noticePenaltyType,
+            additional_documents: []
+          };
+
+          console.log(`✅ Creating tenant:`, tenantData.full_name);
+
+          // Create tenant
+          const tenantId = await TenantModel.create(tenantData);
+
+          // Create default password for portal access
+          if (portalAccessEnabled) {
+            try {
+              const defaultPassword = phoneStr.slice(-6); // Last 6 digits of phone
+              const password_hash = await bcrypt.hash(defaultPassword, SALT_ROUNDS);
+              
+              await TenantModel.createCredential({
+                tenant_id: tenantId,
+                email: tenantData.email,
+                password_hash,
+              });
+              
+              console.log(`🔑 Created login credentials for tenant ${tenantId}`);
+            } catch (credErr) {
+              console.error(`Failed to create credentials for tenant ${tenantId}:`, credErr);
+              // Don't fail the import, just log the error
+            }
+          }
+
+          created.push({
+            id: tenantId,
+            name: tenantData.full_name,
+            email: tenantData.email
+          });
+
+        } catch (err) {
+          console.error(`❌ Error processing row ${rowNum}:`, err);
+          errors.push(`Row ${rowNum}: ${err.message}`);
+        }
+      }
+
+      // Clean up uploaded file
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log("✅ Temporary file deleted");
+      } catch (err) {
+        console.error("Error deleting temp file:", err);
+      }
+
+      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
+
+      return res.json({
+        success: true,
+        message: `Successfully imported ${created.length} tenants`,
+        count: created.length,
+        errors: errors.length > 0 ? errors : undefined
+      });
+
+    } catch (error) {
+      console.error("❌ Import error:", error);
+      
+      if (req.file) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (err) {
+          console.error("Error deleting temp file:", err);
+        }
+      }
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to import tenants",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
 };
 
 module.exports = TenantController;

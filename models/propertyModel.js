@@ -170,6 +170,7 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
     //   `SELECT * FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     //   [...params, pageSize, offset]
     // );
+
     const [rows] = await db.query(
   `SELECT id, name, slug, city_id, state, area, address, total_rooms, total_beds, 
    floor, starting_price, security_deposit, description, 
@@ -182,7 +183,8 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
    FROM properties ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
   [...params, pageSize, offset]
 );
-
+ 
+console.log("rowwsssssssssssss",rows)
 
     // ✅ ADD DEBUG: Show raw database data
     console.log("📊 Raw database rows with tags:", 
