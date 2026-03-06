@@ -1,170 +1,4 @@
-// const Staff = require("../models/staffModel");
-// const path = require('path');
-// const fs = require('fs');
-
-// // =========================
-// // GET ALL STAFF
-// // =========================
-// exports.getStaff = async (req, res) => {
-//   try {
-//     const staff = await Staff.getAll();
-//     res.json({
-//       success: true,
-//       data: staff,
-//     });
-//   } catch (err) {
-//     console.error("GET STAFF ERROR:", err);
-//     res.status(500).json({
-//       success: false,
-//       message: "Failed to fetch staff",
-//     });
-//   }
-// };
-
-// // =========================
-// // CREATE STAFF
-// // =========================
-// exports.createStaff = async (req, res) => {
-//   try {
-//     const {
-//       name,
-//       email,
-//       phone,
-//       role,
-//       employee_id,
-//       joining_date,
-//       salary,
-//       is_whatsapp_same,
-//       whatsapp_number,
-//     } = req.body;
-
-//     // ✅ REQUIRED FIELD VALIDATION
-//     if (!name || !email || !phone || !role || !employee_id || !joining_date) {
-//       return res.status(400).json({
-//         success: false,
-//         message:
-//           "Name, Email, Phone, Role, Employee ID and Joining Date are required",
-//       });
-//     }
-
-//     // ✅ WhatsApp logic validation
-//     if (!is_whatsapp_same && !whatsapp_number) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "WhatsApp number is required when not same as phone",
-//       });
-//     }
-
-//     const result = await Staff.create({
-//       ...req.body,
-//       salary: salary ? Number(salary) : 0,
-//       is_whatsapp_same: is_whatsapp_same ? 1 : 0,
-//     });
-
-//     res.status(201).json({
-//       success: true,
-//       message: "Staff added successfully",
-//       id: result.insertId,
-//     });
-//   } catch (err) {
-//     console.error("CREATE STAFF ERROR:", err);
-
-//     // ✅ DUPLICATE HANDLING
-//     if (err.code === "ER_DUP_ENTRY") {
-//       return res.status(409).json({
-//         success: false,
-//         message: "Email or Employee ID already exists",
-//       });
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: err.sqlMessage || "Failed to add staff",
-//     });
-//   }
-// };
-
-// // =========================
-// // UPDATE STAFF
-// // =========================
-// exports.updateStaff = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     if (!id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Staff ID is required",
-//       });
-//     }
-
-//     // ✅ WhatsApp sync logic (controller-level safety)
-//     if (req.body.is_whatsapp_same === 1 && req.body.phone) {
-//       req.body.whatsapp_number = req.body.phone;
-//     }
-
-//     const result = await Staff.update(id, req.body);
-
-//     if (!result.affectedRows) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Staff not found",
-//       });
-//     }
-
-//     res.json({
-//       success: true,
-//       message: "Staff updated successfully",
-//     });
-//   } catch (err) {
-//     console.error("UPDATE STAFF ERROR:", err);
-
-//     if (err.code === "ER_DUP_ENTRY") {
-//       return res.status(409).json({
-//         success: false,
-//         message: "Email or Employee ID already exists",
-//       });
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: err.sqlMessage || "Failed to update staff",
-//     });
-//   }
-// };
-
-// // =========================
-// // DELETE STAFF (HARD DELETE)
-// // =========================
-// exports.deleteStaff = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     const result = await Staff.delete(id);
-
-//     if (!result.affectedRows) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Staff not found",
-//       });
-//     }
-
-//     res.json({
-//       success: true,
-//       message: "Staff deleted successfully",
-//     });
-//   } catch (err) {
-//     console.error("DELETE STAFF ERROR:", err);
-
-//     res.status(500).json({
-//       success: false,
-//       message: err.sqlMessage || "Failed to delete staff",
-//     });
-//   }
-// };
-
-
-// controllers/staffController.js
+// controllers/staffcontroller.js
 const staffModel = require("../models/staffModel");
 const db = require("../config/db");
 const path = require("path");
@@ -228,13 +62,12 @@ exports.getStaff = async (req, res) => {
 };
 
 // CREATE STAFF with file upload and password
-// CREATE STAFF with file upload and password
 exports.createStaff = async (req, res) => {
   try {
     const files = req.files;
     const body = req.body;
 
-    console.log("Creating staff with data:", { ...body, password: '***' }); // Debug log
+    console.log("Creating staff with data:", { ...body, password: '***' });
 
     // Parse boolean fields
     const is_whatsapp_same = body.is_whatsapp_same === 'true' || body.is_whatsapp_same === '1' || body.is_whatsapp_same === true;
@@ -405,9 +238,8 @@ exports.updateStaff = async (req, res) => {
       updateData.password = body.password;
     }
 
-    // Handle file uploads - REMOVED THE REQUIRE LINE
+    // Handle file uploads
     if (files) {
-      // Use the functions defined at the top of the file directly
       if (files.aadhar_document && files.aadhar_document[0]) {
         if (existing.aadhar_document_url) {
           deleteOldFile(existing.aadhar_document_url);
@@ -450,7 +282,6 @@ exports.updateStaff = async (req, res) => {
   } catch (error) {
     console.error("Error updating staff:", error);
     
-    // Handle specific errors
     if (error.message.includes("Email already exists")) {
       return res.status(400).json({
         success: false,
@@ -536,11 +367,13 @@ exports.deleteStaff = async (req, res) => {
   }
 };
 
-// DELETE SPECIFIC DOCUMENT
+
 exports.deleteDocument = async (req, res) => {
   try {
     const { id } = req.params;
     const { documentType } = req.body;
+
+    console.log("Deleting document:", { id, documentType });
 
     if (!documentType || !['aadhar_document', 'pan_document', 'photo'].includes(documentType)) {
       return res.status(400).json({
@@ -549,7 +382,9 @@ exports.deleteDocument = async (req, res) => {
       });
     }
 
+    const staffModel = require("../models/staffModel");
     const existing = await staffModel.getById(id);
+    
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -560,30 +395,131 @@ exports.deleteDocument = async (req, res) => {
     const fieldName = `${documentType}_url`;
     const fileName = existing[fieldName];
 
+    console.log("Existing document URL:", fileName);
+
+    // Delete the file if it exists
     if (fileName) {
       try {
-        const filePath = path.join(__dirname, '../uploads/staff-documents', path.basename(fileName));
+        const filename = path.basename(fileName);
+        const filePath = path.join(__dirname, '../uploads/staff-documents', filename);
+        
+        console.log("Attempting to delete file:", filePath);
+        
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
+          console.log("File deleted successfully");
         }
       } catch (error) {
         console.error(`Error deleting document file:`, error);
+        // Continue even if file deletion fails - we still want to update the database
       }
     }
 
-    const updateData = { [fieldName]: null };
-    await staffModel.update(id, updateData);
+    // CRITICAL FIX: Use a direct database query to ensure the update happens
+    const db = require("../config/db");
+    
+    // First, verify the current value
+    const [checkResult] = await db.query(
+      `SELECT ${fieldName} FROM staff WHERE id = ?`,
+      [id]
+    );
+    console.log(`Current ${fieldName} in DB:`, checkResult[0]?.[fieldName]);
+
+    // Update the database directly
+    const [updateResult] = await db.query(
+      `UPDATE staff SET ${fieldName} = NULL WHERE id = ?`,
+      [id]
+    );
+    
+    console.log(`Update result:`, updateResult);
+    
+    if (updateResult.affectedRows === 0) {
+      throw new Error("Database update failed - no rows affected");
+    }
+
+    // Verify the update worked
+    const [verifyResult] = await db.query(
+      `SELECT ${fieldName} FROM staff WHERE id = ?`,
+      [id]
+    );
+    console.log(`After update - ${fieldName} in DB:`, verifyResult[0]?.[fieldName]);
+
+    // Get the updated staff data with all fields
+    const updatedStaff = await staffModel.getById(id);
+    
+    // Remove password from response
+    const { password, ...staffWithoutPassword } = updatedStaff;
+
+    // Build the response data with explicit null for the deleted document
+    const responseData = {
+      ...staffWithoutPassword,
+      aadhar_document_url: updatedStaff.aadhar_document_url ? buildFileUrl(updatedStaff.aadhar_document_url) : null,
+      pan_document_url: updatedStaff.pan_document_url ? buildFileUrl(updatedStaff.pan_document_url) : null,
+      photo_url: updatedStaff.photo_url ? buildFileUrl(updatedStaff.photo_url) : null
+    };
+
+    console.log("Sending response data:", {
+      aadhar: responseData.aadhar_document_url,
+      pan: responseData.pan_document_url,
+      photo: responseData.photo_url
+    });
 
     res.json({
       success: true,
-      message: "Document deleted successfully"
+      message: "Document deleted successfully",
+      data: responseData
     });
 
   } catch (error) {
-    console.error("Error deleting document:", error);
+    console.error("Error in deleteDocument:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to delete document"
+      message: error.message || "Failed to delete document"
+    });
+  }
+};
+
+
+exports.getStaffById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Add a flag to bypass any caching
+    const staff = await staffModel.getById(id);
+    
+    if (!staff) {
+      return res.status(404).json({
+        success: false,
+        message: "Staff not found"
+      });
+    }
+    
+    const { password, ...staffWithoutPassword } = staff;
+    
+    // Build the response with explicit null checks
+    const responseData = {
+      ...staffWithoutPassword,
+      aadhar_document_url: staff.aadhar_document_url ? buildFileUrl(path.basename(staff.aadhar_document_url)) : null,
+      pan_document_url: staff.pan_document_url ? buildFileUrl(path.basename(staff.pan_document_url)) : null,
+      photo_url: staff.photo_url ? buildFileUrl(path.basename(staff.photo_url)) : null
+    };
+    
+    console.log("getStaffById response:", {
+      id: responseData.id,
+      aadhar: responseData.aadhar_document_url,
+      pan: responseData.pan_document_url,
+      photo: responseData.photo_url
+    });
+    
+    res.json({
+      success: true,
+      data: responseData
+    });
+  } catch (error) {
+    console.error("Error getting staff by id:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch staff"
     });
   }
 };
