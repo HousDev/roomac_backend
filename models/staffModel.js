@@ -557,3 +557,54 @@ exports.delete = async (id) => {
     connection.release();
   }
 };
+
+// In models/staffModel.js - add this method
+
+// DELETE DOCUMENT ONLY (more specific than general update)
+exports.deleteDocument = async (id, documentType) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const fieldName = `${documentType}_url`;
+    
+    // First, get the current document URL
+    const [current] = await connection.query(
+      `SELECT ${fieldName} FROM staff WHERE id = ?`,
+      [id]
+    );
+    
+    console.log(`Current ${fieldName}:`, current[0]?.[fieldName]);
+
+    // Update the database to set the document URL to NULL
+    const [result] = await connection.query(
+      `UPDATE staff SET ${fieldName} = NULL WHERE id = ?`,
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      throw new Error("Staff not found or no changes made");
+    }
+
+    // Verify the update
+    const [verify] = await connection.query(
+      `SELECT ${fieldName} FROM staff WHERE id = ?`,
+      [id]
+    );
+    
+    console.log(`After update - ${fieldName}:`, verify[0]?.[fieldName]);
+
+    await connection.commit();
+    
+    // Get the updated staff data
+    const updatedStaff = await exports.getById(id);
+    return updatedStaff;
+
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error in deleteDocument:", error);
+    throw error;
+  } finally {
+    connection.release();
+  }
+};

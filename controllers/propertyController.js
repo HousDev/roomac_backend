@@ -1358,7 +1358,49 @@ async import(req, res) {
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
+  },
+
+  
+async getPropertyOccupancyStats(req, res) {
+  try {
+    const { propertyId } = req.params;
+    
+    // Get all rooms for this property
+    const [rooms] = await db.query(
+      `SELECT id, total_bed, occupied_beds 
+       FROM rooms 
+       WHERE property_id = ? AND is_active = TRUE`,
+      [propertyId]
+    );
+    
+    // Calculate totals
+    let totalRooms = rooms.length;
+    let totalBeds = 0;
+    let occupiedBeds = 0;
+    
+    rooms.forEach(room => {
+      totalBeds += room.total_bed || 0;
+      occupiedBeds += room.occupied_beds || 0;
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        totalRooms,
+        totalBeds,
+        occupiedBeds,
+        availableBeds: totalBeds - occupiedBeds,
+        occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0
+      }
+    });
+  } catch (error) {
+    console.error("Error getting property occupancy stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch occupancy stats"
+    });
   }
+}
 
 };
 

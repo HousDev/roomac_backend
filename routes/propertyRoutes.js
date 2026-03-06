@@ -38,6 +38,7 @@ router.delete("/:id", PropertyController.remove);
 router.post("/bulk-delete", PropertyController.bulkDelete);
 router.post("/bulk-status", PropertyController.bulkStatus);
 router.post("/bulk-tags", PropertyController.bulkUpdateTags); 
+router.get("/:propertyId/occupancy-stats", PropertyController.getPropertyOccupancyStats);
 
 
 module.exports = router;
