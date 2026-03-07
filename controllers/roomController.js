@@ -688,11 +688,14 @@ console.log("Video:", req.compressedVideo);
 
 
  // Assign bed to tenant - POST /api/rooms/assign-bed
+
 async assignBed(req, res) {
   try {
-    const { room_id, bed_number, tenant_id, tenant_gender } = req.body;
+    const { room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple } = req.body;
     
-    console.log('[CONTROLLER] assignBed request:', req.body);
+    console.log('[CONTROLLER] assignBed request - FULL BODY:', req.body);
+    console.log('[CONTROLLER] tenant_rent received:', tenant_rent, 'type:', typeof tenant_rent);
+    console.log('[CONTROLLER] is_couple received:', is_couple, 'type:', typeof is_couple);
     
     // Validate required fields
     if (!room_id || !bed_number || !tenant_id || !tenant_gender) {
@@ -706,6 +709,36 @@ async assignBed(req, res) {
     const roomId = parseInt(room_id);
     const bedNumber = parseInt(bed_number);
     const tenantId = parseInt(tenant_id);
+    
+    // Parse tenant_rent - handle different formats
+    let customRent = null;
+    if (tenant_rent !== undefined && tenant_rent !== null && tenant_rent !== '') {
+      customRent = parseFloat(tenant_rent);
+      if (isNaN(customRent)) {
+        customRent = null;
+      }
+    }
+    
+    // Parse is_couple - handle different formats
+    let coupleStatus = false;
+    if (is_couple !== undefined && is_couple !== null) {
+      if (typeof is_couple === 'boolean') {
+        coupleStatus = is_couple;
+      } else if (typeof is_couple === 'string') {
+        coupleStatus = is_couple === 'true' || is_couple === '1';
+      } else if (typeof is_couple === 'number') {
+        coupleStatus = is_couple === 1;
+      }
+    }
+    
+    console.log('[CONTROLLER] Processed values:', {
+      roomId,
+      bedNumber,
+      tenantId,
+      tenant_gender,
+      customRent,
+      coupleStatus
+    });
     
     if (isNaN(roomId) || isNaN(bedNumber) || isNaN(tenantId)) {
       return res.status(400).json({
@@ -723,8 +756,8 @@ async assignBed(req, res) {
       });
     }
     
-    // Call model function
-    const result = await RoomModel.assignBed(roomId, bedNumber, tenantId, tenant_gender);
+    // Call model function with new parameters
+    const result = await RoomModel.assignBed(roomId, bedNumber, tenantId, tenant_gender, customRent, coupleStatus);
     
     res.json({
       success: true,
@@ -734,6 +767,7 @@ async assignBed(req, res) {
     
   } catch (err) {
     console.error("[CONTROLLER] assignBed error:", err.message);
+    console.error("[CONTROLLER] Full error:", err);
     
     // Handle specific errors
     let status = 400;
@@ -753,13 +787,16 @@ async assignBed(req, res) {
 
 
 
-// Update bed assignment - PUT /api/rooms/bed-assignments/:id
+// controllers/roomController.js - Fix the updateBedAssignment method
+
 async updateBedAssignment(req, res) {
   try {
     const { id } = req.params; // bed assignment ID
-    const { tenant_id, tenant_gender, is_available, vacate_reason } = req.body;
+    const { tenant_id, tenant_gender, is_available, vacate_reason, tenant_rent, is_couple } = req.body;
     
-    console.log('[CONTROLLER] updateBedAssignment:', { id, body: req.body });
+    console.log('[CONTROLLER] updateBedAssignment FULL BODY:', req.body);
+    console.log('[CONTROLLER] tenant_rent received:', tenant_rent, 'type:', typeof tenant_rent);
+    console.log('[CONTROLLER] is_couple received:', is_couple, 'type:', typeof is_couple);
     
     if (!id) {
       return res.status(400).json({
@@ -781,9 +818,9 @@ async updateBedAssignment(req, res) {
     
     if (is_available !== undefined) {
       // Convert string 'true'/'false' to boolean
-      if (is_available === 'true' || is_available === true) {
+      if (is_available === 'true' || is_available === true || is_available === 1 || is_available === '1') {
         processedData.is_available = true;
-      } else if (is_available === 'false' || is_available === false) {
+      } else if (is_available === 'false' || is_available === false || is_available === 0 || is_available === '0') {
         processedData.is_available = false;
       } else {
         processedData.is_available = Boolean(is_available);
@@ -794,9 +831,35 @@ async updateBedAssignment(req, res) {
       processedData.vacate_reason = vacate_reason;
     }
     
-    console.log('Processed data:', processedData);
+    // FIX: Add tenant_rent to processedData
+    if (tenant_rent !== undefined) {
+      // Handle null/empty values
+      if (tenant_rent === null || tenant_rent === '' || tenant_rent === 'null') {
+        processedData.tenant_rent = null;
+      } else {
+        // Convert to number
+        const rentValue = parseFloat(tenant_rent);
+        processedData.tenant_rent = isNaN(rentValue) ? null : rentValue;
+      }
+      console.log('[CONTROLLER] Processed tenant_rent:', processedData.tenant_rent);
+    }
     
-    // Call model function - IMPORTANT: Use RoomModel.updateBedAssignment
+    // FIX: Add is_couple to processedData
+    if (is_couple !== undefined) {
+      // Convert various formats to boolean
+      if (is_couple === true || is_couple === 'true' || is_couple === 1 || is_couple === '1') {
+        processedData.is_couple = true;
+      } else if (is_couple === false || is_couple === 'false' || is_couple === 0 || is_couple === '0') {
+        processedData.is_couple = false;
+      } else {
+        processedData.is_couple = Boolean(is_couple);
+      }
+      console.log('[CONTROLLER] Processed is_couple:', processedData.is_couple);
+    }
+    
+    console.log('[CONTROLLER] Final processed data:', processedData);
+    
+    // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
     
     res.json({
@@ -807,6 +870,7 @@ async updateBedAssignment(req, res) {
     
   } catch (err) {
     console.error("[CONTROLLER] updateBedAssignment error:", err.message);
+    console.error("[CONTROLLER] Full error:", err);
     
     let status = 400;
     let message = err.message;
