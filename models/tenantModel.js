@@ -69,7 +69,8 @@ function parseTenant(row) {
 
 const TenantModel = {
 
-  async findAll({
+// In tenantModel.js - Update the findAll method SELECT clause
+async findAll({
   search = "",
   page = 1,
   pageSize = 50,
@@ -94,35 +95,35 @@ const TenantModel = {
       params.push(q, q, q, q, q);
     }
     if (gender) {
-      where.push("t.gender = ?"); // ✅ Use t.gender
+      where.push("t.gender = ?");
       params.push(gender);
     }
     if (occupation_category) {
-      where.push("t.occupation_category = ?"); // ✅ Use t.occupation_category
+      where.push("t.occupation_category = ?");
       params.push(occupation_category);
     }
     if (typeof is_active !== "undefined" && is_active !== null) {
-      where.push("t.is_active = ?"); // ✅ Use t.is_active (from tenants table)
+      where.push("t.is_active = ?");
       params.push(is_active ? 1 : 0);
     }
     if (typeof portal_access_enabled !== "undefined" && portal_access_enabled !== null) {
-      where.push("t.portal_access_enabled = ?"); // ✅ Use t.portal_access_enabled
+      where.push("t.portal_access_enabled = ?");
       params.push(portal_access_enabled ? 1 : 0);
     }
     if (city) {
-      where.push("t.city LIKE ?"); // ✅ Use t.city
+      where.push("t.city LIKE ?");
       params.push(`%${city}%`);
     }
     if (state) {
-      where.push("t.state LIKE ?"); // ✅ Use t.state
+      where.push("t.state LIKE ?");
       params.push(`%${state}%`);
     }
     if (preferred_sharing) {
-      where.push("t.preferred_sharing = ?"); // ✅ Use t.preferred_sharing
+      where.push("t.preferred_sharing = ?");
       params.push(preferred_sharing);
     }
     if (preferred_room_type) {
-      where.push("t.preferred_room_type = ?"); // ✅ Use t.preferred_room_type
+      where.push("t.preferred_room_type = ?");
       params.push(preferred_room_type);
     }
     if (typeof has_credentials !== "undefined" && has_credentials !== null) {
@@ -135,10 +136,23 @@ const TenantModel = {
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // SQL with table aliases
+    // UPDATED SQL to include all occupation fields
     const sql = `
       SELECT 
         t.*,
+        -- Include all occupation fields explicitly
+        t.occupation_category,
+        t.exact_occupation,
+        t.occupation,
+        t.organization,
+        t.years_of_experience,
+        t.monthly_income,
+        t.course_duration,
+        t.student_id,
+        t.employee_id,
+        t.portfolio_url,
+        t.work_mode,
+        t.shift_timing,
         -- Use aggregation functions for bed assignment fields
         MAX(ba.id) as assignment_id,
         MAX(ba.room_id) as assigned_room_id,
@@ -188,27 +202,74 @@ const TenantModel = {
 },
 
   // In TenantModel.findById() - ensure it includes:
+// In tenantModel.js - Update the findById method
 async findById(id) {
-  const sql = `
-    SELECT 
-      t.*, 
-      p.name as property_name,
-      p.address as property_address,
-      p.city as property_city,
-      p.state as property_state,
-      p.lockin_period_months as property_lockin_period_months,
-      p.lockin_penalty_amount as property_lockin_penalty_amount,
-      p.lockin_penalty_type as property_lockin_penalty_type,
-      p.notice_period_days as property_notice_period_days,
-      p.notice_penalty_amount as property_notice_penalty_amount,
-      p.notice_penalty_type as property_notice_penalty_type
-    FROM tenants t
-    LEFT JOIN properties p ON t.property_id = p.id
-    WHERE t.id = ?
-  `;
-  
-  const [rows] = await pool.query(sql, [id]);
-  return rows[0] || null;
+  try {
+    const sql = `
+      SELECT 
+        t.*,
+        p.name as property_name,
+        p.address as property_address,
+        p.city as property_city,
+        p.state as property_state,
+        p.lockin_period_months as property_lockin_period_months,
+        p.lockin_penalty_amount as property_lockin_penalty_amount,
+        p.lockin_penalty_type as property_lockin_penalty_type,
+        p.notice_period_days as property_notice_period_days,
+        p.notice_penalty_amount as property_notice_penalty_amount,
+        p.notice_penalty_type as property_notice_penalty_type
+      FROM tenants t
+      LEFT JOIN properties p ON t.property_id = p.id
+      WHERE t.id = ?
+    `;
+    
+    const [rows] = await pool.query(sql, [id]);
+    
+    if (!rows[0]) return null;
+    
+    const tenant = rows[0];
+    
+    // Parse additional_documents if it exists
+    if (tenant.additional_documents) {
+      try {
+        if (typeof tenant.additional_documents === 'string') {
+          tenant.additional_documents = JSON.parse(tenant.additional_documents);
+        }
+      } catch (e) {
+        console.error('Error parsing additional_documents:', e);
+        tenant.additional_documents = [];
+      }
+    } else {
+      tenant.additional_documents = [];
+    }
+    
+    // Format dates
+    if (tenant.date_of_birth) {
+      const date = new Date(tenant.date_of_birth);
+      tenant.date_of_birth = date.toISOString().split('T')[0];
+    }
+    
+    if (tenant.check_in_date) {
+      const date = new Date(tenant.check_in_date);
+      tenant.check_in_date = date.toISOString().split('T')[0];
+    }
+    
+    console.log('Tenant fetched with all fields:', {
+      id: tenant.id,
+      work_mode: tenant.work_mode,
+      shift_timing: tenant.shift_timing,
+      occupation_category: tenant.occupation_category,
+      exact_occupation: tenant.exact_occupation,
+      organization: tenant.organization,
+      years_of_experience: tenant.years_of_experience,
+      monthly_income: tenant.monthly_income
+    });
+    
+    return tenant;
+  } catch (err) {
+    console.error("TenantModel.findById error:", err);
+    throw err;
+  }
 },
 
   
@@ -248,6 +309,7 @@ async findById(id) {
 
   
   // In tenantModel.js - Update the create method
+// In tenantModel.js - Update the create method
 async create(payload) {
   try {
     console.log('TenantModel.create called with payload keys:', Object.keys(payload));
@@ -263,6 +325,15 @@ async create(payload) {
       occupation_category,
       exact_occupation,
       occupation,
+      organization,
+      years_of_experience,
+      monthly_income,
+      course_duration,
+      student_id,
+      employee_id,
+      portfolio_url,
+      work_mode,
+      shift_timing,
       portal_access_enabled = false,
       is_active = true,
       id_proof_url,
@@ -281,7 +352,7 @@ async create(payload) {
       emergency_contact_phone,
       emergency_contact_relation,
       additional_documents = '[]',
-      // New fields for lock-in and notice period
+      // Lock-in and notice period fields
       lockin_period_months,
       lockin_penalty_amount,
       lockin_penalty_type,
@@ -317,6 +388,15 @@ async create(payload) {
       occupation_category || null,
       exact_occupation || null,
       occupation || null,
+      organization || null,
+      years_of_experience || null,
+      monthly_income || null,
+      course_duration || null,
+      student_id || null,
+      employee_id || null,
+      portfolio_url || null,
+      work_mode || null,
+      shift_timing || null,
       portal_access_enabled ? 1 : 0,
       is_active ? 1 : 0,
       id_proof_url || null,
@@ -330,17 +410,11 @@ async create(payload) {
       preferred_room_type || null,
       preferred_property_id ? parseInt(preferred_property_id) : null,
       property_id ? parseInt(property_id) : null,
-      // check_in_date || null,
-      check_in_date 
-  ? (typeof check_in_date === 'string' && check_in_date.includes('T')
-      ? check_in_date.split('T')[0]
-      : check_in_date)
-  : null,
+      check_in_date ? (typeof check_in_date === 'string' && check_in_date.includes('T') ? check_in_date.split('T')[0] : check_in_date) : null,
       emergency_contact_name || null,
       emergency_contact_phone || null,
       emergency_contact_relation || null,
       additionalDocsJson,
-      // New fields
       lockin_period_months || 0,
       lockin_penalty_amount || 0,
       lockin_penalty_type || 'fixed',
@@ -353,32 +427,25 @@ async create(payload) {
     console.log('Sample values:', {
       full_name: values[0],
       email: values[1],
-      property_id: values[21],
-      lockin_months: values[26],
-      notice_days: values[29]
+      occupation_category: values[7],
+      exact_occupation: values[8],
+      occupation: values[9],
+      organization: values[10],
+      years_of_experience: values[11],
+      monthly_income: values[12],
+      course_duration: values[13],
+      student_id: values[14],
+      employee_id: values[15],
+      portfolio_url: values[16],
+      work_mode: values[17],
+      shift_timing: values[18],
+      property_id: values[31],
+      lockin_months: values[40],
+      notice_days: values[43]
     });
 
-//     add("check_in_date", property.check_in_date, (v) => {
-//   if (!v) return null;
-//   // If it's an ISO string with time, extract just the date part
-//   if (typeof v === 'string' && v.includes('T')) {
-//     return v.split('T')[0]; // Extract YYYY-MM-DD
-//   }
-//   return v;
-// });
-    
-    // const sql = `INSERT INTO tenants
-    //    (salutation, full_name, email, phone, country_code, gender, date_of_birth, occupation_category, 
-    //     exact_occupation, occupation, portal_access_enabled, is_active,
-    //     id_proof_url, address_proof_url, photo_url, address, city, state, pincode,
-    //     preferred_sharing, preferred_room_type, preferred_property_id, property_id, check_in_date,
-    //     emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
-    //     additional_documents, 
-    //     lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
-    //     notice_period_days, notice_penalty_amount, notice_penalty_type)
-    //    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    
-const sql = `
+    // UPDATED SQL to include ALL occupation fields
+    const sql = `
 INSERT INTO tenants (
   salutation,
   full_name,
@@ -390,6 +457,15 @@ INSERT INTO tenants (
   occupation_category,
   exact_occupation,
   occupation,
+  organization,
+  years_of_experience,
+  monthly_income,
+  course_duration,
+  student_id,
+  employee_id,
+  portfolio_url,
+  work_mode,
+  shift_timing,
   portal_access_enabled,
   is_active,
   id_proof_url,
@@ -416,10 +492,9 @@ INSERT INTO tenants (
   notice_penalty_type
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `;
-
 
     console.log('SQL query prepared');
     
@@ -501,6 +576,7 @@ async getCredentialsByTenantIds(tenantIds) {
 },
 
 
+// In tenantModel.js - Update the update method
 async update(id, payload) {
   try {
     const fields = [];
@@ -512,19 +588,18 @@ async update(id, payload) {
         params.push(v);
       }
     };
-     if (payload.check_in_date && typeof payload.check_in_date === 'string') {
+    
+    if (payload.check_in_date && typeof payload.check_in_date === 'string') {
       try {
-        // Parse and format to YYYY-MM-DD
         const date = new Date(payload.check_in_date);
         if (!isNaN(date.getTime())) {
-          payload.check_in_date = date.toISOString().split('T')[0]; // Extract YYYY-MM-DD
+          payload.check_in_date = date.toISOString().split('T')[0];
         }
       } catch (e) {
         console.error('Error formatting check_in_date:', e);
       }
     }
 
-    // Also format date_of_birth for consistency
     if (payload.date_of_birth && typeof payload.date_of_birth === 'string') {
       try {
         const date = new Date(payload.date_of_birth);
@@ -544,9 +619,20 @@ async update(id, payload) {
     setIf("country_code", payload.country_code);
     setIf("gender", payload.gender);
     setIf("date_of_birth", payload.date_of_birth);
+    
+    // Occupation fields - ALL of them
     setIf("occupation_category", payload.occupation_category);
     setIf("exact_occupation", payload.exact_occupation);
     setIf("occupation", payload.occupation);
+    setIf("organization", payload.organization);
+    setIf("years_of_experience", payload.years_of_experience);
+    setIf("monthly_income", payload.monthly_income);
+    setIf("course_duration", payload.course_duration);
+    setIf("student_id", payload.student_id);
+    setIf("employee_id", payload.employee_id);
+    setIf("portfolio_url", payload.portfolio_url);
+    setIf("work_mode", payload.work_mode);
+    setIf("shift_timing", payload.shift_timing);
     
     // Status fields
     if (typeof payload.is_active !== "undefined")
@@ -569,10 +655,10 @@ async update(id, payload) {
     setIf("preferred_sharing", payload.preferred_sharing);
     setIf("preferred_room_type", payload.preferred_room_type);
     setIf("preferred_property_id", payload.preferred_property_id);
-    setIf("property_id", payload.property_id); // New field
-    setIf("check_in_date", payload.check_in_date); // New field
+    setIf("property_id", payload.property_id);
+    setIf("check_in_date", payload.check_in_date);
     
-    // New lock-in and notice period fields
+    // Lock-in and notice period fields
     setIf("lockin_period_months", payload.lockin_period_months);
     setIf("lockin_penalty_amount", payload.lockin_penalty_amount);
     setIf("lockin_penalty_type", payload.lockin_penalty_type);
