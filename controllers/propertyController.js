@@ -321,19 +321,20 @@ async create(req, res) {
       area: body.area.trim(),
       address: body.address?.trim() || null,
 
+      map_embed_url: body.map_embed_url?.trim() || null,
+      map_direction_url: body.map_direction_url?.trim() || null,
+
       total_rooms: parseInt(body.total_rooms || 0),
       total_beds: parseInt(body.total_beds || 0),
-      floor: body.floor, 
+      floor: body.floor,
 
       starting_price: parseFloat(body.starting_price || 0),
       security_deposit: parseFloat(body.security_deposit || 0),
 
       description: body.description?.trim() || null,
 
-      property_manager_name:
-        body.property_manager_name?.trim() || null,
-      property_manager_phone:
-        body.property_manager_phone?.trim() || null,
+      property_manager_name: body.property_manager_name?.trim() || null,
+      property_manager_phone: body.property_manager_phone?.trim() || null,
       property_manager_email: body.property_manager_email?.trim() || null,
       property_manager_role: body.property_manager_role?.trim() || null,
       staff_id: body.staff_id ? parseInt(body.staff_id) || null : null,
@@ -343,9 +344,9 @@ async create(req, res) {
       photo_urls,
 
       // FIX: Handle property_rules as array or string
-      property_rules: Array.isArray(body.property_rules) 
-        ? body.property_rules 
-        : (body.property_rules?.trim() || null),
+      property_rules: Array.isArray(body.property_rules)
+        ? body.property_rules
+        : body.property_rules?.trim() || null,
 
       is_active:
         body.is_active !== undefined
@@ -360,27 +361,17 @@ async create(req, res) {
       // LOCK-IN PERIOD
       // =====================
 
-      lockin_period_months: parseInt(
-        body.lockin_period_months || 0
-      ),
-      lockin_penalty_amount: parseFloat(
-        body.lockin_penalty_amount || 0
-      ),
-      lockin_penalty_type:
-        body.lockin_penalty_type || "fixed",
+      lockin_period_months: parseInt(body.lockin_period_months || 0),
+      lockin_penalty_amount: parseFloat(body.lockin_penalty_amount || 0),
+      lockin_penalty_type: body.lockin_penalty_type || "fixed",
 
       // =====================
       // NOTICE PERIOD
       // =====================
 
-      notice_period_days: parseInt(
-        body.notice_period_days || 0
-      ),
-      notice_penalty_amount: parseFloat(
-        body.notice_penalty_amount || 0
-      ),
-      notice_penalty_type:
-        body.notice_penalty_type || "fixed",
+      notice_period_days: parseInt(body.notice_period_days || 0),
+      notice_penalty_amount: parseFloat(body.notice_penalty_amount || 0),
+      notice_penalty_type: body.notice_penalty_type || "fixed",
 
       // =====================
       // TERMS
@@ -388,11 +379,11 @@ async create(req, res) {
 
       terms_conditions: termsData.terms_conditions,
       terms_json: termsData.terms_json,
-      
+
       // FIX: Handle additional_terms as array or string
       additional_terms: Array.isArray(body.additional_terms)
         ? body.additional_terms
-        : (body.additional_terms?.trim() || null),
+        : body.additional_terms?.trim() || null,
 
       // =====================
       // TAGS
@@ -534,6 +525,13 @@ async update(req, res) {
 
     if (body.address !== undefined) {
       updateData.address = body.address.trim() || null;
+    }
+    if (body.map_embed_url !== undefined) {
+      updateData.map_embed_url = body.map_embed_url.trim() || null;
+    }
+
+    if (body.map_direction_url !== undefined) {
+      updateData.map_direction_url = body.map_direction_url.trim() || null;
     }
 
     console.log("🏷️ State value received:", body.state);

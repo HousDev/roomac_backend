@@ -174,7 +174,9 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
     // Main query to get properties
     const [rows] = await db.query(
       `SELECT 
-        p.id, p.name, p.slug, p.city_id, p.state, p.area, p.address, 
+        p.id, p.name, p.slug, p.city_id, p.state, p.area, p.address,
+         p.map_embed_url,
+         p.map_direction_url,
         p.total_rooms, p.total_beds, p.floor, p.starting_price, 
         p.security_deposit, p.description, p.property_manager_name, 
         p.property_manager_phone, p.property_manager_email,
@@ -189,7 +191,7 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
          ${whereSql} 
       ORDER BY p.created_at DESC 
       LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
+      [...params, pageSize, offset],
     );
  console.log("roowwsssssssssssssss", rows[0])
     // Get count for pagination
@@ -673,6 +675,8 @@ async create(property) {
       state,
       area,
       address,
+      map_embed_url,
+      map_direction_url,
       total_rooms,
       total_beds,
       floor,
@@ -704,14 +708,19 @@ async create(property) {
 
     const [result] = await db.query(
       `INSERT INTO properties
-      (name, slug, city_id, state, area, address, total_rooms, total_beds, floor,
-       starting_price, security_deposit, description, property_manager_name,
-       property_manager_phone, property_manager_email, property_manager_role, staff_id,
+      (name, slug, city_id, state, area, address,
+       map_embed_url, map_direction_url,
+       total_rooms, total_beds, floor,
+       starting_price, security_deposit, description,
+       property_manager_name, property_manager_phone,
+       property_manager_email, property_manager_role, staff_id,
        amenities, services, photo_urls, property_rules,
-       is_active, rating, lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
+       is_active, rating,
+       lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
        notice_period_days, notice_penalty_amount, notice_penalty_type,
-       terms_conditions, terms_json, additional_terms, tags, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       terms_conditions, terms_json,
+       additional_terms, tags, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         name,
         slug,
@@ -719,6 +728,10 @@ async create(property) {
         state || null,
         area || null,
         address || null,
+
+        map_embed_url || null,
+        map_direction_url || null,
+
         total_rooms || 0,
         total_beds || 0,
         floor || 0,
@@ -738,15 +751,14 @@ async create(property) {
         rating || null,
         lockin_period_months || 0,
         lockin_penalty_amount || 0,
-        lockin_penalty_type || 'fixed',
+        lockin_penalty_type || "fixed",
         notice_period_days || 0,
         notice_penalty_amount || 0,
-        notice_penalty_type || 'fixed',
+        notice_penalty_type || "fixed",
         terms_conditions || null,
         terms_json ? JSON.stringify(terms_json) : null,
         JSON.stringify(additional_terms || []),
-        JSON.stringify(tags || []),
-        // No need for a 34th value because we have NOW() in the SQL
+        JSON.stringify(tags || [])
       ]
     );
 
@@ -756,7 +768,6 @@ async create(property) {
     throw err;
   }
 },
-
   // UPDATE
   async update(id, property) {
     console.log("updeted check",property);
@@ -778,6 +789,8 @@ async create(property) {
       add("state", property.state); // ADDED STATE FIELD
       add("area", property.area);
       add("address", property.address);
+      add("map_embed_url", property.map_embed_url);
+      add("map_direction_url", property.map_direction_url);
       add("total_rooms", property.total_rooms);
       add("total_beds", property.total_beds);
       add("floor", property.floor);
