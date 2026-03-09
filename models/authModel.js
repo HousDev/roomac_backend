@@ -6,7 +6,7 @@ const UserModel = {
   async findByEmail(email) {
     try {
       const [rows] = await db.query(
-        "SELECT id, email, password FROM users WHERE email = ? LIMIT 1",
+"SELECT id, email, password, is_active FROM users WHERE email = ? LIMIT 1",
         [email]
       );
       return rows[0] || null;

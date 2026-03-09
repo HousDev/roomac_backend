@@ -62,7 +62,14 @@ const AuthController = {
           // proceed without failing login - password already matched
         }
       }
+      console.log('is_active value:', user.is_active, typeof user.is_active);
 
+if (user.is_active == 0) {
+  return res.status(403).json({
+    success: false,
+    message: "Your account has been deactivated."
+  });
+}
       // Generate JWT
       const token = jwt.sign({ id: user.id, email: user.email, type:'admin' }, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN,
