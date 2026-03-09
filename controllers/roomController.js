@@ -198,7 +198,7 @@ async createRoom(req, res) {
     const body = req.body || {};
 
     console.log("Received body:", body); // Add this to debug
-
+       console.log("Raw beds_config from body:", body.beds_config); // Add this debug line
     const {
       property_id,
       room_number,
@@ -215,7 +215,8 @@ async createRoom(req, res) {
       room_gender_preference = "",
       allow_couples = false,
       description = "",
-      is_active = true
+      is_active = true,
+      beds_config = "[]"
     } = body;
 
     console.log("Destructured room_type:", room_type); // Add this to debug
@@ -264,6 +265,27 @@ async createRoom(req, res) {
       video_url = req.compressedVideo.path;
     }
 
+     console.log("beds_config extracted:", beds_config);
+
+    // Parse beds_config - with better error handling
+    let bedsConfigArray = [];
+    if (beds_config) {
+      try {
+        // If it's already a string, parse it
+        if (typeof beds_config === 'string') {
+          bedsConfigArray = JSON.parse(beds_config);
+        } 
+        // If it's already an object, use it directly
+        else if (Array.isArray(beds_config)) {
+          bedsConfigArray = beds_config;
+        }
+        console.log("Parsed beds_config array:", bedsConfigArray);
+      } catch (e) {
+        console.error("Error parsing beds_config:", e);
+        bedsConfigArray = [];
+      }
+    }
+
     console.log("Creating room with data:", {
       property_id,
       room_number,
@@ -272,7 +294,8 @@ async createRoom(req, res) {
       total_beds,
       floor,
       rent_per_bed,
-      room_gender_preference
+      room_gender_preference,
+       beds_config: bedsConfigArray 
     });
 
     const roomId = await RoomModel.create({
@@ -293,7 +316,8 @@ async createRoom(req, res) {
       room_gender_preference,
       allow_couples: allow_couples === "true" || allow_couples === true,
       description,
-      is_active: is_active === "true" || is_active === true
+      is_active: is_active === "true" || is_active === true,
+      beds_config: bedsConfigArray 
     });
 
     res.status(201).json({
@@ -331,6 +355,17 @@ async updateRoom(req, res) {
         success: false,
         message: "Room not found"
       });
+    }
+
+     // Parse beds_config
+    let bedsConfigArray = [];
+    if (body.beds_config) {
+      try {
+        bedsConfigArray = JSON.parse(body.beds_config);
+        console.log("Parsed beds_config for update:", bedsConfigArray);
+      } catch (e) {
+        console.error("Error parsing beds_config for update:", e);
+      }
     }
 
     // =====================
@@ -530,7 +565,8 @@ console.log("Video:", req.compressedVideo);
 
       photo_urls: currentPhotos,
 
-      video_url
+      video_url,
+        beds_config: bedsConfigArray
     };
 
     // =====================
