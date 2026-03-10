@@ -129,6 +129,13 @@ class TenantAuthController {
     }
 
     const admin = admins[0];
+if (admin.is_active == 0) {
+  return res.status(403).json({
+    success: false,
+    error: 'Your account has been deactivated.',
+    message: 'Your account has been deactivated. '
+  });
+}
 
     const isAdminValid = await bcrypt.compare(password, admin.password);
 

@@ -283,47 +283,50 @@ exports.create = async (data) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert into staff table
-    const [staffResult] = await connection.query(
-      `INSERT INTO staff (
-        salutation, name, email, password, phone, whatsapp_number, is_whatsapp_same,
-        role, employee_id, salary, department, joining_date,
-        blood_group, aadhar_number, pan_number,
-        current_address, permanent_address,
-        emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
-        bank_account_holder_name, bank_account_number, bank_name, bank_ifsc_code, upi_id,
-        aadhar_document_url, pan_document_url, photo_url, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [
-        salutation || "mr",
-        name,
-        email,
-        hashedPassword,
-        phone,
-        finalWhatsapp || null,
-        is_whatsapp_same ? 1 : 0,
-        role,
-        employee_id,
-        salary || 0,
-        department === 'no-department' ? null : department,
-        joining_date,
-        blood_group || "not_specified",
-        aadhar_number || null,
-        pan_number || null,
-        current_address || null,
-        permanent_address || null,
-        emergency_contact_name || null,
-        emergency_contact_phone || null,
-        emergency_contact_relation || null,
-        bank_account_holder_name || null,
-        bank_account_number || null,
-        bank_name || null,
-        bank_ifsc_code || null,
-        upi_id || null,
-        aadhar_document_url || null,
-        pan_document_url || null,
-        photo_url || null,
-      ]
-    );
+const [staffResult] = await connection.query(
+  `INSERT INTO staff (
+    salutation, name, email, password, phone, phone_country_code,
+    whatsapp_number, is_whatsapp_same,
+    role, employee_id, salary, department, joining_date,
+    blood_group, aadhar_number, pan_number,
+    current_address, permanent_address,
+    emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
+    bank_account_holder_name, bank_account_number, bank_name, bank_ifsc_code, upi_id,
+    aadhar_document_url, pan_document_url, photo_url, is_active
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  [
+    salutation || "mr",       // 1  salutation
+    name,                      // 2  name
+    email,                     // 3  email
+    hashedPassword,            // 4  password
+    phone,                     // 5  phone
+    data.phone_country_code || '+91', // 6  phone_country_code
+    finalWhatsapp || null,     // 7  whatsapp_number
+    is_whatsapp_same ? 1 : 0, // 8  is_whatsapp_same
+    role,                      // 9  role
+    employee_id,               // 10 employee_id
+    salary || 0,               // 11 salary
+    department === 'no-department' ? null : department, // 12 department
+    joining_date,              // 13 joining_date
+    blood_group || "not_specified", // 14 blood_group
+    aadhar_number || null,     // 15 aadhar_number
+    pan_number || null,        // 16 pan_number
+    current_address || null,   // 17 current_address
+    permanent_address || null, // 18 permanent_address
+    emergency_contact_name || null,     // 19
+    emergency_contact_phone || null,    // 20
+    emergency_contact_relation || null, // 21
+    bank_account_holder_name || null,   // 22
+    bank_account_number || null,        // 23
+    bank_name || null,                  // 24
+    bank_ifsc_code || null,             // 25
+    upi_id || null,                     // 26
+    aadhar_document_url || null,        // 27
+    pan_document_url || null,           // 28
+    photo_url || null,                  // 29
+                                        // 30 is_active = 1 (hardcoded)
+  ]
+);
 
     const staffId = staffResult.insertId;
 
@@ -378,7 +381,7 @@ exports.update = async (id, data) => {
 
     const existing = existingStaff[0];
     const allowedFields = [
-      "salutation", "name", "email", "phone", "whatsapp_number", "is_whatsapp_same",
+      "salutation", "name", "email", "phone", "phone_country_code","whatsapp_number", "is_whatsapp_same",
       "role", "employee_id", "salary", "department", "joining_date",
       "blood_group", "aadhar_number", "pan_number",
       "current_address", "permanent_address",
