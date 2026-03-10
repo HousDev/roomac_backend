@@ -1,41 +1,88 @@
+// controllers/vacateController.js
 const VacateService = require('../models/vacateModel');
+const db = require("../config/db")
 
 class VacateController {
   // Get initial vacate data
-  async getInitialVacateData(req, res) {
-    try {
-      const { bedAssignmentId } = req.params;
-      
-      console.log(`[VACATE] Getting initial data for bed assignment: ${bedAssignmentId}`);
-      
-      if (!bedAssignmentId) {
-        return res.status(400).json({
-          success: false,
-          message: "Bed assignment ID is required"
-        });
-      }
-      
-      const data = await VacateService.getInitialData(bedAssignmentId);
-      
-      console.log(`[VACATE] Data retrieved:`, {
-        hasBedAssignment: !!data.bedAssignment,
-        vacateReasonsCount: data.vacateReasons?.length || 0,
-        vacateReasons: data.vacateReasons
-      });
-      
-      res.json({
-        success: true,
-        data: data
-      });
-      
-    } catch (err) {
-      console.error("[VACATE] getInitialVacateData error:", err);
-      res.status(500).json({
+// In vacateController.js, modify getInitialVacateData
+async getInitialVacateData(req, res) {
+  try {
+    const { bedAssignmentId } = req.params;
+    
+    console.log(`[VACATE] Getting initial data for bed assignment: ${bedAssignmentId}`);
+    
+    if (!bedAssignmentId) {
+      return res.status(400).json({
         success: false,
-        message: err.message || "Failed to get initial vacate data"
+        message: "Bed assignment ID is required"
       });
     }
+    
+    const data = await VacateService.getInitialData(bedAssignmentId);
+    
+    // Also fetch tenant's vacate requests
+    if (data.bedAssignment && data.bedAssignment.tenant_id) {
+      const [tenantRequests] = await db.query(
+        `SELECT 
+          tr.id,
+          tr.tenant_id,
+          tr.request_type,
+          tr.title,
+          tr.description,
+          tr.status,
+          tr.created_at,
+          tr.updated_at,
+          
+          vbr.id as vacate_request_id,
+          vbr.primary_reason_id,
+          miv.name as primary_reason,
+          vbr.secondary_reasons,
+          vbr.overall_rating,
+          vbr.food_rating,
+          vbr.cleanliness_rating,
+          vbr.management_rating,
+          vbr.improvement_suggestions,
+          vbr.expected_vacate_date,
+          vbr.lockin_penalty_accepted,
+          vbr.notice_penalty_accepted,
+          vbr.status as vacate_status
+          
+         FROM tenant_requests tr
+         LEFT JOIN vacate_bed_requests vbr ON tr.id = vbr.tenant_request_id
+         LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id
+         
+         WHERE tr.tenant_id = ? 
+           AND tr.request_type = 'vacate_bed'
+           AND tr.status IN ('pending', 'in_progress', 'approved')
+           
+         ORDER BY tr.created_at DESC
+         LIMIT 1`,
+        [data.bedAssignment.tenant_id]
+      );
+      
+      if (tenantRequests.length > 0) {
+        data.existingVacateRequest = tenantRequests[0];
+      }
+    }
+    
+    console.log(`[VACATE] Data retrieved:`, {
+      hasBedAssignment: !!data.bedAssignment,
+      hasExistingRequest: !!data.existingVacateRequest
+    });
+    
+    res.json({
+      success: true,
+      data: data
+    });
+    
+  } catch (err) {
+    console.error("[VACATE] getInitialVacateData error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to get initial vacate data"
+    });
   }
+}
   
   // Calculate penalties for the process
   async calculatePenalties(req, res) {

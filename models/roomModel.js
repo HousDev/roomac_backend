@@ -101,7 +101,8 @@ async findAll() {
               'is_available', ba.is_available,
               'tenant_id', ba.tenant_id,
               'tenant_rent', ba.tenant_rent,
-              'is_couple', ba.is_couple
+              'is_couple', ba.is_couple,
+              'bed_type', ba.bed_type    
             )
           )
           FROM bed_assignments ba 
@@ -147,7 +148,8 @@ async findById(id) {
               'is_available', ba.is_available,
               'tenant_id', ba.tenant_id,
               'tenant_rent', ba.tenant_rent,
-              'is_couple', ba.is_couple
+              'is_couple', ba.is_couple,
+              'bed_type', ba.bed_type    
             )
           )
           FROM bed_assignments ba 
@@ -236,7 +238,10 @@ async findByPropertyId(propertyId) {
               'bed_number', ba.bed_number,
               'tenant_gender', ba.tenant_gender,
               'is_available', ba.is_available,
-              'tenant_id', ba.tenant_id
+              'tenant_id', ba.tenant_id,
+              'tenant_rent', ba.tenant_rent,  
+              'is_couple', ba.is_couple,       
+              'bed_type', ba.bed_type          
             )
           )
           FROM bed_assignments ba 
