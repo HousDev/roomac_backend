@@ -5,6 +5,7 @@ const xlsx = require("xlsx");
 const path = require("path");
 const fs = require("fs");
 const pool = require("../config/db");
+const { sendEmail } = require("../utils/emailService");
 
 const SALT_ROUNDS = 10;
 
@@ -207,13 +208,13 @@ async create(req, res) {
     const body = req.body || {};
     const files = req.files || {};
 
-    console.log('=== CREATE TENANT START ===');
-    console.log('Body fields:', Object.keys(body));
-    console.log('Files received:', Object.keys(files));
+    console.log("=== CREATE TENANT START ===");
+    console.log("Body fields:", Object.keys(body));
+    console.log("Files received:", Object.keys(files));
 
     // Process uploaded files
     const uploadedFiles = {};
-    
+
     // Process main documents
     const processMainDocument = (fieldName, folder) => {
       if (files[fieldName] && files[fieldName][0]) {
@@ -223,70 +224,79 @@ async create(req, res) {
       }
       return false;
     };
-    
-    processMainDocument('id_proof_url', 'id_proofs');
-    processMainDocument('address_proof_url', 'address_proofs');
-    processMainDocument('photo_url', 'photos');
-    
+
+    processMainDocument("id_proof_url", "id_proofs");
+    processMainDocument("address_proof_url", "address_proofs");
+    processMainDocument("photo_url", "photos");
+
     // Process additional documents
     let additionalDocs = [];
-    
-    if (files['additional_documents[]']) {
-      const additionalFiles = Array.isArray(files['additional_documents[]']) 
-        ? files['additional_documents[]'] 
-        : [files['additional_documents[]']];
-      
+
+    if (files["additional_documents[]"]) {
+      const additionalFiles = Array.isArray(files["additional_documents[]"])
+        ? files["additional_documents[]"]
+        : [files["additional_documents[]"]];
+
       console.log(`Found ${additionalFiles.length} additional files`);
-      
-      additionalDocs = additionalFiles.map(file => ({
+
+      additionalDocs = additionalFiles.map((file) => ({
         filename: file.originalname,
         url: `/uploads/additional_docs/${file.filename}`,
         uploaded_at: new Date().toISOString(),
-        document_type: 'Additional',
+        document_type: "Additional",
         file_size: file.size,
-        file_mimetype: file.mimetype
+        file_mimetype: file.mimetype,
       }));
-      
-      console.log('Processed additional documents:', additionalDocs);
+
+      console.log("Processed additional documents:", additionalDocs);
     }
-    
+
     // Also check for other patterns
-    Object.keys(files).forEach(field => {
-      if (field.startsWith('additional_documents') && field !== 'additional_documents[]') {
-        const fileArray = Array.isArray(files[field]) ? files[field] : [files[field]];
-        
-        fileArray.forEach(file => {
+    Object.keys(files).forEach((field) => {
+      if (
+        field.startsWith("additional_documents") &&
+        field !== "additional_documents[]"
+      ) {
+        const fileArray = Array.isArray(files[field])
+          ? files[field]
+          : [files[field]];
+
+        fileArray.forEach((file) => {
           if (file && file.originalname) {
             // Check if this file already exists
-            const exists = additionalDocs.some(doc => doc.filename === file.originalname);
+            const exists = additionalDocs.some(
+              (doc) => doc.filename === file.originalname,
+            );
             if (!exists) {
               additionalDocs.push({
                 filename: file.originalname,
                 url: `/uploads/additional_docs/${file.filename}`,
                 uploaded_at: new Date().toISOString(),
-                document_type: 'Additional',
+                document_type: "Additional",
                 file_size: file.size,
-                file_mimetype: file.mimetype
+                file_mimetype: file.mimetype,
               });
             }
           }
         });
       }
     });
-    
-    console.log('Uploaded file URLs:', uploadedFiles);
-    console.log('Additional documents:', additionalDocs);
+
+    console.log("Uploaded file URLs:", uploadedFiles);
+    console.log("Additional documents:", additionalDocs);
 
     // Parse numeric fields
     const parseNumber = (value, defaultValue = 0) => {
-      if (value === undefined || value === null || value === '') return defaultValue;
+      if (value === undefined || value === null || value === "")
+        return defaultValue;
       const num = parseFloat(value);
       return isNaN(num) ? defaultValue : num;
     };
 
     // Parse integer fields
     const parseIntValue = (value, defaultValue = null) => {
-      if (value === undefined || value === null || value === '') return defaultValue;
+      if (value === undefined || value === null || value === "")
+        return defaultValue;
       const num = parseInt(value);
       return isNaN(num) ? defaultValue : num;
     };
@@ -298,71 +308,92 @@ async create(req, res) {
       full_name: body.full_name,
       email: body.email,
       phone: body.phone,
-      country_code: body.country_code || '+91',
+      country_code: body.country_code || "+91",
       gender: body.gender,
       date_of_birth: body.date_of_birth || null,
-      
+
       // Occupation fields - ALL of them
       occupation_category: body.occupation_category || null,
       exact_occupation: body.exact_occupation || null,
       occupation: body.occupation || null,
       organization: body.organization || null,
-      years_of_experience: body.years_of_experience ? parseIntValue(body.years_of_experience) : null,
-      monthly_income: body.monthly_income ? parseNumber(body.monthly_income) : null,
+      years_of_experience: body.years_of_experience
+        ? parseIntValue(body.years_of_experience)
+        : null,
+      monthly_income: body.monthly_income
+        ? parseNumber(body.monthly_income)
+        : null,
       course_duration: body.course_duration || null,
       student_id: body.student_id || null,
       employee_id: body.employee_id || null,
       portfolio_url: body.portfolio_url || null,
       work_mode: body.work_mode || null,
       shift_timing: body.shift_timing || null,
-      
+
       // Status
-      portal_access_enabled: body.portal_access_enabled === 'true' || body.portal_access_enabled === true || false,
-      is_active: body.is_active === undefined || body.is_active === '' ? true : 
-                 (body.is_active === 'true' || body.is_active === true || body.is_active === '1'),
-      
+      portal_access_enabled:
+        body.portal_access_enabled === "true" ||
+        body.portal_access_enabled === true ||
+        false,
+      is_active:
+        body.is_active === undefined || body.is_active === ""
+          ? true
+          : body.is_active === "true" ||
+            body.is_active === true ||
+            body.is_active === "1",
+
       // Address
       address: body.address || null,
       city: body.city || null,
       state: body.state || null,
       pincode: body.pincode || null,
-      
+
       // Preferences
       preferred_sharing: body.preferred_sharing || null,
       preferred_room_type: body.preferred_room_type || null,
-      preferred_property_id: body.preferred_property_id ? parseIntValue(body.preferred_property_id) : null,
+      preferred_property_id: body.preferred_property_id
+        ? parseIntValue(body.preferred_property_id)
+        : null,
       property_id: body.property_id ? parseIntValue(body.property_id) : null,
       check_in_date: body.check_in_date || null,
-      
+
       // Emergency contacts
       emergency_contact_name: body.emergency_contact_name || null,
       emergency_contact_phone: body.emergency_contact_phone || null,
       emergency_contact_relation: body.emergency_contact_relation || null,
-      
+
       // Lock-in period fields
-      lockin_period_months: body.lockin_period_months ? parseIntValue(body.lockin_period_months) : 0,
-      lockin_penalty_amount: body.lockin_penalty_amount ? parseNumber(body.lockin_penalty_amount) : 0,
-      lockin_penalty_type: body.lockin_penalty_type || 'fixed',
-      
+      lockin_period_months: body.lockin_period_months
+        ? parseIntValue(body.lockin_period_months)
+        : 0,
+      lockin_penalty_amount: body.lockin_penalty_amount
+        ? parseNumber(body.lockin_penalty_amount)
+        : 0,
+      lockin_penalty_type: body.lockin_penalty_type || "fixed",
+
       // Notice period fields
-      notice_period_days: body.notice_period_days ? parseIntValue(body.notice_period_days) : 0,
-      notice_penalty_amount: body.notice_penalty_amount ? parseNumber(body.notice_penalty_amount) : 0,
-      notice_penalty_type: body.notice_penalty_type || 'fixed',
-      
+      notice_period_days: body.notice_period_days
+        ? parseIntValue(body.notice_period_days)
+        : 0,
+      notice_penalty_amount: body.notice_penalty_amount
+        ? parseNumber(body.notice_penalty_amount)
+        : 0,
+      notice_penalty_type: body.notice_penalty_type || "fixed",
+
       // Files
       ...uploadedFiles,
-      additional_documents: additionalDocs
+      additional_documents: additionalDocs,
     };
 
     // Validate required fields
-    const required = ['full_name', 'email', 'phone'];
-    const missing = required.filter(field => !tenantData[field]);
+    const required = ["full_name", "email", "phone"];
+    const missing = required.filter((field) => !tenantData[field]);
     if (missing.length > 0) {
       // Clean up uploaded files
       if (req.files) {
-        Object.values(req.files).forEach(fileArray => {
+        Object.values(req.files).forEach((fileArray) => {
           if (fileArray && fileArray.length > 0) {
-            fileArray.forEach(file => {
+            fileArray.forEach((file) => {
               if (file.path && fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);
               }
@@ -370,10 +401,10 @@ async create(req, res) {
           }
         });
       }
-      
+
       return res.status(400).json({
         success: false,
-        message: `Missing required fields: ${missing.join(', ')}`
+        message: `Missing required fields: ${missing.join(", ")}`,
       });
     }
 
@@ -382,9 +413,9 @@ async create(req, res) {
     if (!emailRegex.test(tenantData.email)) {
       // Clean up uploaded files
       if (req.files) {
-        Object.values(req.files).forEach(fileArray => {
+        Object.values(req.files).forEach((fileArray) => {
           if (fileArray && fileArray.length > 0) {
-            fileArray.forEach(file => {
+            fileArray.forEach((file) => {
               if (file.path && fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);
               }
@@ -392,22 +423,22 @@ async create(req, res) {
           }
         });
       }
-      
+
       return res.status(400).json({
         success: false,
-        message: "Invalid email format"
+        message: "Invalid email format",
       });
     }
 
     // Validate phone (Indian format)
     if (tenantData.phone) {
       const phoneRegex = /^[6-9]\d{9}$/;
-      if (!phoneRegex.test(tenantData.phone.replace(/\D/g, ''))) {
+      if (!phoneRegex.test(tenantData.phone.replace(/\D/g, ""))) {
         // Clean up uploaded files
         if (req.files) {
-          Object.values(req.files).forEach(fileArray => {
+          Object.values(req.files).forEach((fileArray) => {
             if (fileArray && fileArray.length > 0) {
-              fileArray.forEach(file => {
+              fileArray.forEach((file) => {
                 if (file.path && fs.existsSync(file.path)) {
                   fs.unlinkSync(file.path);
                 }
@@ -415,23 +446,26 @@ async create(req, res) {
             }
           });
         }
-        
+
         return res.status(400).json({
           success: false,
-          message: "Invalid Indian mobile number (must be 10 digits starting with 6-9)"
+          message:
+            "Invalid Indian mobile number (must be 10 digits starting with 6-9)",
         });
       }
     }
-    
+
     // Validate emergency contact phone if provided
     if (tenantData.emergency_contact_phone) {
       const phoneRegex = /^[6-9]\d{9}$/;
-      if (!phoneRegex.test(tenantData.emergency_contact_phone.replace(/\D/g, ''))) {
+      if (
+        !phoneRegex.test(tenantData.emergency_contact_phone.replace(/\D/g, ""))
+      ) {
         // Clean up uploaded files
         if (req.files) {
-          Object.values(req.files).forEach(fileArray => {
+          Object.values(req.files).forEach((fileArray) => {
             if (fileArray && fileArray.length > 0) {
-              fileArray.forEach(file => {
+              fileArray.forEach((file) => {
                 if (file.path && fs.existsSync(file.path)) {
                   fs.unlinkSync(file.path);
                 }
@@ -439,10 +473,10 @@ async create(req, res) {
             }
           });
         }
-        
+
         return res.status(400).json({
           success: false,
-          message: "Invalid emergency contact phone number"
+          message: "Invalid emergency contact phone number",
         });
       }
     }
@@ -453,16 +487,19 @@ async create(req, res) {
       const today = new Date();
       let age = today.getFullYear() - dob.getFullYear();
       const monthDiff = today.getMonth() - dob.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+      if (
+        monthDiff < 0 ||
+        (monthDiff === 0 && today.getDate() < dob.getDate())
+      ) {
         age--;
       }
-      
+
       if (age < 18) {
         // Clean up uploaded files
         if (req.files) {
-          Object.values(req.files).forEach(fileArray => {
+          Object.values(req.files).forEach((fileArray) => {
             if (fileArray && fileArray.length > 0) {
-              fileArray.forEach(file => {
+              fileArray.forEach((file) => {
                 if (file.path && fs.existsSync(file.path)) {
                   fs.unlinkSync(file.path);
                 }
@@ -470,10 +507,10 @@ async create(req, res) {
             }
           });
         }
-        
+
         return res.status(400).json({
           success: false,
-          message: "Tenant must be at least 18 years old"
+          message: "Tenant must be at least 18 years old",
         });
       }
     }
@@ -483,13 +520,13 @@ async create(req, res) {
       const checkInDate = new Date(tenantData.check_in_date);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       if (checkInDate < today) {
         // Clean up uploaded files
         if (req.files) {
-          Object.values(req.files).forEach(fileArray => {
+          Object.values(req.files).forEach((fileArray) => {
             if (fileArray && fileArray.length > 0) {
-              fileArray.forEach(file => {
+              fileArray.forEach((file) => {
                 if (file.path && fs.existsSync(file.path)) {
                   fs.unlinkSync(file.path);
                 }
@@ -497,16 +534,16 @@ async create(req, res) {
             }
           });
         }
-        
+
         return res.status(400).json({
           success: false,
-          message: "Check-in date cannot be in the past"
+          message: "Check-in date cannot be in the past",
         });
       }
     }
 
-    console.log('Creating tenant with data keys:', Object.keys(tenantData));
-    console.log('Tenant data sample:', {
+    console.log("Creating tenant with data keys:", Object.keys(tenantData));
+    console.log("Tenant data sample:", {
       full_name: tenantData.full_name,
       email: tenantData.email,
       occupation_category: tenantData.occupation_category,
@@ -520,23 +557,26 @@ async create(req, res) {
       lockin_fields: {
         months: tenantData.lockin_period_months,
         amount: tenantData.lockin_penalty_amount,
-        type: tenantData.lockin_penalty_type
+        type: tenantData.lockin_penalty_type,
       },
       notice_fields: {
         days: tenantData.notice_period_days,
         amount: tenantData.notice_penalty_amount,
-        type: tenantData.notice_penalty_type
-      }
+        type: tenantData.notice_penalty_type,
+      },
     });
 
     // Check if tenant with same email or phone already exists
-    const existingTenant = await TenantModel.findByEmailOrPhone(tenantData.email, tenantData.phone);
+    const existingTenant = await TenantModel.findByEmailOrPhone(
+      tenantData.email,
+      tenantData.phone,
+    );
     if (existingTenant) {
       // Clean up uploaded files
       if (req.files) {
-        Object.values(req.files).forEach(fileArray => {
+        Object.values(req.files).forEach((fileArray) => {
           if (fileArray && fileArray.length > 0) {
-            fileArray.forEach(file => {
+            fileArray.forEach((file) => {
               if (file.path && fs.existsSync(file.path)) {
                 fs.unlinkSync(file.path);
               }
@@ -544,19 +584,22 @@ async create(req, res) {
           }
         });
       }
-      
+
       return res.status(400).json({
         success: false,
-        message: "Tenant with this email or phone already exists"
+        message: "Tenant with this email or phone already exists",
       });
     }
 
     // Create tenant
     const tenantId = await TenantModel.create(tenantData);
-    console.log('Tenant created with ID:', tenantId);
+    console.log("Tenant created with ID:", tenantId);
 
     // Create credentials if password is provided
-    if (body.password && (body.create_credentials === "true" || body.create_credentials === true)) {
+    if (
+      body.password &&
+      (body.create_credentials === "true" || body.create_credentials === true)
+    ) {
       try {
         const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
         await TenantModel.createCredential({
@@ -564,29 +607,61 @@ async create(req, res) {
           email: body.email,
           password_hash,
         });
-        console.log('Credentials created for new tenant:', tenantId);
+        console.log("Credentials created for new tenant:", tenantId);
       } catch (credErr) {
         console.error("Failed to create credentials:", credErr);
         // Continue even if credential creation fails
       }
     }
 
-    // Send welcome email if portal access is enabled
-    if (tenantData.portal_access_enabled && body.password) {
+    // Send welcome email if credentials created
+    if (
+      body.password &&
+      (body.create_credentials === "true" ||
+        body.create_credentials === true ||
+        tenantData.portal_access_enabled === true)
+    ) {
       try {
-        // You can implement email sending here
-        console.log('Portal access enabled for tenant:', tenantId);
+        const portalUrl = "https://roomac.in/login";
+
+        console.log("📧 Sending tenant email to:", tenantData.email);
+
+        await sendEmail(
+          tenantData.email,
+          "Your ROOMAC Tenant Portal Login",
+          `
+      <h2>Welcome to ROOMAC</h2>
+
+      <p>Hello ${tenantData.full_name},</p>
+
+      <p>Your tenant portal account has been created.</p>
+
+      <b>Login Details</b>
+
+      <p>Email: ${tenantData.email}</p>
+      <p>Password: ${body.password}</p>
+
+      <p>Login here:</p>
+
+      <a href="${portalUrl}">
+      ${portalUrl}
+      </a>
+
+      <br/><br/>
+      <p>Thank you,<br/>ROOMAC Team</p>
+      `,
+        );
+
+        console.log("✅ Tenant credentials email sent");
       } catch (emailErr) {
-        console.error("Failed to send welcome email:", emailErr);
-        // Continue even if email fails
+        console.error("❌ Failed to send welcome email:", emailErr);
       }
     }
-
     return res.status(201).json({
       success: true,
       message: "Tenant created successfully",
       tenant_id: tenantId,
-      additional_documents: additionalDocs
+      additional_documents: additionalDocs,
     });
   } catch (err) {
     console.error("TenantController.create error:", err);
