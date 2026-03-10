@@ -53,136 +53,143 @@ const safeJsonParse = (str, defaultValue = []) => {
 };
 
 const RoomModel = {
-  async findAll() {
-    try {
-      const [rows] = await db.query(`
-        SELECT 
-          r.id,
-          r.property_id,
-          p.name AS property_name,
-          p.address AS property_address,
-          p.city_id AS property_city_id,
-          r.room_number,
-          r.sharing_type,
-          r.room_type,
-          r.total_bed,
-          r.occupied_beds,
-          r.floor,
-          r.rent_per_bed,
-          r.has_attached_bathroom,
-          r.has_balcony,
-          r.has_ac,
-          r.amenities,
-          r.photo_urls,
-          r.video_url,
-          r.room_gender_preference,
-          r.current_occupants_gender,
-          r.allow_couples,
-          r.is_active,
-          r.description,
-          
-          (
-            SELECT COUNT(*) 
-            FROM bed_assignments ba 
-            WHERE ba.room_id = r.id AND ba.is_available = FALSE
-          ) as current_occupants_count,
-          (
-            SELECT JSON_ARRAYAGG(ba.tenant_gender)
-            FROM bed_assignments ba 
-            WHERE ba.room_id = r.id AND ba.is_available = FALSE
-          ) as current_genders,
-          (
-  SELECT JSON_ARRAYAGG(
-    JSON_OBJECT(
-      'id', ba.id,
-      'bed_number', ba.bed_number,
-      'tenant_gender', ba.tenant_gender,
-      'is_available', ba.is_available,
-      'tenant_id', ba.tenant_id,
-      'tenant_rent', ba.tenant_rent,
-      'is_couple', ba.is_couple
-    )
-  )
-  FROM bed_assignments ba 
-  WHERE ba.room_id = r.id
-  ORDER BY ba.bed_number
-) as bed_assignments_json
-        FROM rooms r
-        JOIN properties p ON p.id = r.property_id
-        ORDER BY r.id DESC
-      `);
+async findAll() {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        r.id,
+        r.property_id,
+        p.name AS property_name,
+        p.address AS property_address,
+        p.city_id AS property_city_id,
+        r.room_number,
+        r.sharing_type,
+        r.room_type,
+        r.total_bed,
+        r.occupied_beds,
+        r.floor,
+        r.rent_per_bed,
+        r.has_attached_bathroom,
+        r.has_balcony,
+        r.has_ac,
+        r.amenities,
+        r.photo_urls,
+        r.video_url,
+        r.room_gender_preference,
+        r.current_occupants_gender,
+        r.allow_couples,
+        r.is_active,
+        r.description,
+        
+        (
+          SELECT COUNT(*) 
+          FROM bed_assignments ba 
+          WHERE ba.room_id = r.id AND ba.is_available = FALSE
+        ) as current_occupants_count,
+        (
+          SELECT JSON_ARRAYAGG(ba.tenant_gender)
+          FROM bed_assignments ba 
+          WHERE ba.room_id = r.id AND ba.is_available = FALSE
+        ) as current_genders,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ba.id,
+              'bed_number', ba.bed_number,
+              'bed_type', ba.bed_type,
+              'tenant_gender', ba.tenant_gender,
+              'is_available', ba.is_available,
+              'tenant_id', ba.tenant_id,
+              'tenant_rent', ba.tenant_rent,
+              'is_couple', ba.is_couple
+            )
+          )
+          FROM bed_assignments ba 
+          WHERE ba.room_id = r.id
+          ORDER BY ba.bed_number
+        ) as bed_assignments_json
+      FROM rooms r
+      JOIN properties p ON p.id = r.property_id
+      ORDER BY r.id DESC
+    `);
 
-      return rows.map(room => ({
-        ...room,
-        amenities: safeJsonParse(room.amenities),
-        photo_urls: safeJsonParse(room.photo_urls),
-        current_occupants_gender: safeJsonParse(room.current_occupants_gender),
-        current_genders: safeJsonParse(room.current_genders),
-        room_gender_preference: safeJsonParse(room.room_gender_preference),
-        bed_assignments: room.bed_assignments_json ? safeJsonParse(room.bed_assignments_json) : [],
-        video_url: room.video_url ? String(room.video_url) : null // Ensure string format
-      }));
-    } catch (err) {
-      console.error("RoomModel findAll error", err);
-      throw err;
-    }
-  },
+    return rows.map(room => ({
+      ...room,
+      amenities: safeJsonParse(room.amenities),
+      photo_urls: safeJsonParse(room.photo_urls),
+      current_occupants_gender: safeJsonParse(room.current_occupants_gender),
+      current_genders: safeJsonParse(room.current_genders),
+      room_gender_preference: safeJsonParse(room.room_gender_preference),
+      bed_assignments: room.bed_assignments_json ? safeJsonParse(room.bed_assignments_json) : [],
+      video_url: room.video_url ? String(room.video_url) : null
+    }));
+  } catch (err) {
+    console.error("RoomModel findAll error", err);
+    throw err;
+  }
+},
 
-  async findById(id) {
-    try {
-      const [rows] = await db.query(`
-        SELECT 
-          r.*,
-          p.name AS property_name,
-          p.address AS property_address,
-          p.city_id AS property_city_id,
-          (
-  SELECT JSON_ARRAYAGG(
-    JSON_OBJECT(
-      'id', ba.id,
-      'bed_number', ba.bed_number,
-      'tenant_gender', ba.tenant_gender,
-      'is_available', ba.is_available,
-      'tenant_id', ba.tenant_id,
-      'tenant_rent', ba.tenant_rent,
-      'is_couple', ba.is_couple
-    )
-  )
-  FROM bed_assignments ba 
-  WHERE ba.room_id = r.id
-  ORDER BY ba.bed_number
-) as bed_assignments_json
-        FROM rooms r
-        JOIN properties p ON p.id = r.property_id
-        WHERE r.id = ?
-        LIMIT 1
-      `, [id]);
-      
-      if (rows.length === 0) return null;
-      
-      const room = rows[0];
-      
-      // Parse JSON fields
-      const parsedAmenities = safeJsonParse(room.amenities);
-      const parsedPhotoUrls = safeJsonParse(room.photo_urls);
-      const parsedOccupantsGender = safeJsonParse(room.current_occupants_gender);
-      const parsedGenderPref = safeJsonParse(room.room_gender_preference);
-      const parsedBedAssignments = room.bed_assignments_json ? safeJsonParse(room.bed_assignments_json) : [];
-      
-      return {
-        ...room,
-        amenities: parsedAmenities,
-        photo_urls: parsedPhotoUrls,
-        current_occupants_gender: parsedOccupantsGender,
-        room_gender_preference: parsedGenderPref,
-        bed_assignments: parsedBedAssignments,
-        video_url: room.video_url ? String(room.video_url) : null
-      };
-    } catch (err) {
-      console.error("RoomModel.findById error:", err);
-      throw err;
-    }
-  },
+async findById(id) {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        r.*,
+        p.name AS property_name,
+        p.address AS property_address,
+        p.city_id AS property_city_id,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ba.id,
+              'bed_number', ba.bed_number,
+              'bed_type', ba.bed_type,
+              'tenant_gender', ba.tenant_gender,
+              'is_available', ba.is_available,
+              'tenant_id', ba.tenant_id,
+              'tenant_rent', ba.tenant_rent,
+              'is_couple', ba.is_couple
+            )
+          )
+          FROM bed_assignments ba 
+          WHERE ba.room_id = r.id
+          ORDER BY ba.bed_number
+        ) as bed_assignments_json
+      FROM rooms r
+      JOIN properties p ON p.id = r.property_id
+      WHERE r.id = ?
+      LIMIT 1
+    `, [id]);
+    
+    if (rows.length === 0) return null;
+    
+    const room = rows[0];
+    
+    // Parse JSON fields
+    const parsedAmenities = safeJsonParse(room.amenities);
+    const parsedPhotoUrls = safeJsonParse(room.photo_urls);
+    const parsedOccupantsGender = safeJsonParse(room.current_occupants_gender);
+    const parsedGenderPref = safeJsonParse(room.room_gender_preference);
+    const parsedBedAssignments = room.bed_assignments_json ? safeJsonParse(room.bed_assignments_json) : [];
+    
+    return {
+      ...room,
+      amenities: parsedAmenities,
+      photo_urls: parsedPhotoUrls,
+      current_occupants_gender: parsedOccupantsGender,
+      room_gender_preference: parsedGenderPref,
+      bed_assignments: parsedBedAssignments,
+      beds_config: parsedBedAssignments.map(bed => ({
+        bed_number: bed.bed_number,
+        bed_type: bed.bed_type || '',
+        bed_rent: bed.tenant_rent || room.rent_per_bed
+      })),
+      video_url: room.video_url ? String(room.video_url) : null
+    };
+  } catch (err) {
+    console.error("RoomModel.findById error:", err);
+    throw err;
+  }
+},
 
 async findByPropertyId(propertyId) {
   try {
@@ -279,10 +286,12 @@ async create(room) {
       room_gender_preference = [],
       allow_couples = false,
       description = '',
-      is_active = true
+      is_active = true,
+      beds_config
     } = room;
+    console.log(room);
 
-    console.log("RoomModel.create received:", { room_type }); // Debug log
+    console.log("RoomModel.create received:", { room_type , beds_config}); // Debug log
 
     let genderPrefArray;
     if (Array.isArray(room_gender_preference)) {
@@ -342,7 +351,7 @@ async create(room) {
 
     const roomId = result.insertId;
     
-    await this.createBedAssignments(roomId, total_beds);
+    await this.createBedAssignments(roomId, total_beds,beds_config);
 
     return roomId;
   } catch (err) {
@@ -352,116 +361,144 @@ async create(room) {
 },
 
 async update(id, room) {
-    try {
-      const existing = await this.findById(id);
-      if (!existing) return false;
+  try {
+    const existing = await this.findById(id);
+    if (!existing) return false;
 
-      let genderPrefArray;
-      if (room.room_gender_preference !== undefined) {
-        if (Array.isArray(room.room_gender_preference)) {
-          genderPrefArray = room.room_gender_preference.filter(item => item !== '');
-        } else if (typeof room.room_gender_preference === 'string') {
-          if (room.room_gender_preference.includes(',')) {
-            genderPrefArray = room.room_gender_preference.split(',').map(item => item.trim()).filter(item => item !== '');
-          } else {
-            genderPrefArray = room.room_gender_preference.trim() !== '' ? [room.room_gender_preference] : existing.room_gender_preference;
-          }
+    let genderPrefArray;
+    if (room.room_gender_preference !== undefined) {
+      if (Array.isArray(room.room_gender_preference)) {
+        genderPrefArray = room.room_gender_preference.filter(item => item !== '');
+      } else if (typeof room.room_gender_preference === 'string') {
+        if (room.room_gender_preference.includes(',')) {
+          genderPrefArray = room.room_gender_preference.split(',').map(item => item.trim()).filter(item => item !== '');
         } else {
-          genderPrefArray = existing.room_gender_preference;
+          genderPrefArray = room.room_gender_preference.trim() !== '' ? [room.room_gender_preference] : existing.room_gender_preference;
         }
       } else {
         genderPrefArray = existing.room_gender_preference;
       }
+    } else {
+      genderPrefArray = existing.room_gender_preference;
+    }
 
-      const updateData = {
-        property_id: room.property_id ?? existing.property_id,
-        room_number: room.room_number ?? existing.room_number,
-        sharing_type: room.sharing_type ?? existing.sharing_type,
-        room_type: room.room_type ?? existing.room_type,
-        total_bed: room.total_beds ?? existing.total_bed,
-        occupied_beds: room.occupied_beds ?? existing.occupied_beds,
-        floor: room.floor ?? existing.floor,
-        rent_per_bed: room.rent_per_bed ?? existing.rent_per_bed,
-        has_attached_bathroom: room.has_attached_bathroom ?? existing.has_attached_bathroom,
-        has_balcony: room.has_balcony ?? existing.has_balcony,
-        has_ac: room.has_ac ?? existing.has_ac,
-        amenities: room.amenities !== undefined ? room.amenities : existing.amenities,
-        photo_urls: room.photo_urls !== undefined ? room.photo_urls : existing.photo_urls,
-        video_url: room.video_url !== undefined ? room.video_url : existing.video_url,
-        room_gender_preference: genderPrefArray,
-        allow_couples: room.allow_couples ?? existing.allow_couples,
-        description: room.description ?? existing.description,
-        is_active: room.is_active ?? existing.is_active
-      };
+    const updateData = {
+      property_id: room.property_id ?? existing.property_id,
+      room_number: room.room_number ?? existing.room_number,
+      sharing_type: room.sharing_type ?? existing.sharing_type,
+      room_type: room.room_type ?? existing.room_type,
+      total_bed: room.total_beds ?? existing.total_bed,
+      occupied_beds: room.occupied_beds ?? existing.occupied_beds,
+      floor: room.floor ?? existing.floor,
+      rent_per_bed: room.rent_per_bed ?? existing.rent_per_bed,
+      has_attached_bathroom: room.has_attached_bathroom ?? existing.has_attached_bathroom,
+      has_balcony: room.has_balcony ?? existing.has_balcony,
+      has_ac: room.has_ac ?? existing.has_ac,
+      amenities: room.amenities !== undefined ? room.amenities : existing.amenities,
+      photo_urls: room.photo_urls !== undefined ? room.photo_urls : existing.photo_urls,
+      video_url: room.video_url !== undefined ? room.video_url : existing.video_url,
+      room_gender_preference: genderPrefArray,
+      allow_couples: room.allow_couples ?? existing.allow_couples,
+      description: room.description ?? existing.description,
+      is_active: room.is_active ?? existing.is_active
+    };
 
-      if (room.total_beds !== undefined && room.total_beds !== existing.total_bed) {
-        await this.syncBedAssignments(id, room.total_beds);
-      }
+    if (room.total_beds !== undefined && room.total_beds !== existing.total_bed) {
+      await this.syncBedAssignments(id, room.total_beds, room.beds_config);
+    } else if (room.beds_config !== undefined) {
+      // Update bed types and rents for existing beds
+      await this.updateBedConfigurations(id, room.beds_config);
+    }
 
-      const [result] = await db.query(
-        `UPDATE rooms SET
-          property_id = ?,
-          room_number = ?,
-          sharing_type = ?,
-          room_type = ?,
-          total_bed = ?,
-          occupied_beds = ?,
-          floor = ?,
-          rent_per_bed = ?,
-          has_attached_bathroom = ?,
-          has_balcony = ?,
-          has_ac = ?,
-          amenities = ?,
-          photo_urls = ?,
-          video_url = ?,
-          room_gender_preference = ?,
-          allow_couples = ?,
-          description = ?,
-          is_active = ?
-        WHERE id = ?`,
-        [
-          updateData.property_id,
-          updateData.room_number,
-          updateData.sharing_type,
-          updateData.room_type,
-          updateData.total_bed,
-          updateData.occupied_beds,
-          updateData.floor,
-          updateData.rent_per_bed,
-          updateData.has_attached_bathroom,
-          updateData.has_balcony,
-          updateData.has_ac,
-          JSON.stringify(updateData.amenities),
-          JSON.stringify(updateData.photo_urls),
-          updateData.video_url,
-          JSON.stringify(updateData.room_gender_preference),
-          updateData.allow_couples,
-          updateData.description,
-          updateData.is_active,
-          id
-        ]
+    const [result] = await db.query(
+      `UPDATE rooms SET
+        property_id = ?,
+        room_number = ?,
+        sharing_type = ?,
+        room_type = ?,
+        total_bed = ?,
+        occupied_beds = ?,
+        floor = ?,
+        rent_per_bed = ?,
+        has_attached_bathroom = ?,
+        has_balcony = ?,
+        has_ac = ?,
+        amenities = ?,
+        photo_urls = ?,
+        video_url = ?,
+        room_gender_preference = ?,
+        allow_couples = ?,
+        description = ?,
+        is_active = ?
+      WHERE id = ?`,
+      [
+        updateData.property_id,
+        updateData.room_number,
+        updateData.sharing_type,
+        updateData.room_type,
+        updateData.total_bed,
+        updateData.occupied_beds,
+        updateData.floor,
+        updateData.rent_per_bed,
+        updateData.has_attached_bathroom,
+        updateData.has_balcony,
+        updateData.has_ac,
+        JSON.stringify(updateData.amenities),
+        JSON.stringify(updateData.photo_urls),
+        updateData.video_url,
+        JSON.stringify(updateData.room_gender_preference),
+        updateData.allow_couples,
+        updateData.description,
+        updateData.is_active,
+        id
+      ]
+    );
+
+    return result.affectedRows > 0;
+  } catch (err) {
+    console.error("RoomModel.update error:", err);
+    throw err;
+  }
+},
+
+// Update createBedAssignments to accept bed types
+async createBedAssignments(roomId, totalBeds, bedsConfig = []) {
+  try {
+    for (let i = 1; i <= totalBeds; i++) {
+      // Find bed config for this bed number
+      const bedConfig = bedsConfig.find(bed => bed.bed_number === i);
+      const bedType = bedConfig?.bed_type || null;
+      const bedRent = bedConfig?.bed_rent || null;
+      
+      await db.query(
+        `INSERT INTO bed_assignments (room_id, bed_number, bed_type, tenant_rent, is_available) 
+         VALUES (?, ?, ?, ?, TRUE)`,
+        [roomId, i, bedType, bedRent]
       );
-
-      return result.affectedRows > 0;
-    } catch (err) {
-      console.error("RoomModel.update error:", err);
-      throw err;
     }
-  },
+  } catch (err) {
+    console.error("RoomModel.createBedAssignments error:", err);
+    throw err;
+  }
+},
 
-  async createBedAssignments(roomId, totalBeds) {
-    try {
-      for (let i = 1; i <= totalBeds; i++) {
-        await db.query(
-          `INSERT INTO bed_assignments (room_id, bed_number, is_available) VALUES (?, ?, TRUE)`,
-          [roomId, i]
-        );
-      }
-    } catch (err) {
-      console.error("RoomModel.createBedAssignments error:", err);
-      throw err;
+
+// Add new method to update bed configurations
+async updateBedConfigurations(roomId, bedsConfig) {
+  try {
+    for (const bed of bedsConfig) {
+      await db.query(
+        `UPDATE bed_assignments 
+         SET bed_type = ?, tenant_rent = ?
+         WHERE room_id = ? AND bed_number = ?`,
+        [bed.bed_type, bed.bed_rent, roomId, bed.bed_number]
+      );
     }
-  },
+  } catch (err) {
+    console.error("RoomModel.updateBedConfigurations error:", err);
+    throw err;
+  }
+},
 
 // Add this to your RoomModel for debugging
 async findTenantAssignment(tenantId) {
@@ -585,7 +622,7 @@ async repairBedAssignments(roomId) {
   async getAvailableBeds(roomId, tenantGender = null) {
     try {
       let query = `
-        SELECT ba.*, r.room_gender_preference, r.allow_couples
+        SELECT ba.*, r.room_gender_preference, r.allow_couples, r.rent_per_bed
         FROM bed_assignments ba
         JOIN rooms r ON r.id = ba.room_id
         WHERE ba.room_id = ? AND ba.is_available = TRUE
@@ -753,6 +790,7 @@ async repairBedAssignments(roomId) {
 // In roomModel.js - Update the assignBed method
 // models/roomModel.js - Update assignBed with better logging
 
+// Update assignBed to handle bed_type
 async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false) {
   let connection;
   try {
@@ -812,7 +850,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     }
     
     // Use custom rent if provided, otherwise use room's default rent
-    // Ensure tenantRent is a number or null
     let finalRent;
     if (tenantRent !== null && tenantRent !== undefined && tenantRent !== '') {
       finalRent = parseFloat(tenantRent);
@@ -833,23 +870,24 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       finalIsCoupleType: typeof finalIsCouple
     });
     
-    // 3. Check bed availability
+    // 3. Check bed availability and get bed type
     const [bedCheck] = await connection.query(
-      `SELECT id, is_available, tenant_id FROM bed_assignments 
+      `SELECT id, is_available, tenant_id, bed_type FROM bed_assignments 
        WHERE room_id = ? AND bed_number = ?`,
       [roomId, bedNumber]
     );
     
     let bedId;
+    let bedType = null;
     
     if (bedCheck.length === 0) {
       // Create bed if it doesn't exist
       console.log(`[ASSIGN BED MODEL] Creating new bed assignment`);
       const [result] = await connection.query(
         `INSERT INTO bed_assignments 
-         (room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple, is_available) 
-         VALUES (?, ?, ?, ?, ?, ?, FALSE)`,
-        [roomId, bedNumber, tenantId, tenantGender, finalRent, finalIsCouple]
+         (room_id, bed_number, bed_type, tenant_id, tenant_gender, tenant_rent, is_couple, is_available) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`,
+        [roomId, bedNumber, bedType, tenantId, tenantGender, finalRent, finalIsCouple]
       );
       bedId = result.insertId;
       console.log(`[ASSIGN BED MODEL] Created new bed with ID: ${bedId}`);
@@ -863,7 +901,8 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       }
       
       bedId = bed.id;
-      console.log(`[ASSIGN BED MODEL] Updating existing bed ID: ${bedId}`);
+      bedType = bed.bed_type;
+      console.log(`[ASSIGN BED MODEL] Updating existing bed ID: ${bedId} with type: ${bedType}`);
       
       // Update existing bed
       const [updateResult] = await connection.query(
@@ -895,7 +934,7 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     
     // 6. Verify the data was saved correctly
     const [savedBed] = await connection.query(
-      `SELECT id, tenant_rent, is_couple FROM bed_assignments WHERE id = ?`,
+      `SELECT id, bed_type, tenant_rent, is_couple FROM bed_assignments WHERE id = ?`,
       [bedId]
     );
     
@@ -912,6 +951,7 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         bed_assignment_id: bedId,
         room_id: roomId,
         bed_number: bedNumber,
+        bed_type: bedType,
         tenant_id: tenantId,
         tenant_name: tenantName,
         tenant_rent: finalRent,
@@ -1666,46 +1706,72 @@ async vacateBed(bedId, reason = null) {
     }
   },
 
-  async syncBedAssignments(roomId, newTotalBeds) {
-    try {
-      const [currentBeds] = await db.query(
-        'SELECT bed_number FROM bed_assignments WHERE room_id = ? ORDER BY bed_number',
-        [roomId]
-      );
+async syncBedAssignments(roomId, newTotalBeds, bedsConfig = []) {
+  try {
+    const [currentBeds] = await db.query(
+      'SELECT bed_number FROM bed_assignments WHERE room_id = ? ORDER BY bed_number',
+      [roomId]
+    );
 
-      const currentBedNumbers = currentBeds.map(bed => bed.bed_number);
-      const newBedNumbers = Array.from({ length: newTotalBeds }, (_, i) => i + 1);
+    const currentBedNumbers = currentBeds.map(bed => bed.bed_number);
+    const newBedNumbers = Array.from({ length: newTotalBeds }, (_, i) => i + 1);
 
-      const bedsToAdd = newBedNumbers.filter(num => !currentBedNumbers.includes(num));
-      for (const bedNumber of bedsToAdd) {
-        await db.query(
-          'INSERT INTO bed_assignments (room_id, bed_number, is_available) VALUES (?, ?, TRUE)',
-          [roomId, bedNumber]
-        );
-      }
-
-      const bedsToRemove = currentBedNumbers.filter(num => !newBedNumbers.includes(num));
-      if (bedsToRemove.length > 0) {
-        await db.query(
-          'DELETE FROM bed_assignments WHERE room_id = ? AND bed_number IN (?) AND is_available = TRUE',
-          [roomId, bedsToRemove]
-        );
-      }
-
-      const [occupiedCount] = await db.query(
-        'SELECT COUNT(*) as count FROM bed_assignments WHERE room_id = ? AND is_available = FALSE',
-        [roomId]
-      );
-
+    // Add new beds
+    const bedsToAdd = newBedNumbers.filter(num => !currentBedNumbers.includes(num));
+    for (const bedNumber of bedsToAdd) {
+      const bedConfig = bedsConfig.find(bed => bed.bed_number === bedNumber);
+      const bedType = bedConfig?.bed_type || null;
+      const bedRent = bedConfig?.bed_rent || null;
+      
       await db.query(
-        'UPDATE rooms SET occupied_beds = ? WHERE id = ?',
-        [occupiedCount[0].count, roomId]
+        'INSERT INTO bed_assignments (room_id, bed_number, bed_type, tenant_rent, is_available) VALUES (?, ?, ?, ?, TRUE)',
+        [roomId, bedNumber, bedType, bedRent]
       );
-    } catch (err) {
-      console.error("RoomModel.syncBedAssignments error:", err);
-      throw err;
     }
-  },
+
+    // Remove extra beds (only if available)
+    const bedsToRemove = currentBedNumbers.filter(num => !newBedNumbers.includes(num));
+    if (bedsToRemove.length > 0) {
+      // First check if any of these beds are occupied
+      const [occupiedBeds] = await db.query(
+        'SELECT bed_number FROM bed_assignments WHERE room_id = ? AND bed_number IN (?) AND is_available = FALSE',
+        [roomId, bedsToRemove]
+      );
+      
+      if (occupiedBeds.length > 0) {
+        throw new Error(`Cannot remove beds that are currently occupied: ${occupiedBeds.map(b => b.bed_number).join(', ')}`);
+      }
+      
+      await db.query(
+        'DELETE FROM bed_assignments WHERE room_id = ? AND bed_number IN (?) AND is_available = TRUE',
+        [roomId, bedsToRemove]
+      );
+    }
+
+    // Update existing beds with new configs
+    for (const bed of bedsConfig) {
+      if (newBedNumbers.includes(bed.bed_number)) {
+        await db.query(
+          'UPDATE bed_assignments SET bed_type = ?, tenant_rent = ? WHERE room_id = ? AND bed_number = ?',
+          [bed.bed_type, bed.bed_rent, roomId, bed.bed_number]
+        );
+      }
+    }
+
+    const [occupiedCount] = await db.query(
+      'SELECT COUNT(*) as count FROM bed_assignments WHERE room_id = ? AND is_available = FALSE',
+      [roomId]
+    );
+
+    await db.query(
+      'UPDATE rooms SET occupied_beds = ? WHERE id = ?',
+      [occupiedCount[0].count, roomId]
+    );
+  } catch (err) {
+    console.error("RoomModel.syncBedAssignments error:", err);
+    throw err;
+  }
+},
 
   async delete(id) {
     try {
