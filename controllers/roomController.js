@@ -1156,10 +1156,6 @@ async testTenants(req, res) {
     },
 
 
-// In RoomController.js, replace these methods:
-
-// Bulk update rooms - POST /api/rooms/bulk-update
-// Bulk update rooms - POST /api/rooms/bulk-update
 async bulkUpdateRooms(req, res) {
   try {
     const { room_ids, action } = req.body;
@@ -1171,26 +1167,39 @@ async bulkUpdateRooms(req, res) {
       });
     }
 
-    if (!['activate', 'inactivate', 'delete'].includes(action)) {
+    if (!["activate", "inactivate", "delete"].includes(action)) {
       return res.status(400).json({
         success: false,
         message: "Invalid action. Must be: activate, inactivate, or delete"
       });
     }
 
-    // Call model method
+    // Call model
     const result = await RoomModel.bulkUpdate(room_ids, action);
 
-    res.json({
+    return res.json({
       success: true,
       message: result.message,
       affectedRows: result.affectedRows,
-      updatedRooms: result.updatedRooms // Send updated rooms back to client
+      updatedRooms: result.updatedRooms
     });
 
   } catch (err) {
     console.error("bulkUpdateRooms error:", err);
-    res.status(500).json({
+
+    // Foreign key constraint handling
+    if (
+      err.code === "ER_ROW_IS_REFERENCED_2" ||
+      err.code === "ER_ROW_IS_REFERENCED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Some rooms cannot be deleted because it is used in other records."
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message: err.message || "Failed to perform bulk action"
     });
@@ -1422,6 +1431,87 @@ async getFilteredRooms(req, res) {
       });
     }
   }
+,
+
+// Get tenant's current bed assignment with full details
+async getTenantBedAssignment(req, res) {
+  try {
+    const { tenantId } = req.params;
+    
+    const query = `
+      SELECT 
+        ba.id,
+        ba.room_id,
+        ba.bed_number,
+        ba.bed_type,
+        ba.tenant_rent,
+        ba.is_couple,
+        ba.is_available,
+        ba.created_at,
+        r.room_number,
+        r.floor,
+        r.sharing_type,
+        r.has_ac,
+        r.has_attached_bathroom,
+        r.has_balcony,
+        p.id as property_id,
+        p.name as property_name,
+        p.address as property_address
+      FROM bed_assignments ba
+      JOIN rooms r ON ba.room_id = r.id
+      JOIN properties p ON r.property_id = p.id
+      WHERE ba.tenant_id = ? AND ba.is_available = 0
+      LIMIT 1
+    `;
+    
+    const [rows] = await db.execute(query, [tenantId]);
+    
+    if (rows.length === 0) {
+      return res.status(200).json({
+        success: false,
+        message: "No active bed assignment found for this tenant",
+        data: null
+      });
+    }
+    
+    // Format the response to match your frontend interface
+    const assignment = {
+      id: rows[0].id,
+      bed_number: rows[0].bed_number,
+      bed_type: rows[0].bed_type,
+      tenant_rent: rows[0].tenant_rent,
+      is_couple: rows[0].is_couple === 1,
+      created_at: rows[0].created_at,
+      room: {
+        id: rows[0].room_id,
+        room_number: rows[0].room_number,
+        floor: rows[0].floor,
+        sharing_type: rows[0].sharing_type,
+        has_ac: rows[0].has_ac === 1,
+        has_attached_bathroom: rows[0].has_attached_bathroom === 1,
+        has_balcony: rows[0].has_balcony === 1
+      },
+      property: {
+        id: rows[0].property_id,
+        name: rows[0].property_name,
+        address: rows[0].property_address
+      }
+    };
+    
+    res.json({
+      success: true,
+      data: assignment
+    });
+    
+  } catch (error) {
+    console.error("Error fetching tenant bed assignment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch tenant bed assignment",
+      error: error.message
+    });
+  }
+}
 
 
 }

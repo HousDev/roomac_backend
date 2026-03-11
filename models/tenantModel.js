@@ -70,6 +70,8 @@ function parseTenant(row) {
 const TenantModel = {
 
 // In tenantModel.js - Update the findAll method SELECT clause
+// In tenantModel.js - Update findAll method with simplified vacate filter
+
 async findAll({
   search = "",
   page = 1,
@@ -84,17 +86,30 @@ async findAll({
   preferred_room_type,
   has_credentials,
   includeDeleted = false,
+  vacate_status, // 'vacated' or 'active' or undefined
 }) {
   try {
     const offset = (page - 1) * pageSize;
     const where = [];
     const params = [];
 
-    // Add soft delete filter - only show non-deleted unless includeDeleted is true
+    // Add soft delete filter
     if (!includeDeleted) {
       where.push("t.deleted_at IS NULL");
     }
 
+    // SIMPLIFIED VACATE FILTER - Just get tenant IDs from vacate_records
+    if (vacate_status === 'vacated') {
+      // Only show tenants that exist in vacate_records table
+      where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+    } else if (vacate_status === 'active') {
+      // Show tenants that are NOT in vacate_records table AND have active bed assignments
+      where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+      where.push("EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)");
+    }
+    // If vacate_status is undefined, show all tenants (no filter)
+
+    // Existing filters
     if (search) {
       where.push("(t.full_name LIKE ? OR t.email LIKE ? OR t.phone LIKE ? OR t.emergency_contact_name LIKE ? OR t.emergency_contact_phone LIKE ?)");
       const q = `%${search}%`;
@@ -128,10 +143,6 @@ async findAll({
       where.push("t.preferred_sharing = ?");
       params.push(preferred_sharing);
     }
-    if (preferred_room_type) {
-      where.push("t.preferred_room_type = ?");
-      params.push(preferred_room_type);
-    }
     if (typeof has_credentials !== "undefined" && has_credentials !== null) {
       if (has_credentials) {
         where.push("EXISTS (SELECT 1 FROM tenant_credentials tc WHERE tc.tenant_id = t.id)");
@@ -142,7 +153,7 @@ async findAll({
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // UPDATED SQL to include all occupation fields
+    // SIMPLIFIED SQL - Don't need to join with vacate_records
     const sql = `
       SELECT 
         t.*,
@@ -159,7 +170,7 @@ async findAll({
         t.portfolio_url,
         t.work_mode,
         t.shift_timing,
-        -- Use aggregation functions for bed assignment fields
+        -- Bed assignment fields
         MAX(ba.id) as assignment_id,
         MAX(ba.room_id) as assigned_room_id,
         MAX(ba.bed_number) as assigned_bed_number,
@@ -178,7 +189,8 @@ async findAll({
       LIMIT ? OFFSET ?
     `;
 
-    console.log('SQL query:', sql);
+    console.log('SQL query with vacate filter:', sql);
+    console.log('Vacate filter applied:', vacate_status);
     console.log('Parameters:', [...params, parseInt(pageSize, 10), parseInt(offset, 10)]);
 
     const [rows] = await pool.query(
@@ -186,24 +198,59 @@ async findAll({
       [...params, parseInt(pageSize, 10), parseInt(offset, 10)]
     );
 
-    // Count query also needs table alias
+    // Count query also needs same filters
     const countSql = `
-      SELECT COUNT(*) as total 
+      SELECT COUNT(DISTINCT t.id) as total 
       FROM tenants t
       ${whereSql}
     `;
     
-    const [countRows] = await pool.query(
-      countSql,
-      params
-    );
+    const [countRows] = await pool.query(countSql, params);
     
     const total = countRows && countRows[0] ? Number(countRows[0].total) : 0;
 
-    return { rows: rows.map(parseTenant), total };
+    // Process rows
+    const processedRows = rows.map(row => {
+      const tenant = parseTenant(row);
+      
+      // We don't need to add vacate record here - keep it simple
+      // The vacate information can be fetched separately when viewing tenant details
+      
+      return tenant;
+    });
+
+    return { rows: processedRows, total };
   } catch (err) {
     console.error("TenantModel.findAll error:", err);
     throw err;
+  }
+},
+
+// Add a separate method to get vacate records for a specific tenant
+async getVacateRecordsByTenantId(tenantId) {
+  try {
+    const [records] = await pool.query(
+      `SELECT * FROM vacate_records WHERE tenant_id = ? ORDER BY created_at DESC`,
+      [tenantId]
+    );
+    return records;
+  } catch (err) {
+    console.error("TenantModel.getVacateRecordsByTenantId error:", err);
+    return [];
+  }
+},
+
+// Add method to check if tenant has vacated
+async hasTenantVacated(tenantId) {
+  try {
+    const [result] = await pool.query(
+      `SELECT COUNT(*) as count FROM vacate_records WHERE tenant_id = ?`,
+      [tenantId]
+    );
+    return result[0].count > 0;
+  } catch (err) {
+    console.error("TenantModel.hasTenantVacated error:", err);
+    return false;
   }
 },
 
@@ -1191,11 +1238,19 @@ async getDeletedTenants() {
 // Complete corrected methods for tenantModel.js
 
 // Check if tenant exists
-async findByEmailOrPhone(email, phone) {
-  const query = 'SELECT * FROM tenants WHERE email = ? OR phone = ?';
+// In tenantModel.js - Update findByEmailOrPhone
+
+async findByEmailOrPhone(email, phone, includeDeleted = false) {
+  let query = 'SELECT * FROM tenants WHERE email = ? OR phone = ?';
+  const params = [email, phone];
+  
+  // If not including deleted, exclude soft-deleted records
+  if (!includeDeleted) {
+    query += ' AND deleted_at IS NULL';
+  }
   
   try {
-    const [rows] = await pool.query(query, [email, phone]);
+    const [rows] = await pool.query(query, params);
     return rows[0];
   } catch (error) {
     console.error("TenantModel.findByEmailOrPhone error:", error);

@@ -27,7 +27,10 @@ const TenantController = {
         (req.query.portal_access_enabled === "true" || req.query.portal_access_enabled === "1") : undefined;
       const has_credentials = req.query.has_credentials !== undefined ?
         (req.query.has_credentials === "true" || req.query.has_credentials === "1") : undefined;
-         const includeDeleted = req.query.include_deleted === "true"; 
+         const includeDeleted = req.query.include_deleted === "true";
+         
+         // NEW: Vacate status filter
+    const vacate_status = req.query.vacate_status || undefined; // 'vacated', 'active', 'all'
 
       const result = await TenantModel.findAll({
         search,
@@ -43,6 +46,7 @@ const TenantController = {
         portal_access_enabled,
         has_credentials,
          includeDeleted, 
+          vacate_status,
       });
       const tenantRows = result.rows;
 
@@ -108,7 +112,9 @@ const TenantController = {
       return res.json({
         success: true,
         data: finalRows,
-        meta: { total: result.total, page, pageSize },
+        meta: { total: result.total, page, pageSize,filters: {
+          vacate_status // Return applied filter
+        } },
       });
     } catch (err) {
       console.error("TenantController.list error:", err);
@@ -118,51 +124,38 @@ const TenantController = {
     }
   },
 
- 
 
 
-  async getById(req, res) {
+async getById(req, res) {
   try {
     const id = req.params.id;
     const tenant = await TenantModel.findById(id);
 
-    console.log('🔍 Tenant fetched:', {
-      id: tenant.id,
-      property_id: tenant.property_id,
-      lockin_fields: {
-        lockin_period_months: tenant.lockin_period_months,
-        lockin_penalty_amount: tenant.lockin_penalty_amount,
-        lockin_penalty_type: tenant.lockin_penalty_type
-      },
-      notice_fields: {
-        notice_period_days: tenant.notice_period_days,
-        notice_penalty_amount: tenant.notice_penalty_amount,
-        notice_penalty_type: tenant.notice_penalty_type
-      }
-    });
-    if (!tenant)
-      return res
-        .status(404)
-        .json({ success: false, message: "Tenant not found" });
+    if (!tenant) {
+      return res.status(404).json({ success: false, message: "Tenant not found" });
+    }
 
     // Get property details if property_id exists
-    // Get property details if property_id exists
-let propertyDetails = null;
-if (tenant.property_id) {
-  try {
-    const [propRows] = await pool.query(
-      'SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?',
-      [tenant.property_id]
-    );
-    propertyDetails = propRows[0] || null;
-  } catch (propErr) {
-    console.error('Failed to fetch property details:', propErr);
-  }
-}
+    let propertyDetails = null;
+    if (tenant.property_id) {
+      try {
+        const [propRows] = await pool.query(
+          'SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?',
+          [tenant.property_id]
+        );
+        propertyDetails = propRows[0] || null;
+      } catch (propErr) {
+        console.error('Failed to fetch property details:', propErr);
+      }
+    }
 
     const bookings = await TenantModel.getBookingsForTenantIds([tenant.id]);
     const payments = await TenantModel.getPaymentsForTenantIds([tenant.id]);
     const credentials = await TenantModel.getCredentialsByTenantIds([tenant.id]);
+    
+    // NEW: Get vacate records for this tenant
+    const vacateRecords = await TenantModel.getVacateRecordsByTenantId(tenant.id);
+    const hasVacated = vacateRecords.length > 0;
 
     // Format bookings
     const formattedBookings = bookings.map(b => ({
@@ -186,23 +179,20 @@ if (tenant.property_id) {
       success: true,
       data: {
         ...tenant,
-        property_details: propertyDetails, // Add property details
+        property_details: propertyDetails,
         bookings: formattedBookings || [],
         payments: payments || [],
         has_credentials: credentials && credentials.length ? true : false,
         credential_email: credentials && credentials[0] ? credentials[0].email : null,
+        has_vacated: hasVacated, // Add this flag
+        vacate_records: vacateRecords // Add vacate records
       },
     });
   } catch (err) {
     console.error("TenantController.getById error:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch tenant" });
+    return res.status(500).json({ success: false, message: "Failed to fetch tenant" });
   }
 },
-
-
-
 
 
 async create(req, res) {
@@ -545,55 +535,127 @@ async create(req, res) {
     }
 
     console.log("Creating tenant with data keys:", Object.keys(tenantData));
-    console.log("Tenant data sample:", {
-      full_name: tenantData.full_name,
-      email: tenantData.email,
-      occupation_category: tenantData.occupation_category,
-      exact_occupation: tenantData.exact_occupation,
-      occupation: tenantData.occupation,
-      organization: tenantData.organization,
-      years_of_experience: tenantData.years_of_experience,
-      monthly_income: tenantData.monthly_income,
-      work_mode: tenantData.work_mode,
-      property_id: tenantData.property_id,
-      lockin_fields: {
-        months: tenantData.lockin_period_months,
-        amount: tenantData.lockin_penalty_amount,
-        type: tenantData.lockin_penalty_type,
-      },
-      notice_fields: {
-        days: tenantData.notice_period_days,
-        amount: tenantData.notice_penalty_amount,
-        type: tenantData.notice_penalty_type,
-      },
-    });
-
-    // Check if tenant with same email or phone already exists
+    
+    // --- IMPORTANT PART: Check for existing soft-deleted tenant ---
+    // Check if tenant with same email or phone already exists (including soft-deleted)
     const existingTenant = await TenantModel.findByEmailOrPhone(
-      tenantData.email,
+      tenantData.email, 
       tenantData.phone,
+      true // include deleted records
     );
+
     if (existingTenant) {
-      // Clean up uploaded files
-      if (req.files) {
-        Object.values(req.files).forEach((fileArray) => {
-          if (fileArray && fileArray.length > 0) {
-            fileArray.forEach((file) => {
-              if (file.path && fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
+      if (existingTenant.deleted_at) {
+        // Tenant is soft-deleted - restore and update instead of creating new
+        console.log(`Found soft-deleted tenant (ID: ${existingTenant.id}). Restoring and updating...`);
+        
+        // Restore the tenant (set deleted_at to NULL)
+        await TenantModel.restore(existingTenant.id);
+        
+        // Prepare update data (exclude files that need special handling)
+        const updateData = { ...tenantData };
+        
+        // Don't overwrite existing files if new ones weren't uploaded
+        if (!uploadedFiles.id_proof_url) {
+          delete updateData.id_proof_url;
+        }
+        if (!uploadedFiles.address_proof_url) {
+          delete updateData.address_proof_url;
+        }
+        if (!uploadedFiles.photo_url) {
+          delete updateData.photo_url;
+        }
+        
+        // Handle additional documents - merge with existing
+        if (additionalDocs.length > 0) {
+          // Get existing additional docs
+          let existingDocs = [];
+          try {
+            if (existingTenant.additional_documents) {
+              if (typeof existingTenant.additional_documents === 'string') {
+                existingDocs = JSON.parse(existingTenant.additional_documents);
+              } else if (Array.isArray(existingTenant.additional_documents)) {
+                existingDocs = existingTenant.additional_documents;
               }
-            });
+            }
+          } catch (e) {
+            console.error('Error parsing existing additional_documents:', e);
           }
+          
+          // Merge existing and new docs (avoid duplicates)
+          const allDocs = [...existingDocs, ...additionalDocs];
+          // Remove duplicates based on filename
+          const uniqueDocs = allDocs.filter((doc, index, self) => 
+            index === self.findIndex(d => d.filename === doc.filename)
+          );
+          
+          updateData.additional_documents = uniqueDocs;
+        }
+        
+        // Update the restored tenant
+        await TenantModel.update(existingTenant.id, updateData);
+        
+        // Create credentials if password is provided
+        if (
+          body.password &&
+          (body.create_credentials === "true" || body.create_credentials === true)
+        ) {
+          try {
+            // Check if credentials already exist
+            const credentials = await TenantModel.getCredentialsByTenantIds([existingTenant.id]);
+            
+            const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
+            
+            if (credentials && credentials.length > 0) {
+              // Update existing credentials
+              await TenantModel.updateCredential(existingTenant.id, { password_hash });
+              console.log('Credentials updated for restored tenant:', existingTenant.id);
+            } else {
+              // Create new credentials
+              await TenantModel.createCredential({
+                tenant_id: existingTenant.id,
+                email: body.email,
+                password_hash,
+              });
+              console.log('Credentials created for restored tenant:', existingTenant.id);
+            }
+          } catch (credErr) {
+            console.error("Failed to create/update credentials for restored tenant:", credErr);
+            // Continue even if credential creation fails
+          }
+        }
+        
+        return res.status(200).json({
+          success: true,
+          message: "Existing deleted tenant restored and updated successfully",
+          tenant_id: existingTenant.id,
+          restored: true,
+          additional_documents: updateData.additional_documents || []
+        });
+      } else {
+        // Tenant exists and is not deleted - show error
+        // Clean up uploaded files
+        if (req.files) {
+          Object.values(req.files).forEach((fileArray) => {
+            if (fileArray && fileArray.length > 0) {
+              fileArray.forEach((file) => {
+                if (file.path && fs.existsSync(file.path)) {
+                  fs.unlinkSync(file.path);
+                }
+              });
+            }
+          });
+        }
+
+        return res.status(400).json({
+          success: false,
+          message: "Tenant with this email or phone already exists",
         });
       }
-
-      return res.status(400).json({
-        success: false,
-        message: "Tenant with this email or phone already exists",
-      });
     }
 
-    // Create tenant
+    // --- Normal flow: No existing tenant found ---
+    // Create new tenant
     const tenantId = await TenantModel.create(tenantData);
     console.log("Tenant created with ID:", tenantId);
 
@@ -659,6 +721,7 @@ async create(req, res) {
         console.error("❌ Failed to send welcome email:", emailErr);
       }
     }
+    
     return res.status(201).json({
       success: true,
       message: "Tenant created successfully",
@@ -1113,25 +1176,45 @@ async remove(req, res) {
   }
 },
 
-  async bulkDelete(req, res) {
-    try {
-      const { ids } = req.body;
-      if (!Array.isArray(ids) || !ids.length)
-        return res
-          .status(400)
-          .json({ success: false, message: "ids array required" });
-      await TenantModel.bulkDelete(ids);
-      return res.json({
-        success: true,
-        message: `${ids.length} tenants deleted`,
+async bulkDelete(req, res) {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || !ids.length) {
+      return res.status(400).json({
+        success: false,
+        message: "ids array required",
       });
-    } catch (err) {
-      console.error("TenantController.bulkDelete error:", err);
-      return res
-        .status(500)
-        .json({ success: false, message: "Failed to delete tenants" });
     }
-  },
+
+    await TenantModel.bulkDelete(ids);
+
+    return res.json({
+      success: true,
+      message: `${ids.length} tenants deleted successfully`,
+    });
+
+  } catch (err) {
+    console.error("TenantController.bulkDelete error:", err);
+
+    // Foreign key constraint handling
+    if (
+      err.code === "ER_ROW_IS_REFERENCED_2" ||
+      err.code === "ER_ROW_IS_REFERENCED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Some tenants cannot be deleted because related records exist (payments, bookings, etc).",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete tenants",
+    });
+  }
+},
 
   async bulkStatus(req, res) {
     try {

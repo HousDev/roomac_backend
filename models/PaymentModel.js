@@ -189,48 +189,53 @@
 // module.exports = Payment;
 
 
+
+
+// models/paymentModel.js
 const db = require("../config/db");
 
 const Payment = {
   // Create a new payment
-  async create(paymentData) {
-    const query = `
-      INSERT INTO payments (
-        tenant_id, booking_id, amount, payment_date, payment_mode,
-        transaction_id, status, month, year, notes, due_date, payment_type, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-    `;
+async create(paymentData) {
+  const query = `
+    INSERT INTO payments (
+      tenant_id, booking_id, amount, payment_date, payment_mode,
+      transaction_id, payment_proof, proof_uploaded_at, status, month, year, 
+      notes, due_date, payment_type, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+  `;
 
-    // Extract month/year from payment_date for easy filtering
-    const paymentDate = paymentData.payment_date
-      ? new Date(paymentData.payment_date)
-      : new Date();
-    const monthName = paymentDate.toLocaleString('default', { month: 'long' });
-    const year = paymentDate.getFullYear();
+  const paymentDate = paymentData.payment_date
+    ? new Date(paymentData.payment_date)
+    : new Date();
+  const monthName = paymentDate.toLocaleString('default', { month: 'long' });
+  const year = paymentDate.getFullYear();
 
-    const values = [
-      paymentData.tenant_id || null,
-      paymentData.booking_id || null,
-      paymentData.amount,
-      paymentData.payment_date || new Date().toISOString().split('T')[0],
-      paymentData.payment_mode,
-      paymentData.transaction_id || null,
-      paymentData.status || 'pending',
-      monthName,
-      year,
-      paymentData.notes || null,
-      paymentData.due_date || null,
-      paymentData.payment_type || 'rent' // Add payment_type column
-    ];
+  const values = [
+    paymentData.tenant_id || null,
+    paymentData.booking_id || null,
+    paymentData.amount,
+    paymentData.payment_date || new Date().toISOString().split('T')[0],
+    paymentData.payment_mode,
+    paymentData.transaction_id || null,
+    paymentData.payment_proof || null,
+    paymentData.payment_proof ? new Date() : null,
+    paymentData.status || 'pending',
+    monthName,
+    year,
+    paymentData.notes || null,
+    paymentData.due_date || null,
+    paymentData.payment_type || 'rent'
+  ];
 
-    try {
-      const [result] = await db.execute(query, values);
-      return { id: result.insertId, ...paymentData };
-    } catch (error) {
-      console.error("Payment insert error:", error.message);
-      throw error;
-    }
-  },
+  try {
+    const [result] = await db.execute(query, values);
+    return { id: result.insertId, ...paymentData };
+  } catch (error) {
+    console.error("Payment insert error:", error.message);
+    throw error;
+  }
+},
 
   // Get payment by ID with tenant details
   async findById(id) {
@@ -276,135 +281,224 @@ const Payment = {
     }
   },
 
-  // Get payments by tenant ID with month-wise grouping
-  async findByTenant(tenantId) {
-    const query = `
-      SELECT p.*, 
-             b.monthly_rent,
-             DATE_FORMAT(p.payment_date, '%Y-%m') as payment_month
-      FROM payments p
-      LEFT JOIN bookings b ON p.booking_id = b.id
-      WHERE p.tenant_id = ? 
-      ORDER BY p.payment_date DESC
-    `;
-    try {
-      const [rows] = await db.execute(query, [tenantId]);
-      return rows;
-    } catch (error) {
-      throw error;
-    }
-  },
+async findByTenant(tenantId) {
+  const query = `
+    SELECT 
+      p.*,
+      DATE_FORMAT(p.payment_date, '%Y-%m') as month_key,
+      MONTH(p.payment_date) as month_num,
+      YEAR(p.payment_date) as year,
+      t.full_name as tenant_name,
+      t.email as tenant_email,
+      t.phone as tenant_phone,
+      ba.id as bed_assignment_id,
+      ba.bed_number,
+      ba.bed_type,
+      ba.tenant_rent,
+      ba.is_couple,
+      r.id as room_id,
+      r.room_number,
+      r.floor,
+      r.sharing_type,
+      prop.id as property_id,
+      prop.name as property_name
+    FROM payments p
+    LEFT JOIN tenants t ON p.tenant_id = t.id
+    LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
+    LEFT JOIN rooms r ON ba.room_id = r.id
+    LEFT JOIN properties prop ON r.property_id = prop.id
+    WHERE p.tenant_id = ? 
+    ORDER BY p.payment_date DESC
+  `;
+  try {
+    const [rows] = await db.execute(query, [tenantId]);
+    console.log(`Found ${rows.length} payments for tenant ${tenantId}`);
+    return rows;
+  } catch (error) {
+    console.error("Error in findByTenant:", error);
+    throw error;
+  }
+},
 
-  // Get tenant rent summary with month-wise breakdown
-  async getTenantRentSummary(tenantId) {
-    const query = `
-      SELECT 
-        p.*,
-        b.monthly_rent,
-        b.id as booking_id,
-        b.booking_type,
-        DATE_FORMAT(p.payment_date, '%Y-%m') as month_year,
-        MONTH(p.payment_date) as payment_month,
-        YEAR(p.payment_date) as payment_year
-      FROM payments p
-      LEFT JOIN bookings b ON p.booking_id = b.id
-      WHERE p.tenant_id = ? AND p.payment_type = 'rent'
-      ORDER BY p.payment_date DESC
-    `;
-    
-    try {
-      const [rows] = await db.execute(query, [tenantId]);
-      
-      // Get active booking for current rent
-      const [activeBooking] = await db.execute(
-        'SELECT * FROM bookings WHERE tenant_id = ? AND status = "active" LIMIT 1',
-        [tenantId]
-      );
+async getTenantRentSummary(tenantId) {
+  try {
+    // Get tenant details with current bed assignment
+    const [tenantData] = await db.execute(
+      `SELECT 
+        t.id as tenant_id,
+        t.full_name as tenant_name,
+        t.email,
+        t.phone,
+        ba.id as bed_assignment_id,
+        ba.bed_number,
+        ba.bed_type,
+        ba.tenant_rent,
+        ba.is_couple,
+        r.id as room_id,
+        r.room_number,
+        r.floor,
+        r.sharing_type,
+        r.has_ac,
+        r.has_attached_bathroom,
+        r.has_balcony,
+        p.id as property_id,
+        p.name as property_name,
+        p.address as property_address
+      FROM tenants t
+      LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
+      LEFT JOIN rooms r ON ba.room_id = r.id
+      LEFT JOIN properties p ON r.property_id = p.id
+      WHERE t.id = ?`,
+      [tenantId]
+    );
 
-      return {
-        payments: rows,
-        activeBooking: activeBooking[0] || null
-      };
-    } catch (error) {
-      throw error;
-    }
-  },
+    // Get all payments for this tenant
+    const [payments] = await db.execute(
+      `SELECT * FROM payments 
+       WHERE tenant_id = ? 
+       ORDER BY payment_date DESC`,
+      [tenantId]
+    );
 
-  // Get month-wise rent history for a tenant
-// In models/PaymentModel.js - Replace the getMonthWiseRentHistory function
+    // Get the tenant's active booking
+    const [bookings] = await db.execute(
+      `SELECT * FROM bookings 
+       WHERE tenant_id = ? AND status = 'active'
+       LIMIT 1`,
+      [tenantId]
+    );
 
-// Get month-wise rent history for a tenant
+    const tenantInfo = tenantData[0] || { tenant_id: tenantId };
+    const monthlyRent = tenantInfo?.tenant_rent || bookings[0]?.monthly_rent || 0;
+
+    return {
+      tenant: {
+        id: tenantInfo.tenant_id,
+        name: tenantInfo.tenant_name,
+        email: tenantInfo.email,
+        phone: tenantInfo.phone
+      },
+      bed_assignment: tenantInfo.bed_assignment_id ? {
+        id: tenantInfo.bed_assignment_id,
+        bed_number: tenantInfo.bed_number,
+        bed_type: tenantInfo.bed_type,
+        monthly_rent: tenantInfo.tenant_rent,
+        is_couple: tenantInfo.is_couple === 1,
+        room: {
+          id: tenantInfo.room_id,
+          room_number: tenantInfo.room_number,
+          floor: tenantInfo.floor,
+          sharing_type: tenantInfo.sharing_type,
+          has_ac: tenantInfo.has_ac === 1,
+          has_attached_bathroom: tenantInfo.has_attached_bathroom === 1,
+          has_balcony: tenantInfo.has_balcony === 1
+        },
+        property: {
+          id: tenantInfo.property_id,
+          name: tenantInfo.property_name,
+          address: tenantInfo.property_address
+        }
+      } : null,
+      active_booking: bookings[0] || null,
+      payments: payments,
+      monthly_rent: monthlyRent
+    };
+  } catch (error) {
+    console.error("Error in getTenantRentSummary:", error);
+    throw error;
+  }
+},
+
+// models/PaymentModel.js - Update getMonthWiseRentHistory method
+
+// models/paymentModel.js - Update getMonthWiseRentHistory to show all months from bed assignment
+
 async getMonthWiseRentHistory(tenantId, months = 6) {
   try {
-    // First, get the tenant's active booking to know their monthly rent
-    const [booking] = await db.execute(
-      'SELECT monthly_rent FROM bookings WHERE tenant_id = ? AND status = "active" LIMIT 1',
+    // First, get the bed assignment date to know when the tenant started
+    const [assignmentData] = await db.execute(
+      `SELECT 
+        ba.created_at as assignment_date,
+        ba.tenant_rent,
+        ba.bed_number,
+        ba.bed_type,
+        r.room_number
+      FROM bed_assignments ba
+      LEFT JOIN rooms r ON ba.room_id = r.id
+      WHERE ba.tenant_id = ? AND ba.is_available = 0
+      LIMIT 1`,
       [tenantId]
     );
     
-    const monthlyRent = booking[0]?.monthly_rent || 0;
+    const bedAssignment = assignmentData[0];
     
-    // Get all payments for this tenant grouped by month
-    const query = `
-      SELECT 
-        DATE_FORMAT(payment_date, '%Y-%m') as month_key,
-        DATE_FORMAT(payment_date, '%M %Y') as month_display,
-        MONTH(payment_date) as month_num,
-        YEAR(payment_date) as year,
-        SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_paid,
-        SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_pending,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as payment_count,
-        MAX(CASE WHEN status = 'completed' THEN payment_date END) as last_payment_date,
-        GROUP_CONCAT(
-          DISTINCT CONCAT(
-            '{"id":"', id, '","amount":', amount, ',"status":"', status, '","date":"', payment_date, '"}'
-          ) SEPARATOR '|'
-        ) as payment_details
-      FROM payments 
-      WHERE tenant_id = ? 
-        AND payment_type = 'rent'
-        AND payment_date >= DATE_SUB(CURDATE(), INTERVAL ${months} MONTH)
-      GROUP BY month_key, month_display, month_num, year
-      ORDER BY year DESC, month_num DESC
-    `;
-    
-    const [rows] = await db.execute(query, [tenantId]);
-    
-    // Generate last N months including months with no payments
+    // If no active bed assignment, return empty array
+    if (!bedAssignment) {
+      return {
+        months: [],
+        bed_info: null,
+        monthly_rent: 0,
+        total_paid: 0,
+        total_pending: 0,
+        assignment_date: null
+      };
+    }
+
+    const monthlyRent = parseFloat(bedAssignment.tenant_rent) || 0;
+    const assignmentDate = new Date(bedAssignment.assignment_date);
     const currentDate = new Date();
-    const result = [];
     
-    for (let i = months - 1; i >= 0; i--) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+    // Get all payments for this tenant
+    const [payments] = await db.execute(
+      `SELECT * FROM payments 
+       WHERE tenant_id = ? 
+       AND payment_type = 'rent'
+       ORDER BY payment_date ASC`,
+      [tenantId]
+    );
+
+    // Calculate total months from assignment date to current date
+    const startYear = assignmentDate.getFullYear();
+    const startMonth = assignmentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    
+    const totalMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth) + 1;
+    
+    // Generate all months from assignment date to current date
+    const result = [];
+    let totalPaid = 0;
+    let totalPending = 0;
+    
+    for (let i = 0; i < totalMonths; i++) {
+      const date = new Date(startYear, startMonth + i, 1);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthDisplay = date.toLocaleString('default', { month: 'long' }) + ' ' + date.getFullYear();
       
-      // Find if we have data for this month
-      const monthData = rows.find(r => r.month_key === monthKey);
+      // Find payments for this specific month
+      const monthPayments = payments.filter(p => {
+        const paymentDate = new Date(p.payment_date);
+        return paymentDate.getMonth() === date.getMonth() && 
+               paymentDate.getFullYear() === date.getFullYear();
+      });
+
+      const completedPayments = monthPayments.filter(p => p.status === 'completed');
+      const paidAmount = completedPayments.reduce((sum, p) => sum + p.amount, 0);
       
-      const isCurrentMonth = i === months - 1;
-      const isPastMonth = date < new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const isCurrentMonth = date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      const isPastMonth = date < new Date(currentYear, currentMonth, 1);
       
-      let paidAmount = monthData ? parseFloat(monthData.total_paid) : 0;
-      let pendingAmount = monthData ? parseFloat(monthData.total_pending) : 0;
-      
-      // Calculate status
+      // Determine status
       let status = 'pending';
       if (paidAmount >= monthlyRent) {
         status = 'paid';
       } else if (paidAmount > 0) {
         status = 'partial';
-      } else if (isPastMonth && paidAmount === 0) {
+      } else if (isPastMonth) {
         status = 'overdue';
       }
       
-      // Parse payment details if available
-      let payments = [];
-      if (monthData && monthData.payment_details) {
-        payments = monthData.payment_details.split('|').map(p => JSON.parse(p));
-      }
-      
-      result.push({
+      const monthData = {
         month: monthDisplay,
         month_key: monthKey,
         year: date.getFullYear(),
@@ -415,12 +509,36 @@ async getMonthWiseRentHistory(tenantId, months = 6) {
         status,
         isCurrentMonth,
         isPastMonth,
-        payments,
-        lastPaymentDate: monthData?.last_payment_date || null
-      });
+        isFirstMonth: i === 0,
+        payments: monthPayments.map(p => ({
+          id: p.id,
+          amount: p.amount,
+          status: p.status,
+          date: p.payment_date,
+          mode: p.payment_mode,
+          transaction_id: p.transaction_id
+        })),
+        lastPaymentDate: completedPayments[0]?.payment_date || null
+      };
+      
+      result.push(monthData);
+      totalPaid += paidAmount;
+      totalPending += (monthlyRent - paidAmount);
     }
     
-    return result;
+    return {
+      months: result,
+      bed_info: {
+        bed_number: bedAssignment.bed_number,
+        bed_type: bedAssignment.bed_type,
+        room_number: bedAssignment.room_number,
+        assignment_date: bedAssignment.assignment_date
+      },
+      monthly_rent: monthlyRent,
+      total_paid: totalPaid,
+      total_pending: totalPending,
+      total_months: totalMonths
+    };
   } catch (error) {
     console.error("Error in getMonthWiseRentHistory:", error);
     throw error;

@@ -809,6 +809,17 @@ async update(req, res) {
       });
     } catch (error) {
       console.error("PropertyController.bulkDelete error:", error);
+      // Foreign key constraint handling
+    if (
+      error.code === "ER_ROW_IS_REFERENCED_2" ||
+      error.code === "ER_ROW_IS_REFERENCED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Some properties cannot be deleted because rooms are linked to them."
+      });
+    }
       return res.status(500).json({
         success: false,
         message: "Bulk delete failed",
