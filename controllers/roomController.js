@@ -614,6 +614,12 @@ console.log("Video:", req.compressedVideo);
       });
     } catch (err) {
       console.error("deleteRoom error:", err);
+      if (err.code === "ER_ROW_IS_REFERENCED_2") {
+    return res.status(400).json({
+      success: false,
+      message: "This room cannot be deleted because it is linked with other data."
+    });
+  }
       res.status(500).json({
         success: false,
         message: "Failed to delete room"

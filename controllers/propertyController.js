@@ -753,6 +753,13 @@ async update(req, res) {
         message: "Property deleted successfully",
       });
     } catch (error) {
+      console.log("code ",error.code)
+      if (String(error.code) === "ER_ROW_IS_REFERENCED_2") {
+    return res.status(400).json({
+      success: false,
+      message: "This property cannot be deleted because it is used in other records."
+    });
+  }
       console.error("PropertyController.remove error:", error);
       return res.status(500).json({
         success: false,

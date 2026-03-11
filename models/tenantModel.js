@@ -83,11 +83,17 @@ async findAll({
   preferred_sharing,
   preferred_room_type,
   has_credentials,
+  includeDeleted = false,
 }) {
   try {
     const offset = (page - 1) * pageSize;
     const where = [];
     const params = [];
+
+    // Add soft delete filter - only show non-deleted unless includeDeleted is true
+    if (!includeDeleted) {
+      where.push("t.deleted_at IS NULL");
+    }
 
     if (search) {
       where.push("(t.full_name LIKE ? OR t.email LIKE ? OR t.phone LIKE ? OR t.emergency_contact_name LIKE ? OR t.emergency_contact_phone LIKE ?)");
@@ -716,15 +722,64 @@ async update(id, payload) {
   }
 },
 
-  async delete(id) {
-    try {
+
+// Add soft delete method
+async softDelete(id) {
+  try {
+    const [result] = await pool.query(
+      "UPDATE tenants SET deleted_at = NOW() WHERE id = ?",
+      [id]
+    );
+    return result.affectedRows > 0;
+  } catch (err) {
+    console.error("TenantModel.softDelete error:", err);
+    throw err;
+  }
+},
+
+// Add restore method
+async restore(id) {
+  try {
+    const [result] = await pool.query(
+      "UPDATE tenants SET deleted_at = NULL WHERE id = ?",
+      [id]
+    );
+    return result.affectedRows > 0;
+  } catch (err) {
+    console.error("TenantModel.restore error:", err);
+    throw err;
+  }
+},
+
+// Modify delete method to either soft delete or permanently delete
+async delete(id, permanent = false) {
+  try {
+    if (permanent) {
+      // Permanent delete
       const [result] = await pool.query("DELETE FROM tenants WHERE id = ?", [id]);
       return result.affectedRows > 0;
-    } catch (err) {
-      console.error("TenantModel.delete error:", err);
-      throw err;
+    } else {
+      // Soft delete
+      return this.softDelete(id);
     }
-  },
+  } catch (err) {
+    console.error("TenantModel.delete error:", err);
+    throw err;
+  }
+},
+
+// Add method to get deleted tenants
+async getDeletedTenants() {
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM tenants WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+    );
+    return rows.map(parseTenant);
+  } catch (err) {
+    console.error("TenantModel.getDeletedTenants error:", err);
+    throw err;
+  }
+},
 
   async bulkDelete(ids) {
     try {
