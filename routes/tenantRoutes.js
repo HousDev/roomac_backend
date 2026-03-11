@@ -50,7 +50,26 @@ router.put("/:id", tenantDocumentUploadFlexible, handleUploadError, TenantContro
 
 // Other routes without file upload
 router.get("/:id", TenantController.getById);
-router.delete("/:id", TenantController.remove);
+// router.delete("/:id", TenantController.remove);
+// Soft delete route
+router.patch("/:id/soft-delete", TenantController.softDelete);
+
+// Restore route
+router.patch("/:id/restore", TenantController.restore);
+
+// Get deleted tenants
+router.get("/deleted", TenantController.getDeleted);
+
+// Optional: Modify your existing delete route to support permanent delete
+router.delete("/:id", (req, res) => {
+  if (req.query.permanent === 'true') {
+    // Permanent delete
+    return TenantController.remove(req, res);
+  } else {
+    // Soft delete (default)
+    return TenantController.softDelete(req, res);
+  }
+});
 
 // Get property details with terms for tenant form
 router.get("/property/:id/details", async (req, res) => {

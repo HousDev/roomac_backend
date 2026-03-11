@@ -27,6 +27,7 @@ const TenantController = {
         (req.query.portal_access_enabled === "true" || req.query.portal_access_enabled === "1") : undefined;
       const has_credentials = req.query.has_credentials !== undefined ?
         (req.query.has_credentials === "true" || req.query.has_credentials === "1") : undefined;
+         const includeDeleted = req.query.include_deleted === "true"; 
 
       const result = await TenantModel.findAll({
         search,
@@ -41,6 +42,7 @@ const TenantController = {
         is_active,
         portal_access_enabled,
         has_credentials,
+         includeDeleted, 
       });
       const tenantRows = result.rows;
 
@@ -990,22 +992,126 @@ async update(req, res) {
   }
 },
 
-  async remove(req, res) {
-    try {
-      const id = req.params.id;
-      const deleted = await TenantModel.delete(id);
-      if (!deleted)
-        return res
-          .status(404)
-          .json({ success: false, message: "Tenant not found" });
-      return res.json({ success: true, message: "Tenant deleted" });
-    } catch (err) {
-      console.error("TenantController.remove error:", err);
-      return res
-        .status(500)
-        .json({ success: false, message: "Failed to delete tenant" });
+// Soft delete tenant
+async softDelete(req, res) {
+  try {
+    const id = req.params.id;
+    
+    // Check if tenant exists
+    const tenant = await TenantModel.findById(id);
+    if (!tenant) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Tenant not found" 
+      });
     }
-  },
+
+    const deleted = await TenantModel.softDelete(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Tenant moved to trash successfully",
+    });
+  } catch (err) {
+    console.error("TenantController.softDelete error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to soft delete tenant",
+    });
+  }
+},
+
+// Restore tenant
+async restore(req, res) {
+  try {
+    const id = req.params.id;
+    
+    const restored = await TenantModel.restore(id);
+
+    if (!restored) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Tenant restored successfully",
+    });
+  } catch (err) {
+    console.error("TenantController.restore error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to restore tenant",
+    });
+  }
+},
+
+// Get deleted tenants
+async getDeleted(req, res) {
+  try {
+    const tenants = await TenantModel.getDeletedTenants();
+    return res.json({
+      success: true,
+      data: tenants,
+    });
+  } catch (err) {
+    console.error("TenantController.getDeleted error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch deleted tenants",
+    });
+  }
+},
+
+
+async remove(req, res) {
+  try {
+    const id = req.params.id;
+
+    const deleted = await TenantModel.delete(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Tenant deleted successfully",
+    });
+
+  } catch (err) {
+    console.error("TenantController.remove error:", err);
+
+    // Foreign key constraint check
+    if (
+      err.code === "ER_ROW_IS_REFERENCED_2" ||
+      err.code === "ER_ROW_IS_REFERENCED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This tenant cannot be deleted because related records exist (payments, bookings, etc).",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete tenant",
+    });
+  }
+},
 
   async bulkDelete(req, res) {
     try {
