@@ -1,3 +1,4 @@
+// models/vacateModel.js
 const db = require('../config/db');
 
 class VacateModel {
