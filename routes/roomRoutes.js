@@ -33,7 +33,8 @@ router.post('/bed-assignments/:id/vacate', RoomController.vacateBed);
 // Add this route
 router.get('/:roomId/available-beds', tenantAuth, RoomController.getAvailableBedsForRoom);
 
-
+// routes/roomRoutes.js
+router.get("/tenant-bed/:tenantId", RoomController.getTenantBedAssignment);
 router.get('/tenant-assignment/:tenant_id', RoomController.getTenantAssignment);
 router.post('/bulk-update', RoomController.bulkUpdateRooms);
 router.post('/filter', RoomController.getFilteredRooms);

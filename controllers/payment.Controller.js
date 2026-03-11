@@ -191,8 +191,11 @@
 // module.exports = paymentController;
 
 
+// controllers/payment.Controller.js 
 const Payment = require("../models/PaymentModel");
 const Booking = require("../models/BookingModel");
+const db = require("../config/db");
+const { uploadProof } = require("../middleware/paymentUpload"); 
 
 const paymentController = {
   // Create a new payment
@@ -475,7 +478,97 @@ const paymentController = {
         error: error.message
       });
     }
+  },
+
+
+  // Upload payment proof
+  async uploadPaymentProof(req, res) {
+    try {
+      const { id } = req.params;
+      
+      // Use the imported uploadProof middleware
+      uploadProof(req, res, async function(err) {
+        if (err) {
+          return res.status(400).json({
+            success: false,
+            message: err.message
+          });
+        }
+        
+        if (!req.file) {
+          return res.status(400).json({
+            success: false,
+            message: "No file uploaded"
+          });
+        }
+        
+        const proofUrl = `/uploads/payment-proofs/${req.file.filename}`;
+        
+        // Update payment record with proof path
+        const [result] = await db.execute(
+          `UPDATE payments 
+           SET payment_proof = ?, proof_uploaded_at = NOW() 
+           WHERE id = ?`,
+          [proofUrl, id]
+        );
+        
+        if (result.affectedRows === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Payment not found"
+          });
+        }
+        
+        res.json({
+          success: true,
+          message: "Payment proof uploaded successfully",
+          data: {
+            proof_url: proofUrl
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Error uploading payment proof:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to upload payment proof"
+      });
+    }
+  },
+
+// Get payment proof
+ // Get payment proof
+  async getPaymentProof(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const [rows] = await db.execute(
+        "SELECT payment_proof FROM payments WHERE id = ?",
+        [id]
+      );
+      
+      if (rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Payment not found"
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: {
+          proof_url: rows[0].payment_proof
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching payment proof:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch payment proof"
+      });
+    }
   }
+
 };
 
 module.exports = paymentController;
