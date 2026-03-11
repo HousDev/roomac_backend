@@ -83,9 +83,31 @@ const EnquiryModel = {
   },
 
   // Create new enquiry
-  createEnquiry: async (enquiryData) => {
-    try {
-      const {
+ createEnquiry: async (enquiryData) => {
+  try {
+    const {
+      property_id,
+      tenant_name,
+      phone,
+      email,
+      property_name,
+      preferred_move_in_date,
+      budget_range,
+      message,
+      source = "website",
+      status = "new",
+      occupation,
+      occupation_category,
+      remark,
+    } = enquiryData;
+
+    const [result] = await db.query(
+      `INSERT INTO enquiries 
+       (property_id, tenant_name, phone, email, property_name, 
+        preferred_move_in_date, budget_range, message, source, status,
+        occupation, occupation_category, remark) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
         property_id,
         tenant_name,
         phone,
@@ -94,28 +116,13 @@ const EnquiryModel = {
         preferred_move_in_date,
         budget_range,
         message,
-        source = "website",
-        status = "new",
-      } = enquiryData;
-
-      const [result] = await db.query(
-        `INSERT INTO enquiries 
-         (property_id, tenant_name, phone, email, property_name, 
-          preferred_move_in_date, budget_range, message, source, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          property_id,
-          tenant_name,
-          phone,
-          email,
-          property_name,
-          preferred_move_in_date,
-          budget_range,
-          message,
-          source,
-          status,
-        ]
-      );
+        source,
+        status,
+        occupation,
+        occupation_category,
+        remark,
+      ]
+    );
 
       return { id: result.insertId, ...enquiryData };
     } catch (err) {
