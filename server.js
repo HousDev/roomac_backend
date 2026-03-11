@@ -36,6 +36,9 @@ const addOnRoutes = require("./routes/addOnRoutes");
 const tenantNotificationsRoutes = require("./routes/tenantNotificationsRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const paymentsRoutes = require("./routes/payment.Routes");
+const inventoryRoutes = require("./routes/inventoryRoutes");
+const materialPurchaseRoutes = require("./routes/materialPurchaseRoutes"); // ✅ YEH LINE ADD KAREIN
+const handoverRoutes = require("./routes/handoverRoutes");
 
 const  paymentRoutes =require ("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
@@ -129,6 +132,9 @@ app.use("/api/tenant-notifications", tenantNotificationsRoutes);
 app.use("/api/admin/add-ons", addOnRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/material-purchases", materialPurchaseRoutes);
+app.use("/api/handovers", handoverRoutes);
 
 app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
