@@ -13,22 +13,45 @@
 
 
 // payment.Routes.js
+// routes/paymentRoutes.js
 const express = require("express");
 const router = express.Router();
 const paymentController = require("../controllers/payment.Controller");
 
-// Payment routes
+// Test route
+router.get("/test", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "Payment routes are working",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// DEMAND PAYMENT ROUTES - Put these FIRST (before any :id routes)
+router.post("/demands", paymentController.createDemandPayment);
+router.get("/demands", paymentController.getDemands);
+router.get("/demands/:id", paymentController.getDemandById);
+router.patch("/demands/:id/status", paymentController.updateDemandStatus);
+router.get("/tenant/:tenantId/demands", paymentController.getTenantPendingDemands);
+
+// Payment CRUD routes
 router.post("/", paymentController.createPayment);
 router.get("/", paymentController.getAllPayments);
 router.get("/stats", paymentController.getPaymentStats);
-router.get("/pending", paymentController.getPendingPayments);
-router.get("/tenant/:tenantId/summary", paymentController.getTenantRentSummary);
-router.get("/tenant/:tenantId/history", paymentController.getMonthWiseRentHistory);
+router.get("/receipts", paymentController.getReceipts);
+router.get("/receipts/:id", paymentController.getReceiptById);
+router.get("/receipts/:id/preview", paymentController.previewReceipt);
+router.get("/receipts/:id/download", paymentController.downloadReceipt);
+
+// Tenant specific routes
 router.get("/tenant/:tenantId", paymentController.getPaymentsByTenant);
+router.get("/tenant/:tenantId/payment-form", paymentController.getTenantPaymentFormData);
+
+// Booking specific routes
 router.get("/booking/:bookingId", paymentController.getPaymentsByBooking);
+
+// Individual payment routes - Put these LAST
 router.get("/:id", paymentController.getPayment);
-router.patch("/:id/status", paymentController.updatePaymentStatus);
-// payment.Routes.js
 router.post("/:id/proof", paymentController.uploadPaymentProof);
 router.get("/:id/proof", paymentController.getPaymentProof);
 

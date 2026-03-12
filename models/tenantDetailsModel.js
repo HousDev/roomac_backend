@@ -175,6 +175,8 @@
 
 // module.exports = TenantDetailsModel;
 
+
+// models/tenantDetailModel.js
 const pool = require("../config/db");
 
 const TenantDetailsModel = {
@@ -215,14 +217,20 @@ async getById(tenantId) {
           t.preferred_room_type,
           t.preferred_property_id,
         
-        -- Bed Assignment
+         -- Bed Assignment 
+        ba.id as bed_assignment_id,
         ba.room_id,
         ba.bed_number,
+        ba.bed_type,           
+        ba.tenant_rent,         
+        ba.is_couple,           
+        ba.created_at as assignment_date,
         
         -- Room Details
         r.room_number,
         r.floor,
         r.room_type,
+         r.sharing_type,     
         r.rent_per_bed,
         
         -- Property Details
@@ -256,6 +264,10 @@ async getById(tenantId) {
     console.log('room_id:', tenantData.room_id);
     console.log('room_number:', tenantData.room_number);
     console.log('bed_number:', tenantData.bed_number);
+    console.log('bed_type:', tenantData.bed_type);           // New field
+    console.log('tenant_rent:', tenantData.tenant_rent);     // New field - THIS IS THE CORRECT RENT
+    console.log('is_couple:', tenantData.is_couple);         // New field
+    console.log('assignment_date:', tenantData.assignment_date); // New field
     console.log('property_name:', tenantData.property_name);
     console.log('property_manager_name:', tenantData.property_manager_name);
     console.log('property_manager_phone:', tenantData.property_manager_phone);
