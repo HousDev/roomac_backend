@@ -1,3 +1,4 @@
+// controllers/tenantDetailsController.js
 const TenantDetailsModel = require("../models/tenantDetailsModel");
 
 const TenantDetailsController = {

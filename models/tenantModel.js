@@ -932,7 +932,7 @@ async getDeletedTenants() {
       if (!tenantIds || !tenantIds.length) return [];
       const [rows] = await pool.query(
         `SELECT id, tenant_id, amount, payment_date, payment_mode, 
-                status, transaction_id, month, year, notes, created_at
+                 transaction_id, month, year, created_at
          FROM payments 
          WHERE tenant_id IN (?)
          ORDER BY payment_date DESC`,
@@ -1369,10 +1369,8 @@ async getPaymentsForTenantIds(tenantIds = []) {
         tenant_id, 
         amount, 
         payment_date, 
-        payment_mode, 
-        status, 
+        payment_mode,  
         transaction_id, 
-        notes, 
         created_at,
         updated_at
        FROM payments 
