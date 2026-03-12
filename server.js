@@ -39,7 +39,10 @@ const paymentsRoutes = require("./routes/payment.Routes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const materialPurchaseRoutes = require("./routes/materialPurchaseRoutes"); // ✅ YEH LINE ADD KAREIN
 const handoverRoutes = require("./routes/handoverRoutes");
-
+const moveOutInspectionRoutes = require("./routes/moveOutInspectionRoutes"); // Add this line
+const penaltyRulesRoutes = require('./routes/penaltyRulesRoutes');
+const visitorRoutes = require("./routes/visitorRoutes"); // ✅ VISITOR LOGS
+const restrictionRoutes =require('./routes/restrictionRoutes') ;
 const  paymentRoutes =require ("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const propertyAnalyticsRoutes = require("./routes/propertyAnalyticsRoutes");
@@ -135,7 +138,11 @@ app.use("/api/payments", paymentsRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/material-purchases", materialPurchaseRoutes);
 app.use("/api/handovers", handoverRoutes);
-
+app.use("/api/move-out-inspections", moveOutInspectionRoutes); // Add this line
+app.use("/api/settlements", require("./routes/settlementRoutes"));
+app.use('/api/penalty-rules', penaltyRulesRoutes);
+app.use("/api/visitors", visitorRoutes); // ✅ VISITOR LOGS
+app.use("/api/visitor-restrictions", require("./routes/restrictionRoutes"));
 app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
