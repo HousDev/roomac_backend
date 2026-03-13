@@ -242,51 +242,38 @@ async createNotification({ tenantId, title, message, notificationType, relatedEn
 /**
  * Create complaint status update notification with admin notes
  */
-async notifyComplaintStatusUpdate(complaintId, tenantId, status, adminNotes = null) {
-  const statusMessages = {
-    'pending': {
-      title: 'Complaint Received',
-      message: adminNotes 
-        ? `Your complaint #${complaintId} has been received. Notes: ${adminNotes}`
-        : `Your complaint #${complaintId} has been received and is pending review.`
-    },
-    'in_progress': {
-      title: 'Complaint In Progress',
-      message: adminNotes
-        ? `Your complaint #${complaintId} is now in progress. Notes: ${adminNotes}`
-        : `Your complaint #${complaintId} is now being processed by our team.`
-    },
-    'resolved': {
-      title: 'Complaint Resolved',
-      message: adminNotes 
-        ? `Your complaint #${complaintId} has been resolved. Notes: ${adminNotes}`
-        : `Your complaint #${complaintId} has been resolved.`
-    },
-    'closed': {
-      title: 'Complaint Closed',
-      message: adminNotes
-        ? `Your complaint #${complaintId} has been closed. Notes: ${adminNotes}`
-        : `Your complaint #${complaintId} has been closed.`
-    }
-  };
-
-  const notification = statusMessages[status] || {
-    title: 'Complaint Updated',
-    message: adminNotes
-      ? `Your complaint #${complaintId} status has been updated to ${status.replace('_', ' ')}. Notes: ${adminNotes}`
-      : `Your complaint #${complaintId} status has been updated to ${status.replace('_', ' ')}.`
-  };
-
-  return await this.createNotification({
-    tenantId,
-    title: notification.title,
-    message: notification.message,
-    notificationType: 'complaint',
-    relatedEntityType: 'complaint',
-    relatedEntityId: complaintId,
-    priority: status === 'resolved' ? 'low' : 'medium'
-  });
-}
+// controllers/tenantNotificationController.js
+async notifyComplaintStatusUpdate(complaintId, tenantId, newStatus, adminNotes){
+  try {
+    const statusDisplay = newStatus.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
+    const title = `Complaint Status Updated`;
+    const message = adminNotes 
+      ? `Your complaint #${complaintId} status has been updated to ${statusDisplay}. Notes: ${adminNotes}`
+      : `Your complaint #${complaintId} status has been updated to ${statusDisplay}.`;
+    
+    // Insert notification
+    await db.query(
+      `INSERT INTO notifications (
+        recipient_id,
+        recipient_type,
+        title,
+        message,
+        notification_type,
+        related_entity_type,
+        related_entity_id,
+        is_read,
+        created_at
+      ) VALUES (?, 'tenant', ?, ?, 'complaint', 'complaint_request', ?, 0, NOW())`,
+      [tenantId, title, message, complaintId]
+    );
+    
+    console.log(`✅ Notification created for complaint ${complaintId} status update`);
+  } catch (error) {
+    console.error('❌ Error creating notification:', error);
+    throw error;
+  }
+};
 /**
  * Create maintenance status update notification
  */

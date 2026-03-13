@@ -289,6 +289,8 @@ exports.getComplaintById = async (req, res) => {
 };
 
 
+// controllers/adminComplaintController.js - UPDATE THIS FUNCTION
+
 exports.updateComplaint = async (req, res) => {
   try {
     const { id } = req.params;
@@ -298,7 +300,7 @@ exports.updateComplaint = async (req, res) => {
 
     // Get current complaint data to check if status changed
     const [currentComplaint] = await db.query(
-      `SELECT tenant_id, status FROM tenant_requests WHERE id = ? AND request_type = 'complaint'`,
+      `SELECT tenant_id, status, admin_notes FROM tenant_requests WHERE id = ? AND request_type = 'complaint'`,
       [id]
     );
 
@@ -317,23 +319,23 @@ exports.updateComplaint = async (req, res) => {
     const updates = [];
     const params = [];
 
-    // Handle status update
+    // Handle status update - THIS IS CRITICAL
     if (updateData.status) {
       updates.push('status = ?');
       params.push(updateData.status);
     }
 
+    // Handle assigned_to update
+    if (updateData.assigned_to !== undefined) {
+      updates.push('assigned_to = ?');
+      params.push(updateData.assigned_to);
+    }
+
     // Handle admin notes - append to existing notes or create new
     if (updateData.admin_notes) {
-      // Get current admin_notes first
-      const [current] = await db.query(
-        `SELECT admin_notes FROM tenant_requests WHERE id = ?`,
-        [id]
-      );
-      
-      const currentNotes = current[0]?.admin_notes || '';
+      const currentNotes = currentComplaint[0]?.admin_notes || '';
       const timestamp = new Date().toLocaleString();
-      const newNoteEntry = `\n[${timestamp}] Status changed to ${updateData.status}: ${updateData.admin_notes}`;
+      const newNoteEntry = `\n[${timestamp}] Status changed to ${updateData.status || 'updated'}: ${updateData.admin_notes}`;
       
       const updatedNotes = currentNotes 
         ? currentNotes + newNoteEntry
@@ -344,7 +346,7 @@ exports.updateComplaint = async (req, res) => {
     }
 
     // Auto-set resolved_at if status is resolved
-    if (updateData.status === 'resolved' && !updateData.resolved_at) {
+    if (updateData.status === 'resolved') {
       updates.push('resolved_at = NOW()');
     }
     
@@ -366,6 +368,9 @@ exports.updateComplaint = async (req, res) => {
       WHERE id = ? AND request_type = 'complaint'
     `;
 
+    console.log('Executing SQL:', sql);
+    console.log('With params:', params);
+
     const [result] = await db.query(sql, params);
 
     if (result.affectedRows === 0) {
@@ -375,12 +380,14 @@ exports.updateComplaint = async (req, res) => {
       });
     }
 
+    console.log(`✅ Complaint ${id} updated successfully, affected rows: ${result.affectedRows}`);
+
     // Send notification to tenant if status changed
     if (newStatus && newStatus !== oldStatus) {
       try {
         // Include admin notes in notification if provided
         const notificationMessage = updateData.admin_notes
-          ? `Status updated to ${newStatus}. Notes: ${updateData.admin_notes}`
+          ? `Your complaint status has been updated to ${newStatus.replace('_', ' ')}. Notes: ${updateData.admin_notes}`
           : `Your complaint status has been updated to ${newStatus.replace('_', ' ')}.`;
         
         await notificationController.notifyComplaintStatusUpdate(
