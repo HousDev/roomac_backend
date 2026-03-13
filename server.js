@@ -46,6 +46,7 @@ const restrictionRoutes =require('./routes/restrictionRoutes') ;
 const  paymentRoutes =require ("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const propertyAnalyticsRoutes = require("./routes/propertyAnalyticsRoutes");
+const expenseRoutes = require("./routes/expenseRoutes");
 dotenv.config();
 
 const app = express();
@@ -147,7 +148,7 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
 
-
+app.use("/api/expenses", expenseRoutes);
 /* =========================
    SERVER START
 ========================= */
