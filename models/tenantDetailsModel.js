@@ -177,6 +177,7 @@
 
 
 // models/tenantDetailModel.js
+// models/tenantDetailModel.js
 const pool = require("../config/db");
 
 const TenantDetailsModel = {
@@ -195,9 +196,9 @@ async getById(tenantId) {
         t.date_of_birth,
         t.gender,
         t.occupation,
-                  t.occupation_category,
-          t.exact_occupation,
-    t.is_active,  
+        t.occupation_category,
+        t.exact_occupation,
+        t.is_active,  
         t.address,
         t.city,
         t.state,
@@ -211,38 +212,41 @@ async getById(tenantId) {
         t.notice_penalty_amount,
         t.notice_penalty_type,
         t.emergency_contact_name,
-          t.emergency_contact_phone,
-          t.emergency_contact_relation,
-           t.preferred_sharing,
-          t.preferred_room_type,
-          t.preferred_property_id,
+        t.emergency_contact_phone,
+        t.emergency_contact_relation,
+        t.preferred_sharing,
+        t.preferred_room_type,
+        t.preferred_property_id,
         
-         -- Bed Assignment 
+        -- Bed Assignment 
         ba.id as bed_assignment_id,
         ba.room_id,
         ba.bed_number,
         ba.bed_type,           
         ba.tenant_rent,         
         ba.is_couple,           
-        ba.created_at as assignment_date,
+        ba.created_at as bed_assigned_at,
         
         -- Room Details
         r.room_number,
         r.floor,
         r.room_type,
-         r.sharing_type,     
+        r.sharing_type,     
         r.rent_per_bed,
         
-        -- Property Details
+        -- Property Details - Using correct column names
         p.id as property_id,
         p.name as property_name,
         p.address as property_address,
+        p.state as property_state,        -- 'state' column exists
+        p.city_id as property_city_id,    -- 'city_id' column exists
+        p.area as property_area,           -- 'area' column exists
         p.property_manager_name,
         p.property_manager_phone,
         p.property_manager_email
         
       FROM tenants t
-      LEFT JOIN bed_assignments ba ON ba.tenant_id = t.id
+      LEFT JOIN bed_assignments ba ON ba.tenant_id = t.id AND ba.is_available = 0
       LEFT JOIN rooms r ON r.id = ba.room_id
       LEFT JOIN properties p ON p.id = r.property_id
       WHERE t.id = ? 
@@ -264,11 +268,15 @@ async getById(tenantId) {
     console.log('room_id:', tenantData.room_id);
     console.log('room_number:', tenantData.room_number);
     console.log('bed_number:', tenantData.bed_number);
-    console.log('bed_type:', tenantData.bed_type);           // New field
-    console.log('tenant_rent:', tenantData.tenant_rent);     // New field - THIS IS THE CORRECT RENT
-    console.log('is_couple:', tenantData.is_couple);         // New field
-    console.log('assignment_date:', tenantData.assignment_date); // New field
+    console.log('bed_type:', tenantData.bed_type);
+    console.log('tenant_rent:', tenantData.tenant_rent);
+    console.log('is_couple:', tenantData.is_couple);
+    console.log('bed_assigned_at:', tenantData.bed_assigned_at);
     console.log('property_name:', tenantData.property_name);
+    console.log('property_address:', tenantData.property_address);
+    console.log('property_state:', tenantData.property_state);
+    console.log('property_city_id:', tenantData.property_city_id);
+    console.log('property_area:', tenantData.property_area);
     console.log('property_manager_name:', tenantData.property_manager_name);
     console.log('property_manager_phone:', tenantData.property_manager_phone);
     console.log('rent_per_bed:', tenantData.rent_per_bed);
