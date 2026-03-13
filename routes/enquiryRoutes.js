@@ -27,4 +27,26 @@ router.get("/:id/followups", enquiryController.getFollowups);
 // Add followup to enquiry
 router.post("/:id/followups", enquiryController.addFollowup);
 
+// ===== VISIT ROUTES =====
+
+// Get upcoming visits (for dashboard)
+router.get("/visits/upcoming", enquiryController.getUpcomingVisits);
+
+// Get today's visits
+router.get("/visits/today", enquiryController.getTodayVisits);
+
+// Update visit status
+router.patch("/visits/:visitId/status", enquiryController.updateVisitStatus);
+
+// Get all visits for an enquiry
+router.get("/enquiry/:id/visits", enquiryController.getVisits);
+
+// Schedule new visit for an enquiry
+router.post("/enquiry/:id/visits", enquiryController.scheduleVisit);
+
+// routes/enquiryRoutes.js - Add this route
+
+// Convert enquiry to tenant
+router.post("/:id/convert-to-tenant", enquiryController.convertToTenant);
+
 module.exports = router;

@@ -271,7 +271,254 @@ const EnquiryModel = {
     } catch (error) {
       throw error;
     }
-  }
+  },
+
+
+  // Add to enquiryModel.js - inside the EnquiryModel object
+
+  // Get all visits for an enquiry
+  getVisits: async (enquiryId) => {
+    try {
+      const [visits] = await db.query(
+        `SELECT * FROM enquiry_visits 
+         WHERE enquiry_id = ? 
+         ORDER BY scheduled_date DESC, scheduled_time DESC`,
+        [enquiryId]
+      );
+      return visits;
+    } catch (err) {
+      console.error("EnquiryModel.getVisits Error:", err);
+      throw err;
+    }
+  },
+
+  // Schedule a new visit
+  scheduleVisit: async (enquiryId, visitData) => {
+    try {
+      const {
+        scheduled_date,
+        scheduled_time,
+        notes = '',
+        created_by = 'Admin'
+      } = visitData;
+
+      // Validate required fields
+      if (!scheduled_date) {
+        throw new Error("Scheduled date is required");
+      }
+
+      const [result] = await db.query(
+        `INSERT INTO enquiry_visits 
+         (enquiry_id, scheduled_date, scheduled_time, notes, created_by, status) 
+         VALUES (?, ?, ?, ?, ?, 'scheduled')`,
+        [enquiryId, scheduled_date, scheduled_time, notes, created_by]
+      );
+
+      // Fetch the newly created visit
+      const [newVisit] = await db.query(
+        `SELECT * FROM enquiry_visits WHERE id = ?`,
+        [result.insertId]
+      );
+
+      return newVisit[0];
+    } catch (err) {
+      console.error("EnquiryModel.scheduleVisit Error:", err);
+      throw err;
+    }
+  },
+
+  // Update visit status
+  updateVisitStatus: async (visitId, status, notes = null) => {
+    try {
+      const query = notes 
+        ? `UPDATE enquiry_visits SET status = ?, notes = CONCAT(notes, '\n', ?) WHERE id = ?`
+        : `UPDATE enquiry_visits SET status = ? WHERE id = ?`;
+      
+      const params = notes ? [status, `Status updated to ${status}: ${notes}`, visitId] : [status, visitId];
+
+      const [result] = await db.query(query, params);
+      return result;
+    } catch (err) {
+      console.error("EnquiryModel.updateVisitStatus Error:", err);
+      throw err;
+    }
+  },
+
+  // Get visit by ID
+  getVisitById: async (visitId) => {
+    try {
+      const [visit] = await db.query(
+        `SELECT v.*, e.tenant_name, e.phone, e.property_name 
+         FROM enquiry_visits v
+         LEFT JOIN enquiries e ON v.enquiry_id = e.id
+         WHERE v.id = ?`,
+        [visitId]
+      );
+      return visit[0] || null;
+    } catch (err) {
+      console.error("EnquiryModel.getVisitById Error:", err);
+      throw err;
+    }
+  },
+
+  // Get upcoming visits (for reminders/dashboard)
+  getUpcomingVisits: async (days = 7) => {
+    try {
+      const [visits] = await db.query(
+        `SELECT v.*, e.tenant_name, e.phone, e.property_name 
+         FROM enquiry_visits v
+         LEFT JOIN enquiries e ON v.enquiry_id = e.id
+         WHERE v.scheduled_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+         AND v.status = 'scheduled'
+         ORDER BY v.scheduled_date ASC, v.scheduled_time ASC`,
+        [days]
+      );
+      return visits;
+    } catch (err) {
+      console.error("EnquiryModel.getUpcomingVisits Error:", err);
+      throw err;
+    }
+  },
+
+  // Get today's visits
+  getTodayVisits: async () => {
+    try {
+      const [visits] = await db.query(
+        `SELECT v.*, e.tenant_name, e.phone, e.property_name 
+         FROM enquiry_visits v
+         LEFT JOIN enquiries e ON v.enquiry_id = e.id
+         WHERE v.scheduled_date = CURDATE()
+         ORDER BY v.scheduled_time ASC`,
+        []
+      );
+      return visits;
+    } catch (err) {
+      console.error("EnquiryModel.getTodayVisits Error:", err);
+      throw err;
+    }
+  },
+
+  // Mark reminder as sent
+  markReminderSent: async (visitId) => {
+    try {
+      const [result] = await db.query(
+        `UPDATE enquiry_visits SET reminder_sent = TRUE, reminder_date = NOW() WHERE id = ?`,
+        [visitId]
+      );
+      return result;
+    } catch (err) {
+      console.error("EnquiryModel.markReminderSent Error:", err);
+      throw err;
+    }
+  },
+
+  // enquiryModel.js - Add this method inside EnquiryModel
+
+  // Convert enquiry to tenant (soft delete enquiry and return tenant data)
+  convertToTenant: async (enquiryId) => {
+    try {
+      // Get enquiry details
+      const enquiry = await EnquiryModel.getEnquiryById(enquiryId);
+      if (!enquiry) {
+        throw new Error("Enquiry not found");
+      }
+
+      // Check if tenant already exists with this email or phone
+      const existingTenantQuery = `
+        SELECT id, deleted_at FROM tenants 
+        WHERE (email = ? OR phone = ?) 
+        ORDER BY deleted_at NULLS LAST 
+        LIMIT 1
+      `;
+      const [existingTenants] = await db.query(existingTenantQuery, [enquiry.email, enquiry.phone]);
+      
+      let tenantId;
+      
+      if (existingTenants.length > 0) {
+        const existingTenant = existingTenants[0];
+        
+        if (existingTenant.deleted_at) {
+          // Restore soft-deleted tenant
+          await db.query(
+            `UPDATE tenants SET 
+              deleted_at = NULL,
+              full_name = ?,
+              email = ?,
+              phone = ?,
+              occupation_category = ?,
+              exact_occupation = ?,
+              property_id = ?,
+              updated_at = NOW()
+            WHERE id = ?`,
+            [
+              enquiry.tenant_name,
+              enquiry.email || null,
+              enquiry.phone,
+              enquiry.occupation_category || null,
+              enquiry.occupation || null,
+              enquiry.property_id || null,
+              existingTenant.id
+            ]
+          );
+          tenantId = existingTenant.id;
+        } else {
+          // Tenant already exists and is active
+          throw new Error("Tenant with this email or phone already exists");
+        }
+      } else {
+        // Create new tenant from enquiry data
+        const insertTenantQuery = `
+          INSERT INTO tenants (
+            full_name,
+            email,
+            phone,
+            occupation_category,
+            exact_occupation,
+            property_id,
+            preferred_property_id,
+            preferred_room_type,
+            is_active,
+            portal_access_enabled,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `;
+        
+        const [result] = await db.query(insertTenantQuery, [
+          enquiry.tenant_name,
+          enquiry.email || null,
+          enquiry.phone,
+          enquiry.occupation_category || null,
+          enquiry.occupation || null,
+          enquiry.property_id || null,
+          enquiry.property_id || null, // preferred_property_id
+          enquiry.preferred_room_type || null,
+          1, // is_active
+          1, // portal_access_enabled
+        ]);
+        
+        tenantId = result.insertId;
+      }
+
+      // Soft delete the enquiry
+      await db.query(
+        "UPDATE enquiries SET deleted_at = NOW(), status = 'converted' WHERE id = ?",
+        [enquiryId]
+      );
+
+      // Add a note to the enquiry about conversion
+      const note = `Converted to tenant (ID: ${tenantId}) on ${new Date().toLocaleDateString()}`;
+      await db.query(
+        `INSERT INTO enquiry_followups (enquiry_id, note, created_by) VALUES (?, ?, ?)`,
+        [enquiryId, note, 'System']
+      );
+
+      return { tenantId, enquiry };
+    } catch (err) {
+      console.error("EnquiryModel.convertToTenant Error:", err);
+      throw err;
+    }
+  },
 };
 
 module.exports = EnquiryModel;
