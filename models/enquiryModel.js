@@ -2,50 +2,50 @@
 const db = require("../config/db");
 
 const EnquiryModel = {
-  // Get all enquiries with optional filters
-  getAllEnquiries: async (filters = {}) => {
-    try {
-      let query = `
-        SELECT 
-          e.*,
-          p.name as property_full_name
-        FROM enquiries e
-        LEFT JOIN properties p ON e.property_id = p.id
-        WHERE 1=1
-      `;
-      const params = [];
 
-      // Apply filters
-      if (filters.status) {
-        query += ` AND e.status = ?`;
-        params.push(filters.status);
-      }
+getAllEnquiries: async (filters = {}) => {
+  try {
+    let query = `
+      SELECT 
+        e.*,
+        p.name as property_full_name
+      FROM enquiries e
+      LEFT JOIN properties p ON e.property_id = p.id
+      WHERE e.deleted_at IS NULL  
+    `;
+    const params = [];
 
-      if (filters.assigned_to) {
-        query += ` AND e.assigned_to = ?`;
-        params.push(filters.assigned_to);
-      }
-
-      if (filters.property_id) {
-        query += ` AND e.property_id = ?`;
-        params.push(filters.property_id);
-      }
-
-      if (filters.search) {
-        query += ` AND (e.tenant_name LIKE ? OR e.phone LIKE ? OR e.email LIKE ?)`;
-        const searchTerm = `%${filters.search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
-      }
-
-      query += ` ORDER BY e.created_at DESC`;
-
-      const [rows] = await db.query(query, params);
-      return rows;
-    } catch (err) {
-      console.error("EnquiryModel.getAllEnquiries Error:", err);
-      throw err;
+    // Apply filters
+    if (filters.status) {
+      query += ` AND e.status = ?`;
+      params.push(filters.status);
     }
-  },
+
+    if (filters.assigned_to) {
+      query += ` AND e.assigned_to = ?`;
+      params.push(filters.assigned_to);
+    }
+
+    if (filters.property_id) {
+      query += ` AND e.property_id = ?`;
+      params.push(filters.property_id);
+    }
+
+    if (filters.search) {
+      query += ` AND (e.tenant_name LIKE ? OR e.phone LIKE ? OR e.email LIKE ?)`;
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    query += ` ORDER BY e.created_at DESC`;
+
+    const [rows] = await db.query(query, params);
+    return rows;
+  } catch (err) {
+    console.error("EnquiryModel.getAllEnquiries Error:", err);
+    throw err;
+  }
+},
 
   // Get enquiry by ID with followups
   getEnquiryById: async (id) => {
@@ -412,133 +412,175 @@ const EnquiryModel = {
     }
   },
 
-  // enquiryModel.js - Add this method inside EnquiryModel
+ // enquiryModel.js - Replace the convertToTenant method
 
-// enquiryModel.js - Replace the convertToTenant method with this corrected version
+// Convert enquiry to tenant (soft delete enquiry and return tenant data)
+convertToTenant: async (enquiryId) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    // Get enquiry details
+    const [enquiryRows] = await connection.query(
+      `SELECT * FROM enquiries WHERE id = ?`,
+      [enquiryId]
+    );
+    
+    if (enquiryRows.length === 0) {
+      throw new Error("Enquiry not found");
+    }
+    
+    const enquiry = enquiryRows[0];
+    console.log("Converting enquiry to tenant:", enquiry);
 
-  // Convert enquiry to tenant (soft delete enquiry and return tenant data)
-  convertToTenant: async (enquiryId) => {
-    try {
-      // Get enquiry details
-      const enquiry = await EnquiryModel.getEnquiryById(enquiryId);
-      if (!enquiry) {
-        throw new Error("Enquiry not found");
+    // Check if tenant already exists with this email or phone
+    let tenantId;
+    let existingTenant = null;
+
+    // Check by email first (if email exists)
+    if (enquiry.email) {
+      const [existingByEmail] = await connection.query(
+        `SELECT id, deleted_at FROM tenants WHERE email = ?`,
+        [enquiry.email]
+      );
+      if (existingByEmail.length > 0) {
+        existingTenant = existingByEmail[0];
       }
+    }
 
-      console.log("Converting enquiry to tenant:", enquiry);
+    // If not found by email, check by phone
+    if (!existingTenant && enquiry.phone) {
+      const [existingByPhone] = await connection.query(
+        `SELECT id, deleted_at FROM tenants WHERE phone = ?`,
+        [enquiry.phone]
+      );
+      if (existingByPhone.length > 0) {
+        existingTenant = existingByPhone[0];
+      }
+    }
 
-      // Check if tenant already exists with this email or phone
-      // FIXED: Removed NULLS LAST syntax (MySQL doesn't support it)
-      const existingTenantQuery = `
-        SELECT id, deleted_at FROM tenants 
-        WHERE (email = ? OR phone = ?) 
-        ORDER BY 
-          CASE 
-            WHEN deleted_at IS NULL THEN 0 
-            ELSE 1 
-          END,
-          deleted_at DESC
-        LIMIT 1
+    if (existingTenant) {
+      console.log("Found existing tenant:", existingTenant);
+      
+      if (existingTenant.deleted_at) {
+        // Restore soft-deleted tenant
+        console.log("Restoring soft-deleted tenant:", existingTenant.id);
+        
+        // Update the tenant with enquiry data
+        await connection.query(
+          `UPDATE tenants SET 
+            deleted_at = NULL,
+            full_name = ?,
+            email = ?,
+            phone = ?,
+            occupation_category = ?,
+            exact_occupation = ?,
+            property_id = ?,
+            preferred_property_id = ?,
+            updated_at = NOW()
+          WHERE id = ?`,
+          [
+            enquiry.tenant_name,
+            enquiry.email || null,
+            enquiry.phone,
+            enquiry.occupation_category || null,
+            enquiry.occupation || null,
+            enquiry.property_id || null,
+            enquiry.property_id || null,
+            existingTenant.id
+          ]
+        );
+        tenantId = existingTenant.id;
+      } else {
+        // Tenant already exists and is active - update their info instead of throwing error
+        console.log("Updating existing active tenant:", existingTenant.id);
+        
+        await connection.query(
+          `UPDATE tenants SET 
+            full_name = ?,
+            phone = ?,
+            occupation_category = ?,
+            exact_occupation = ?,
+            property_id = ?,
+            preferred_property_id = ?,
+            updated_at = NOW()
+          WHERE id = ?`,
+          [
+            enquiry.tenant_name,
+            enquiry.phone,
+            enquiry.occupation_category || null,
+            enquiry.occupation || null,
+            enquiry.property_id || null,
+            enquiry.property_id || null,
+            existingTenant.id
+          ]
+        );
+        tenantId = existingTenant.id;
+      }
+    } else {
+      // Create new tenant from enquiry data
+      console.log("Creating new tenant from enquiry");
+      
+      const insertTenantQuery = `
+        INSERT INTO tenants (
+          full_name,
+          email,
+          phone,
+          occupation_category,
+          exact_occupation,
+          property_id,
+          preferred_property_id,
+          is_active,
+          portal_access_enabled,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `;
       
-      const [existingTenants] = await db.query(existingTenantQuery, [enquiry.email, enquiry.phone]);
+      const [result] = await connection.query(insertTenantQuery, [
+        enquiry.tenant_name,
+        enquiry.email || null,
+        enquiry.phone,
+        enquiry.occupation_category || null,
+        enquiry.occupation || null,
+        enquiry.property_id || null,
+        enquiry.property_id || null,
+        1, // is_active
+        1, // portal_access_enabled
+      ]);
       
-      let tenantId;
-      
-      if (existingTenants.length > 0) {
-        const existingTenant = existingTenants[0];
-        console.log("Found existing tenant:", existingTenant);
-        
-        if (existingTenant.deleted_at) {
-          // Restore soft-deleted tenant
-          console.log("Restoring soft-deleted tenant:", existingTenant.id);
-          
-          // First, update the tenant with enquiry data
-          await db.query(
-            `UPDATE tenants SET 
-              deleted_at = NULL,
-              full_name = ?,
-              email = ?,
-              phone = ?,
-              occupation_category = ?,
-              exact_occupation = ?,
-              property_id = ?,
-              preferred_property_id = ?,
-              updated_at = NOW()
-            WHERE id = ?`,
-            [
-              enquiry.tenant_name,
-              enquiry.email || null,
-              enquiry.phone,
-              enquiry.occupation_category || null,
-              enquiry.occupation || null,
-              enquiry.property_id || null,
-              enquiry.property_id || null,
-              existingTenant.id
-            ]
-          );
-          tenantId = existingTenant.id;
-        } else {
-          // Tenant already exists and is active
-          throw new Error("Tenant with this email or phone already exists");
-        }
-      } else {
-        // Create new tenant from enquiry data
-        console.log("Creating new tenant from enquiry");
-        
-        const insertTenantQuery = `
-          INSERT INTO tenants (
-            full_name,
-            email,
-            phone,
-            occupation_category,
-            exact_occupation,
-            property_id,
-            preferred_property_id,
-            preferred_room_type,
-            is_active,
-            portal_access_enabled,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-        `;
-        
-        const [result] = await db.query(insertTenantQuery, [
-          enquiry.tenant_name,
-          enquiry.email || null,
-          enquiry.phone,
-          enquiry.occupation_category || null,
-          enquiry.occupation || null,
-          enquiry.property_id || null,
-          enquiry.property_id || null, // preferred_property_id
-          enquiry.preferred_room_type || null,
-          1, // is_active
-          1, // portal_access_enabled
-        ]);
-        
-        tenantId = result.insertId;
-        console.log("New tenant created with ID:", tenantId);
-      }
-
-      // Soft delete the enquiry
-      await db.query(
-        "UPDATE enquiries SET deleted_at = NOW(), status = 'converted' WHERE id = ?",
-        [enquiryId]
-      );
-
-      // Add a note to the enquiry about conversion
-      const note = `Converted to tenant (ID: ${tenantId}) on ${new Date().toLocaleDateString()}`;
-      await db.query(
-        `INSERT INTO enquiry_followups (enquiry_id, note, created_by) VALUES (?, ?, ?)`,
-        [enquiryId, note, 'System']
-      );
-
-      return { tenantId, enquiry };
-    } catch (err) {
-      console.error("EnquiryModel.convertToTenant Error:", err);
-      throw err;
+      tenantId = result.insertId;
+      console.log("New tenant created with ID:", tenantId);
     }
-  },
+
+    // Soft delete the enquiry
+    await connection.query(
+      "UPDATE enquiries SET deleted_at = NOW(), status = 'converted' WHERE id = ?",
+      [enquiryId]
+    );
+
+    // Add a note to the enquiry about conversion
+    const note = `Converted to tenant (ID: ${tenantId}) on ${new Date().toLocaleDateString()}`;
+    await connection.query(
+      `INSERT INTO enquiry_followups (enquiry_id, note, created_by) VALUES (?, ?, ?)`,
+      [enquiryId, note, 'System']
+    );
+
+    await connection.commit();
+    
+    return { 
+      tenantId, 
+      enquiry: { ...enquiry, status: 'converted', deleted_at: new Date() } 
+    };
+    
+  } catch (err) {
+    await connection.rollback();
+    console.error("EnquiryModel.convertToTenant Error:", err);
+    throw err;
+  } finally {
+    connection.release();
+  }
+},
 };
 
 module.exports = EnquiryModel;
