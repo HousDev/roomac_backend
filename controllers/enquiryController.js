@@ -367,6 +367,7 @@ const getTodayVisits = async (req, res) => {
 };
 
 // Convert enquiry to tenant
+// Convert enquiry to tenant
 const convertToTenant = async (req, res) => {
   try {
     const { id } = req.params;

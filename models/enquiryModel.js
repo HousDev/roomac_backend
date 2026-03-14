@@ -414,6 +414,8 @@ const EnquiryModel = {
 
   // enquiryModel.js - Add this method inside EnquiryModel
 
+// enquiryModel.js - Replace the convertToTenant method with this corrected version
+
   // Convert enquiry to tenant (soft delete enquiry and return tenant data)
   convertToTenant: async (enquiryId) => {
     try {
@@ -423,22 +425,35 @@ const EnquiryModel = {
         throw new Error("Enquiry not found");
       }
 
+      console.log("Converting enquiry to tenant:", enquiry);
+
       // Check if tenant already exists with this email or phone
+      // FIXED: Removed NULLS LAST syntax (MySQL doesn't support it)
       const existingTenantQuery = `
         SELECT id, deleted_at FROM tenants 
         WHERE (email = ? OR phone = ?) 
-        ORDER BY deleted_at NULLS LAST 
+        ORDER BY 
+          CASE 
+            WHEN deleted_at IS NULL THEN 0 
+            ELSE 1 
+          END,
+          deleted_at DESC
         LIMIT 1
       `;
+      
       const [existingTenants] = await db.query(existingTenantQuery, [enquiry.email, enquiry.phone]);
       
       let tenantId;
       
       if (existingTenants.length > 0) {
         const existingTenant = existingTenants[0];
+        console.log("Found existing tenant:", existingTenant);
         
         if (existingTenant.deleted_at) {
           // Restore soft-deleted tenant
+          console.log("Restoring soft-deleted tenant:", existingTenant.id);
+          
+          // First, update the tenant with enquiry data
           await db.query(
             `UPDATE tenants SET 
               deleted_at = NULL,
@@ -448,6 +463,7 @@ const EnquiryModel = {
               occupation_category = ?,
               exact_occupation = ?,
               property_id = ?,
+              preferred_property_id = ?,
               updated_at = NOW()
             WHERE id = ?`,
             [
@@ -456,6 +472,7 @@ const EnquiryModel = {
               enquiry.phone,
               enquiry.occupation_category || null,
               enquiry.occupation || null,
+              enquiry.property_id || null,
               enquiry.property_id || null,
               existingTenant.id
             ]
@@ -467,6 +484,8 @@ const EnquiryModel = {
         }
       } else {
         // Create new tenant from enquiry data
+        console.log("Creating new tenant from enquiry");
+        
         const insertTenantQuery = `
           INSERT INTO tenants (
             full_name,
@@ -498,6 +517,7 @@ const EnquiryModel = {
         ]);
         
         tenantId = result.insertId;
+        console.log("New tenant created with ID:", tenantId);
       }
 
       // Soft delete the enquiry
