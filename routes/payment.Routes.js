@@ -50,6 +50,13 @@ router.get("/tenant/:tenantId/payment-form", paymentController.getTenantPaymentF
 // Booking specific routes
 router.get("/booking/:bookingId", paymentController.getPaymentsByBooking);
 
+// Payment action routes
+router.post("/:id/approve", paymentController.approvePayment);
+router.post("/:id/reject", paymentController.rejectPayment);
+router.put("/:id", paymentController.updatePayment);
+router.delete("/:id", paymentController.deletePayment);
+
+
 // Individual payment routes - Put these LAST
 router.get("/:id", paymentController.getPayment);
 router.post("/:id/proof", paymentController.uploadPaymentProof);

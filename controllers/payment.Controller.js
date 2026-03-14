@@ -595,7 +595,7 @@ const paymentController = {
       doc.pipe(res);
       
       // Generate professional receipt PDF
-      await generateProfessionalReceiptPDF(doc, receipt);
+      await generateSimpleReceiptPDF(doc, receipt);
       
       doc.end();
 
@@ -809,6 +809,217 @@ async getTenantPendingDemands(req, res) {
     res.status(500).json({
       success: false,
       message: "Failed to fetch tenant pending demands",
+      error: error.message
+    });
+  }
+},
+
+// Add these methods to your paymentController object
+
+// Approve payment
+async approvePayment(req, res) {
+  try {
+    const { id } = req.params;
+    const { approved_by } = req.body;
+    
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
+    }
+    
+    // Check if payment is already approved or rejected
+    if (payment.status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: "Payment is already approved"
+      });
+    }
+    
+    if (payment.status === 'rejected') {
+      return res.status(400).json({
+        success: false,
+        message: "Rejected payments cannot be approved. Please create a new payment."
+      });
+    }
+    
+    const approved = await Payment.approvePayment(id, approved_by);
+    
+    if (approved) {
+      // Optionally generate receipt here or mark for receipt generation
+      // Get the updated payment with all details for receipt
+      const approvedPayment = await Payment.getReceiptById(id);
+      
+      // Option 1: Generate receipt PDF and save it
+      // const receiptPDF = await generateReceiptPDF(approvedPayment);
+      // await saveReceiptToStorage(id, receiptPDF);
+      
+      // Option 2: Just mark as approved - receipt will be generated on demand
+      
+      res.status(200).json({
+        success: true,
+        message: "Payment approved successfully",
+        data: { id, status: 'approved' ,receipt: approvedPayment}
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: "Failed to approve payment"
+      });
+    }
+  } catch (error) {
+    console.error("Error approving payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to approve payment",
+      error: error.message
+    });
+  }
+},
+
+// Reject payment
+async rejectPayment(req, res) {
+  try {
+    const { id } = req.params;
+    const { rejection_reason, rejected_by } = req.body;
+    
+    if (!rejection_reason) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required"
+      });
+    }
+    
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
+    }
+    
+    // Check if payment is already approved or rejected
+    if (payment.status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: "Approved payments cannot be rejected"
+      });
+    }
+    
+    if (payment.status === 'rejected') {
+      return res.status(400).json({
+        success: false,
+        message: "Payment is already rejected"
+      });
+    }
+    
+    const rejected = await Payment.rejectPayment(id, rejection_reason, rejected_by);
+    
+    if (rejected) {
+      res.status(200).json({
+        success: true,
+        message: "Payment rejected successfully",
+        data: { id, status: 'rejected' }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: "Failed to reject payment"
+      });
+    }
+  } catch (error) {
+    console.error("Error rejecting payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to reject payment",
+      error: error.message
+    });
+  }
+},
+
+// Update payment
+async updatePayment(req, res) {
+  try {
+    const { id } = req.params;
+    const paymentData = req.body;
+    
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
+    }
+    
+    // Check if payment can be updated
+    if (payment.status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: "Approved payments cannot be updated"
+      });
+    }
+    
+    const updated = await Payment.updatePayment(id, paymentData);
+    
+    if (updated) {
+      const updatedPayment = await Payment.findById(id);
+      res.status(200).json({
+        success: true,
+        message: "Payment updated successfully",
+        data: updatedPayment
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: "Failed to update payment"
+      });
+    }
+  } catch (error) {
+    console.error("Error updating payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update payment",
+      error: error.message
+    });
+  }
+},
+
+// Delete payment
+async deletePayment(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
+    }
+    
+    // Optional: Add permission check here
+    // Only allow admins to delete approved payments, or anyone to delete pending/rejected
+    
+    const deleted = await Payment.deletePayment(id);
+    
+    if (deleted) {
+      res.status(200).json({
+        success: true,
+        message: "Payment deleted successfully"
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: "Failed to delete payment"
+      });
+    }
+  } catch (error) {
+    console.error("Error deleting payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete payment",
       error: error.message
     });
   }
@@ -1299,13 +1510,15 @@ function numberToWords(num) {
   return result;
 }
 
-// Enhanced Professional PDF Receipt Generator
-async function generateProfessionalReceiptPDF(doc, receipt) {
+
+// Simple Professional PDF Receipt Generator - FIXED VERSION
+async function generateSimpleReceiptPDF(doc, receipt) {
   const paymentDate = new Date(receipt.payment_date).toLocaleDateString('en-IN', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric'
   });
+  
   const createdDate = new Date(receipt.created_at).toLocaleDateString('en-IN', {
     day: '2-digit',
     month: '2-digit',
@@ -1314,172 +1527,194 @@ async function generateProfessionalReceiptPDF(doc, receipt) {
     minute: '2-digit'
   });
 
-  // Background watermark
-  doc.save();
-  doc.fontSize(100);
-  doc.fillColor('#f0f0f0');
-  doc.opacity(0.2);
-  doc.rotate(-45, { origin: [doc.page.width / 2, doc.page.height / 2] });
-  doc.font('Helvetica-Bold')
-     .text('ROOMAC.IN', doc.page.width / 2 - 250, doc.page.height / 2 - 50);
-  doc.restore();
-  doc.opacity(1);
+  // Set default font
+  doc.font('Helvetica');
 
-  // Header with gradient effect
-  const gradient = doc.linearGradient(50, 40, doc.page.width - 50, 140);
-  gradient.stop(0, '#1e3c72')
-         .stop(1, '#2a5298');
-  
-  doc.roundedRect(40, 40, doc.page.width - 80, 120, 15)
-     .fill(gradient);
-  
-  doc.fillColor('white')
-     .fontSize(36)
+  // Company Header
+  doc.fontSize(24)
      .font('Helvetica-Bold')
-     .text('ROOMAC', 60, 70);
-  
-  doc.fontSize(14)
-     .font('Helvetica')
-     .text('Premium Living Spaces', 60, 110);
-  
-  doc.fontSize(12)
-     .fillColor('white')
-     .text(`RECEIPT #${receipt.id}`, doc.page.width - 200, 70, { width: 150, align: 'right' });
+     .fillColor('#1e3c72')
+     .text('ROOMAC', 50, 50);
   
   doc.fontSize(10)
-     .text(`Date: ${paymentDate}`, doc.page.width - 200, 90, { width: 150, align: 'right' });
-
-  // Amount Box
-  doc.roundedRect(70, 180, doc.page.width - 140, 100, 10)
-     .fillAndStroke('#f8f9fa', '#dee2e6');
-  
-  doc.fillColor('#495057')
-     .fontSize(12)
      .font('Helvetica')
-     .text('TOTAL AMOUNT', 70, 195, { width: doc.page.width - 140, align: 'center' });
-  
-  doc.fillColor('#1e3c72')
-     .fontSize(48)
-     .font('Helvetica-Bold')
-     .text(`₹${parseFloat(receipt.amount).toLocaleString('en-IN', {minimumFractionDigits: 2})}`, 
-           70, 215, { width: doc.page.width - 140, align: 'center' });
+     .fillColor('#666666')
+     .text('Premium Living Spaces', 50, 75);
 
-  // Two column layout for details
-  const leftCol = 70;
-  const rightCol = doc.page.width / 2 + 30;
-  let yPos = 310;
-
-  // Left Column - Tenant Details
-  doc.roundedRect(leftCol, yPos - 15, 250, 120, 8)
-     .fillAndStroke('#f8f9fa', '#dee2e6');
-  
-  doc.fillColor('#1e3c72')
-     .fontSize(12)
+  // Receipt Title
+  doc.fontSize(16)
      .font('Helvetica-Bold')
-     .text('TENANT DETAILS', leftCol + 15, yPos);
-  
-  doc.fillColor('#2d3748')
-     .fontSize(10)
-     .font('Helvetica');
-  
-  yPos += 25;
-  doc.text(`Name: ${receipt.tenant_name}`, leftCol + 15, yPos);
-  yPos += 18;
-  doc.text(`Phone: ${receipt.tenant_phone || 'N/A'}`, leftCol + 15, yPos);
-  yPos += 18;
-  doc.text(`Email: ${receipt.tenant_email || 'N/A'}`, leftCol + 15, yPos);
+     .fillColor('#333333')
+     .text('PAYMENT RECEIPT', 50, 120);
 
-  // Right Column - Property Details
-  yPos = 310;
-  doc.roundedRect(rightCol, yPos - 15, 250, 120, 8)
-     .fillAndStroke('#f8f9fa', '#dee2e6');
-  
-  doc.fillColor('#1e3c72')
-     .fontSize(12)
+  // Receipt Number and Date
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#666666')
+     .text(`Receipt No: RCP-${receipt.id.toString().padStart(6, '0')}`, 400, 120, { align: 'right' })
+     .text(`Date: ${paymentDate}`, 400, 135, { align: 'right' });
+
+  // Draw line
+  doc.strokeColor('#cccccc')
+     .lineWidth(1)
+     .moveTo(50, 160)
+     .lineTo(550, 160)
+     .stroke();
+
+  // Tenant Details Section
+  doc.fontSize(12)
      .font('Helvetica-Bold')
-     .text('PROPERTY DETAILS', rightCol + 15, yPos);
+     .fillColor('#1e3c72')
+     .text('TENANT DETAILS', 50, 180);
+
+  let yPos = 200;
   
-  doc.fillColor('#2d3748')
-     .fontSize(10)
-     .font('Helvetica');
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#333333')
+     .text(`Name: ${receipt.tenant_name || 'N/A'}`, 50, yPos);
+  yPos += 15;
   
-  yPos += 25;
-  doc.text(`Property: ${receipt.property_name || 'RoomAC'}`, rightCol + 15, yPos);
-  yPos += 18;
-  doc.text(`Room: ${receipt.room_number || 'N/A'} ${receipt.bed_number ? `(Bed #${receipt.bed_number})` : ''}`, rightCol + 15, yPos);
-  yPos += 18;
-  doc.text(`Address: ${receipt.property_address || 'N/A'}`, rightCol + 15, yPos, { width: 220 });
+  if (receipt.tenant_phone) {
+    doc.text(`Phone: ${receipt.tenant_phone}`, 50, yPos);
+    yPos += 15;
+  }
+  
+  if (receipt.tenant_email) {
+    doc.text(`Email: ${receipt.tenant_email}`, 50, yPos);
+    yPos += 15;
+  }
+
+  // Property Details Section
+  doc.fontSize(12)
+     .font('Helvetica-Bold')
+     .fillColor('#1e3c72')
+     .text('PROPERTY DETAILS', 300, 180);
+
+  let propYPos = 200;
+  
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#333333')
+     .text(`Property: ${receipt.property_name || 'RoomAC'}`, 300, propYPos);
+  propYPos += 15;
+  
+  let roomInfo = `Room: ${receipt.room_number || 'N/A'}`;
+  if (receipt.bed_number) {
+    roomInfo += `, Bed #${receipt.bed_number}`;
+  }
+  doc.text(roomInfo, 300, propYPos);
+  propYPos += 15;
+
+  if (receipt.bed_type) {
+    doc.text(`Bed Type: ${receipt.bed_type}`, 300, propYPos);
+    propYPos += 15;
+  }
+
+  // Draw line (use the higher Y position from both columns)
+  const lineY = Math.max(yPos, propYPos) + 10;
+  doc.strokeColor('#cccccc')
+     .lineWidth(1)
+     .moveTo(50, lineY)
+     .lineTo(550, lineY)
+     .stroke();
 
   // Payment Details Section
-  yPos = 460;
-  doc.roundedRect(70, yPos - 15, doc.page.width - 140, 100, 8)
-     .fillAndStroke('#f0f9ff', '#b8daff');
-  
-  doc.fillColor('#004085')
-     .fontSize(12)
+  let currentY = lineY + 20;
+  doc.fontSize(12)
      .font('Helvetica-Bold')
-     .text('PAYMENT DETAILS', 70, yPos, { align: 'center' });
+     .fillColor('#1e3c72')
+     .text('PAYMENT DETAILS', 50, currentY);
+
+  currentY += 20;
   
-  yPos += 25;
+  // Amount Box - REDUCED FONT SIZE
+  doc.roundedRect(50, currentY, 500, 50, 5)  // Reduced height from 60 to 50
+     .fillAndStroke('#f8f9fa', '#dee2e6');
+  
   doc.fontSize(10)
-     .font('Helvetica');
+     .font('Helvetica')
+     .fillColor('#666666')
+     .text('Amount Paid', 70, currentY + 10);
   
-  // Payment details in columns
-  const colWidth = (doc.page.width - 140) / 3;
+  doc.fontSize(18)  // REDUCED from 24 to 18
+     .font('Helvetica-Bold')
+     .fillColor('#28a745')
+     .text(`Rs ${parseFloat(receipt.amount).toLocaleString('en-IN')}`, 70, currentY + 25);
+
+  currentY += 60;  // Reduced from 70 to 60
+
+  // Payment Details Grid
+  const col1 = 50;
+  const col2 = 200;
   
-  doc.fillColor('#2d3748')
-     .text(`Mode: ${receipt.payment_mode.toUpperCase()}`, 80, yPos, { width: colWidth })
-     .text(`Bank: ${receipt.bank_name || 'N/A'}`, 80 + colWidth, yPos, { width: colWidth })
-     .text(`Transaction ID: ${receipt.transaction_id || 'N/A'}`, 80 + colWidth * 2, yPos, { width: colWidth });
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#333333');
+
+  // Row 1
+  doc.font('Helvetica-Bold').text('Payment Mode:', col1, currentY);
+  doc.font('Helvetica').text(receipt.payment_mode.toUpperCase(), col1 + 100, currentY);
   
-  yPos += 25;
-  doc.text(`Month/Year: ${receipt.month} ${receipt.year}`, 80, yPos, { width: colWidth })
-     .text(`Payment Date: ${paymentDate}`, 80 + colWidth, yPos, { width: colWidth })
-     .text(`Generated: ${createdDate}`, 80 + colWidth * 2, yPos, { width: colWidth });
+  doc.font('Helvetica-Bold').text('Month/Year:', col2, currentY);
+  doc.font('Helvetica').text(`${receipt.month} ${receipt.year}`, col2 + 100, currentY);
+  
+  currentY += 20;
+
+  // Row 2 - Bank details if available
+  if (receipt.bank_name) {
+    doc.font('Helvetica-Bold').text('Bank Name:', col1, currentY);
+    doc.font('Helvetica').text(receipt.bank_name, col1 + 100, currentY);
+    currentY += 20;
+  }
+
+  if (receipt.transaction_id) {
+    doc.font('Helvetica-Bold').text('Transaction ID:', col1, currentY);
+    doc.font('Helvetica').text(receipt.transaction_id, col1 + 100, currentY);
+    currentY += 20;
+  }
 
   // Remark if exists
   if (receipt.remark) {
-    yPos += 50;
-    doc.roundedRect(70, yPos - 10, doc.page.width - 140, 50, 5)
+    currentY += 5;
+    doc.roundedRect(50, currentY, 500, 50, 5)
        .fillAndStroke('#fff3cd', '#ffeeba');
     
-    doc.fillColor('#856404')
-       .fontSize(10)
-       .font('Helvetica-Bold')
-       .text('REMARK:', 80, yPos);
+    doc.font('Helvetica-Bold')
+       .fillColor('#856404')
+       .text('Remark:', 60, currentY + 10);
     
     doc.font('Helvetica')
        .fontSize(9)
-       .text(receipt.remark, 80, yPos + 15, { width: doc.page.width - 160 });
+       .text(receipt.remark, 60, currentY + 25, { width: 480 });
+    
+    currentY += 60;
   }
 
-  // Footer
-  const footerY = doc.page.height - 80;
-  
-  // Decorative line
-  doc.lineWidth(2)
-     .strokeColor('#1e3c72')
-     .moveTo(50, footerY)
-     .lineTo(doc.page.width - 50, footerY)
+  // Draw line before footer
+  currentY += 10;
+  doc.strokeColor('#cccccc')
+     .lineWidth(1)
+     .moveTo(50, currentY)
+     .lineTo(550, currentY)
      .stroke();
+
+  // Footer - Use dynamic positioning based on content
+  const footerY = currentY + 20;
   
-  doc.fontSize(12)
-     .fillColor('#1e3c72')
-     .font('Helvetica-Bold')
-     .text('roomac.in', 50, footerY + 15, { align: 'center', width: doc.page.width - 100 });
+  // Check if footer fits on current page, if not, add new page
+  if (footerY > doc.page.height - 50) {
+    doc.addPage();
+    currentY = 50;
+  }
   
   doc.fontSize(8)
-     .fillColor('#6c757d')
      .font('Helvetica')
-     .text('This is a computer generated receipt. No signature required.', 
-           50, footerY + 30, { align: 'center', width: doc.page.width - 100 })
-     .text(`Generated on: ${createdDate}`, 50, footerY + 40, { align: 'center', width: doc.page.width - 100 })
-     .text('Thank you for your payment!', 50, footerY + 55, { 
-       align: 'center', 
-       width: doc.page.width - 100,
-       fontSize: 10,
-       color: '#1e3c72'
-     });
+     .fillColor('#999999')
+     .text('This is a computer generated receipt. No signature required.', 50, footerY, { align: 'center', width: 500 })
+     .text(`Generated on: ${createdDate}`, 50, footerY + 12, { align: 'center', width: 500 })
+     .text('Thank you for your payment!', 50, footerY + 24, { align: 'center', width: 500 });
 }
+
 
 module.exports = paymentController;

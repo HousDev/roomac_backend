@@ -669,55 +669,59 @@ async getTenantPaymentFormData(tenantId) {
   },
 
   // Get all receipts
-  async getReceipts(filters = {}) {
-    let query = `
-      SELECT 
-        p.id,
-        p.amount,
-        p.payment_date,
-        p.payment_mode,
-        p.bank_name,
-        p.transaction_id,
-        p.remark,
-        p.payment_proof,
-        p.month,
-        p.year,
-        p.created_at,
-        t.full_name as tenant_name,
-        t.phone as tenant_phone,
-        t.email as tenant_email,
-        r.room_number,
-        prop.name as property_name,
-        ba.bed_number,
-        ba.bed_type
-      FROM payments p
-      LEFT JOIN tenants t ON p.tenant_id = t.id
-      LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
-      LEFT JOIN rooms r ON ba.room_id = r.id
-      LEFT JOIN properties prop ON r.property_id = prop.id
-      WHERE 1=1
-    `;
-    let params = [];
+async getReceipts(filters = {}) {
+  let query = `
+    SELECT 
+      p.id,
+      p.amount,
+      p.payment_date,
+      p.payment_mode,
+      p.bank_name,
+      p.transaction_id,
+      p.remark,
+      p.payment_proof,
+      p.month,
+      p.year,
+      p.created_at,
+      p.status,
+      t.full_name as tenant_name,
+      t.phone as tenant_phone,
+      t.email as tenant_email,
+      r.room_number,
+      prop.name as property_name,
+      ba.bed_number,
+      ba.bed_type
+    FROM payments p
+    LEFT JOIN tenants t ON p.tenant_id = t.id
+    LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
+    LEFT JOIN rooms r ON ba.room_id = r.id
+    LEFT JOIN properties prop ON r.property_id = prop.id
+    WHERE p.status = 'approved'  /* Only show approved payments */
+  `;
+  let params = [];
 
-    if (filters.tenant_id) {
-      query += ' AND p.tenant_id = ?';
-      params.push(filters.tenant_id);
-    }
+  if (filters.tenant_id) {
+    query += ' AND p.tenant_id = ?';
+    params.push(filters.tenant_id);
+  }
 
-    if (filters.start_date && filters.end_date) {
-      query += ' AND DATE(p.payment_date) BETWEEN ? AND ?';
-      params.push(filters.start_date, filters.end_date);
-    }
+  if (filters.start_date && filters.end_date) {
+    query += ' AND DATE(p.payment_date) BETWEEN ? AND ?';
+    params.push(filters.start_date, filters.end_date);
+  }
 
-    query += ' ORDER BY p.payment_date DESC';
+  query += ' ORDER BY p.payment_date DESC';
 
-    try {
-      const [rows] = await db.execute(query, params);
-      return rows;
-    } catch (error) {
-      throw error;
-    }
-  },
+  try {
+    console.log('Executing receipts query...');
+    const [rows] = await db.execute(query, params);
+    console.log(`Found ${rows.length} receipts`);
+    return rows;
+  } catch (error) {
+    console.error("Error in getReceipts:", error);
+    throw error; // This will cause the 500 error
+  }
+},
 
   // Get receipt by ID
   async getReceiptById(id) {
@@ -957,7 +961,119 @@ async getTenantPaymentFormData(tenantId) {
       console.error("Error fetching tenant pending demands:", error);
       throw error;
     }
+  },
+  // Add these methods to your Payment model (inside the Payment object)
+
+// Approve payment
+async approvePayment(id, approvedBy) {
+  const query = `
+    UPDATE payments 
+    SET status = 'approved', 
+        approved_at = NOW(), 
+        approved_by = ?,
+        updated_at = NOW()
+    WHERE id = ?
+  `;
+  try {
+    const [result] = await db.execute(query, [approvedBy || null, id]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("Error approving payment:", error);
+    throw error;
   }
+},
+
+// Reject payment
+async rejectPayment(id, rejectionReason, rejectedBy) {
+  const query = `
+    UPDATE payments 
+    SET status = 'rejected', 
+        rejected_at = NOW(), 
+        rejected_by = ?,
+        rejection_reason = ?,
+        updated_at = NOW()
+    WHERE id = ?
+  `;
+  try {
+    const [result] = await db.execute(query, [rejectedBy || null, rejectionReason, id]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("Error rejecting payment:", error);
+    throw error;
+  }
+},
+
+// Update payment
+async updatePayment(id, paymentData) {
+  // First, get the current payment to check status
+  const [currentPayment] = await db.execute(
+    'SELECT status FROM payments WHERE id = ?',
+    [id]
+  );
+  
+  if (!currentPayment.length) {
+    throw new Error('Payment not found');
+  }
+  
+  // Only allow updating pending or rejected payments
+  if (currentPayment[0].status !== 'pending' && currentPayment[0].status !== 'rejected') {
+    throw new Error('Only pending or rejected payments can be updated');
+  }
+  
+  const query = `
+    UPDATE payments 
+    SET amount = ?,
+        payment_date = ?,
+        payment_mode = ?,
+        bank_name = ?,
+        transaction_id = ?,
+        month = ?,
+        year = ?,
+        remark = ?,
+        payment_type = ?,
+        updated_at = NOW()
+    WHERE id = ?
+  `;
+  
+  const paymentDate = paymentData.payment_date 
+    ? new Date(paymentData.payment_date) 
+    : new Date();
+  const monthName = paymentData.month || paymentDate.toLocaleString('default', { month: 'long' });
+  const year = paymentData.year || paymentDate.getFullYear();
+  
+  const values = [
+    paymentData.amount,
+    paymentData.payment_date || new Date().toISOString().split('T')[0],
+    paymentData.payment_mode,
+    paymentData.bank_name || null,
+    paymentData.transaction_id || null,
+    monthName,
+    year,
+    paymentData.remark || null,
+    paymentData.payment_type || 'rent',
+    id
+  ];
+  
+  try {
+    const [result] = await db.execute(query, values);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("Error updating payment:", error);
+    throw error;
+  }
+},
+
+// Delete payment
+async deletePayment(id) {
+  const query = 'DELETE FROM payments WHERE id = ?';
+  try {
+    const [result] = await db.execute(query, [id]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("Error deleting payment:", error);
+    throw error;
+  }
+},
 };
 
 module.exports = Payment;
