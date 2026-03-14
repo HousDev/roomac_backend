@@ -176,17 +176,22 @@ const VisitorModel = {
   },
 
   // ── Check if visitor is blocked (searches visitor_logs only) ───────────
-  checkBlocked: async (visitor_phone, id_proof_number) => {
-    const [rows] = await db.query(
-      `SELECT id, visitor_name, visitor_phone, id_proof_number,
-              is_blocked, block_reason, blocked_by, blocked_date
-       FROM visitor_logs
-       WHERE visitor_phone = ? AND id_proof_number = ? AND is_blocked = 1
-       LIMIT 1`,
-      [visitor_phone, id_proof_number]
-    );
-    return rows[0] || null;
-  },
+ // REPLACE checkBlocked with:
+checkBlocked: async (visitor_phone, id_proof_number) => {
+  const [rows] = await db.query(
+    `SELECT id, visitor_name, visitor_phone, id_proof_number,
+            is_blocked, block_reason, blocked_by, blocked_date
+     FROM visitor_logs
+     WHERE is_blocked = 1
+       AND (
+         id_proof_number = ?
+         OR visitor_phone = ?
+       )
+     LIMIT 1`,
+    [id_proof_number, visitor_phone]
+  );
+  return rows[0] || null;
+},
 
   // ── Auto-update overstayed visitors ─────────────────────────────────────
   updateOverstayed: async () => {

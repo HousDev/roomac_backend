@@ -183,9 +183,9 @@ const unblockVisitor = async (req, res) => {
 const checkBlockedStatus = async (req, res) => {
   try {
     const { visitor_phone, id_proof_number } = req.query;
-    if (!visitor_phone) {
-      return res.status(400).json({ success: false, message: "visitor_phone is required" });
-    }
+if (!id_proof_number && !visitor_phone) {
+  return res.status(400).json({ success: false, message: "id_proof_number or visitor_phone is required" });
+}
     const blocked = await VisitorModel.checkBlocked(visitor_phone, id_proof_number || '');
     res.json({
       success: true,
