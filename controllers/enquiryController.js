@@ -1,3 +1,4 @@
+// controllers/enquiryController.js
 const EnquiryModel = require("../models/enquiryModel");
 
 // Get all enquiries with optional filters
@@ -366,7 +367,7 @@ const getTodayVisits = async (req, res) => {
   }
 };
 
-// Convert enquiry to tenant
+
 // Convert enquiry to tenant
 const convertToTenant = async (req, res) => {
   try {
@@ -400,13 +401,6 @@ const convertToTenant = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in convertToTenant:", err);
-    
-    if (err.message === "Tenant with this email or phone already exists") {
-      return res.status(400).json({
-        success: false,
-        message: err.message,
-      });
-    }
     
     res.status(500).json({
       success: false,

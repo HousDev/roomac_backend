@@ -1,3 +1,4 @@
+// routes/enquiryRoutes.js
 const express = require("express");
 const router = express.Router();
 const enquiryController = require("../controllers/enquiryController");
@@ -43,8 +44,6 @@ router.get("/enquiry/:id/visits", enquiryController.getVisits);
 
 // Schedule new visit for an enquiry
 router.post("/enquiry/:id/visits", enquiryController.scheduleVisit);
-
-// routes/enquiryRoutes.js - Add this route
 
 // Convert enquiry to tenant
 router.post("/:id/convert-to-tenant", enquiryController.convertToTenant);
