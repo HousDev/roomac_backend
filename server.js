@@ -47,6 +47,8 @@ const  paymentRoutes =require ("./routes/paymentRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const propertyAnalyticsRoutes = require("./routes/propertyAnalyticsRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
+const templateRoutes = require('./routes/documentTemplateRoutes');
+
 dotenv.config();
 
 const app = express();
@@ -147,6 +149,7 @@ app.use("/api/visitor-restrictions", require("./routes/restrictionRoutes"));
 app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
+app.use('/api/document-templates', templateRoutes);
 
 app.use("/api/expenses", expenseRoutes);
 /* =========================
