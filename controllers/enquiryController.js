@@ -367,11 +367,11 @@ const getTodayVisits = async (req, res) => {
   }
 };
 
-
 // Convert enquiry to tenant
 const convertToTenant = async (req, res) => {
   try {
     const { id } = req.params;
+    const { action, selectedTenantId } = req.body; // Add action and selectedTenantId to handle conflicts
 
     // Check if enquiry exists
     const existingEnquiry = await EnquiryModel.getEnquiryById(id);
@@ -390,9 +390,56 @@ const convertToTenant = async (req, res) => {
       });
     }
 
-    // Convert to tenant
-    const result = await EnquiryModel.convertToTenant(id);
+    // If we have an action from the frontend, handle accordingly
+    if (action === 'create_new') {
+      // Force create new tenant even if matches exist
+      const result = await EnquiryModel.convertToTenant(id, { forceNew: true });
+      return res.json({
+        success: true,
+        message: "New tenant created successfully from enquiry",
+        tenant_id: result.tenantId,
+        enquiry: result.enquiry,
+      });
+    }
 
+    if (action === 'update_existing' && selectedTenantId) {
+      // Update specific existing tenant
+      const result = await EnquiryModel.convertToTenant(id, { 
+        updateExistingId: selectedTenantId 
+      });
+      return res.json({
+        success: true,
+        message: "Existing tenant updated successfully",
+        tenant_id: result.tenantId,
+        enquiry: result.enquiry,
+      });
+    }
+
+    // Check for existing tenants first
+    const existingTenants = await EnquiryModel.checkExistingTenants(
+      existingEnquiry.email,
+      existingEnquiry.phone
+    );
+
+    if (existingTenants.length > 0) {
+      // Return the list of matching tenants for user to decide
+      return res.json({
+        success: true,
+        requiresAction: true,
+        message: "Found existing tenants with matching email or phone",
+        existingTenants: existingTenants.map(t => ({
+          id: t.id,
+          full_name: t.full_name,
+          email: t.email,
+          phone: t.phone,
+          is_deleted: !!t.deleted_at
+        })),
+        enquiry: existingEnquiry
+      });
+    }
+
+    // No conflicts, proceed with conversion
+    const result = await EnquiryModel.convertToTenant(id);
     res.json({
       success: true,
       message: "Enquiry converted to tenant successfully",
@@ -401,7 +448,6 @@ const convertToTenant = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in convertToTenant:", err);
-    
     res.status(500).json({
       success: false,
       error: err.message,
