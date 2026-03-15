@@ -48,4 +48,7 @@ router.post("/enquiry/:id/visits", enquiryController.scheduleVisit);
 // Convert enquiry to tenant
 router.post("/:id/convert-to-tenant", enquiryController.convertToTenant);
 
+// Bulk delete enquiries
+router.post("/bulk-delete", enquiryController.bulkDeleteEnquiries);
+
 module.exports = router;

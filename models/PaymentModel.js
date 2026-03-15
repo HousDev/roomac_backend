@@ -1074,6 +1074,71 @@ async deletePayment(id) {
     throw error;
   }
 },
+
+
+// Get security deposit info for a tenant
+async getSecurityDepositInfo(tenantId) {
+  try {
+    // Get tenant's current bed assignment to fetch security deposit
+    const [assignment] = await db.execute(
+      `SELECT 
+        ba.*,
+        r.room_number,
+        r.property_id,
+        p.security_deposit as property_security_deposit,
+        p.name as property_name
+       FROM bed_assignments ba
+       LEFT JOIN rooms r ON ba.room_id = r.id
+       LEFT JOIN properties p ON r.property_id = p.id
+       WHERE ba.tenant_id = ? AND ba.is_available = 0`,
+      [tenantId]
+    );
+
+    if (!assignment.length) {
+      return null;
+    }
+
+    // Get ALL security deposit payments (not just the last one)
+    const [allPayments] = await db.execute(
+      `SELECT id, amount, payment_date, status, created_at 
+       FROM payments 
+       WHERE tenant_id = ? AND payment_type = 'security_deposit'
+       ORDER BY payment_date DESC`,
+      [tenantId]
+    );
+
+    // Calculate total paid amount by summing ALL payments
+    const totalPaidAmount = allPayments.reduce((sum, payment) => {
+      // Only count approved payments (or count all if you want)
+      // You can adjust this based on your business logic
+      return sum + parseFloat(payment.amount);
+    }, 0);
+
+    const securityDepositAmount = parseFloat(assignment[0].property_security_deposit) || 0;
+    const pendingAmount = Math.max(0, securityDepositAmount - totalPaidAmount);
+
+    console.log('Security Deposit Calculation:', {
+      security_deposit: securityDepositAmount,
+      payments: allPayments.map(p => ({ amount: p.amount, date: p.payment_date, status: p.status })),
+      total_paid: totalPaidAmount,
+      pending: pendingAmount
+    });
+
+    return {
+      property_id: assignment[0].property_id,
+      property_name: assignment[0].property_name,
+      security_deposit: securityDepositAmount,
+      paid_amount: totalPaidAmount,
+      pending_amount: pendingAmount,
+      last_payment_date: allPayments.length ? allPayments[0].payment_date : null,
+      payments: allPayments, // Return all payments for history
+      is_fully_paid: pendingAmount === 0
+    };
+  } catch (error) {
+    console.error("Error in getSecurityDepositInfo:", error);
+    throw error;
+  }
+}
 };
 
 module.exports = Payment;

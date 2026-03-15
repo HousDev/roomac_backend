@@ -196,7 +196,305 @@ const Payment = require("../models/PaymentModel");
 const Booking = require("../models/BookingModel");
 const db = require("../config/db");
 const { uploadProof } = require("../middleware/paymentUpload");
+const path = require('path');
+const fs = require('fs');
 const PDFDocument = require('pdfkit');
+
+// In paymentController.js - Professional Clean PDF Receipt Generator
+
+async function generateProfessionalReceiptPDF(doc, receipt, settings) {
+  const paymentDate = new Date(receipt.payment_date).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+  
+  const createdDate = new Date(receipt.created_at).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  // Get settings with defaults
+  const siteName = settings?.site_name?.value || 'ROOMAC';
+  const siteTagline = settings?.site_tagline?.value || 'Premium Living Spaces';
+  const contactAddress = settings?.contact_address?.value || '';
+  const contactPhone = settings?.contact_phone?.value || '';
+  const contactEmail = settings?.contact_email?.value || '';
+  const logoPath = settings?.logo_header?.value;
+
+  // Colors
+  const primaryColor = '#1e3c72'; // Dark blue
+  const secondaryColor = '#4a5568'; // Gray
+  const accentColor = '#3182ce'; // Blue
+  const successColor = '#2f855a'; // Green
+  const lightGray = '#f7fafc';
+  const borderColor = '#e2e8f0';
+
+  let yPos = 50;
+
+  // Header with Logo
+  if (logoPath) {
+    try {
+      const cleanPath = logoPath.startsWith('/') ? logoPath.substring(1) : logoPath;
+      const fullLogoPath = path.join(__dirname, '..', cleanPath);
+      
+      if (fs.existsSync(fullLogoPath)) {
+        doc.image(fullLogoPath, 50, yPos, { width: 70 });
+      }
+    } catch (err) {
+      console.error('Error adding logo:', err);
+    }
+  }
+
+  // Company Name and Tagline
+  doc.fontSize(24)
+     .font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text(siteName, 140, yPos + 5);
+
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text(siteTagline, 140, yPos + 30);
+
+  // Receipt Badge
+  doc.roundedRect(450, yPos, 100, 30, 5)
+     .fillAndStroke(primaryColor, primaryColor);
+  
+  doc.fontSize(12)
+     .font('Helvetica-Bold')
+     .fillColor('white')
+     .text('RECEIPT', 465, yPos + 8);
+
+  yPos += 60;
+
+  // Receipt Title with Number
+  doc.fontSize(20)
+     .font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text('PAYMENT RECEIPT', 50, yPos);
+
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text(`#RCP-${receipt.id.toString().padStart(6, '0')}`, 400, yPos + 8, { align: 'right' });
+
+  yPos += 20;
+
+  // Date
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text(`Date: ${paymentDate}`, 400, yPos, { align: 'right' });
+
+  yPos += 30;
+
+  // Decorative line
+  doc.strokeColor(primaryColor)
+     .lineWidth(1.5)
+     .moveTo(50, yPos)
+     .lineTo(550, yPos)
+     .stroke();
+
+  yPos += 25;
+
+  // Two Column Layout for Details
+  const col1X = 50;
+  const col2X = 300;
+  const rowHeight = 25;
+
+  // Tenant Details
+  doc.fontSize(12)
+     .font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text('TENANT INFORMATION', col1X, yPos);
+
+  yPos += 20;
+
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#333333');
+
+  // Left Column Details
+  doc.text('Full Name:', col1X, yPos);
+  doc.font('Helvetica-Bold')
+     .text(receipt.tenant_name || 'N/A', col1X + 80, yPos);
+  
+  yPos += rowHeight;
+
+  doc.font('Helvetica')
+     .text('Phone:', col1X, yPos);
+  doc.font('Helvetica-Bold')
+     .text(receipt.tenant_phone || 'N/A', col1X + 80, yPos);
+
+  yPos += rowHeight;
+
+  doc.font('Helvetica')
+     .text('Email:', col1X, yPos);
+  doc.font('Helvetica-Bold')
+     .text(receipt.tenant_email || 'N/A', col1X + 80, yPos);
+
+  // Reset Y for right column
+  let rightY = yPos - (rowHeight * 3);
+
+  // Property Details
+  doc.fontSize(12)
+     .font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text('PROPERTY DETAILS', col2X, rightY);
+
+  rightY += 20;
+
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor('#333333');
+
+  doc.text('Property:', col2X, rightY);
+  doc.font('Helvetica-Bold')
+     .text(receipt.property_name || 'RoomAC', col2X + 70, rightY);
+
+  rightY += rowHeight;
+
+  doc.font('Helvetica')
+     .text('Room:', col2X, rightY);
+  
+  let roomDisplay = receipt.room_number || 'N/A';
+  if (receipt.bed_number) {
+    roomDisplay += ` (Bed #${receipt.bed_number})`;
+  }
+  doc.font('Helvetica-Bold')
+     .text(roomDisplay, col2X + 70, rightY);
+
+  rightY += rowHeight;
+
+  if (receipt.bed_type) {
+    doc.font('Helvetica')
+       .text('Bed Type:', col2X, rightY);
+    doc.font('Helvetica-Bold')
+       .text(receipt.bed_type, col2X + 70, rightY);
+    rightY += rowHeight;
+  }
+
+  // Set Y to the maximum of both columns
+  yPos = Math.max(yPos, rightY) + 30;
+
+  // Payment Summary Box
+  doc.roundedRect(50, yPos, 500, 80, 8)
+     .fillAndStroke('#ebf8ff', '#bee3f8');
+
+  // Payment Amount - Large
+  doc.fontSize(12)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text('TOTAL AMOUNT', 70, yPos + 15);
+
+  doc.fontSize(32)
+     .font('Helvetica-Bold')
+     .fillColor(successColor)
+     .text(`Rs ${parseFloat(receipt.amount).toLocaleString('en-IN')}`, 70, yPos + 30);
+
+  // Payment Details on Right
+  doc.fontSize(10)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text('Payment Mode:', 350, yPos + 15);
+  doc.font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text(receipt.payment_mode.toUpperCase(), 350, yPos + 30);
+
+  doc.font('Helvetica')
+     .fillColor(secondaryColor)
+     .text('Period:', 350, yPos + 45);
+  doc.font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text(`${receipt.month} ${receipt.year}`, 350, yPos + 60);
+
+  yPos += 100;
+
+  // Bank Details Section (if available)
+  if (receipt.bank_name || receipt.transaction_id) {
+    doc.roundedRect(50, yPos, 500, 60, 5)
+       .fillAndStroke(lightGray, borderColor);
+
+    let bankX = 70;
+    
+    if (receipt.bank_name) {
+      doc.fontSize(9)
+         .font('Helvetica')
+         .fillColor(secondaryColor)
+         .text('Bank Name:', bankX, yPos + 15);
+      doc.font('Helvetica-Bold')
+         .fillColor('#333333')
+         .text(receipt.bank_name, bankX, yPos + 30);
+      bankX += 200;
+    }
+
+    if (receipt.transaction_id) {
+      doc.fontSize(9)
+         .font('Helvetica')
+         .fillColor(secondaryColor)
+         .text('Transaction ID:', bankX, yPos + 15);
+      doc.font('Helvetica-Bold')
+         .fontSize(8)
+         .fillColor('#333333')
+         .text(receipt.transaction_id, bankX, yPos + 30);
+    }
+
+    yPos += 80;
+  }
+
+  // Remark if exists
+  if (receipt.remark) {
+    doc.roundedRect(50, yPos, 500, 50, 5)
+       .fillAndStroke('#fff3cd', '#ffeeba');
+    
+    doc.fontSize(9)
+       .font('Helvetica-Bold')
+       .fillColor('#856404')
+       .text('Remark:', 70, yPos + 12);
+    
+    doc.font('Helvetica')
+       .fontSize(9)
+       .text(receipt.remark, 70, yPos + 27, { width: 460 });
+
+    yPos += 70;
+  }
+
+  // Footer - Fixed position
+  const footerY = 720;
+
+  // Decorative line
+  doc.strokeColor(primaryColor)
+     .lineWidth(1)
+     .moveTo(50, footerY - 15)
+     .lineTo(550, footerY - 15)
+     .stroke();
+
+  // Contact Information
+  doc.fontSize(8)
+     .font('Helvetica')
+     .fillColor(secondaryColor)
+     .text(contactAddress, 50, footerY, { align: 'center', width: 500 });
+
+  if (contactPhone || contactEmail) {
+    doc.text(`Tel: ${contactPhone} | Email: ${contactEmail}`, 50, footerY + 12, { align: 'center', width: 500 });
+  }
+
+  // Generated Info
+  doc.fontSize(7)
+     .fillColor('#a0aec0')
+     .text(`Generated on: ${createdDate}`, 50, footerY + 30, { align: 'center', width: 500 })
+     .text('This is a computer generated receipt.', 50, footerY + 40, { align: 'center', width: 500 });
+
+  // Thank You Note
+  doc.fontSize(9)
+     .font('Helvetica-Bold')
+     .fillColor(primaryColor)
+     .text('Thank you for your payment!', 50, footerY + 55, { align: 'center', width: 500 });
+}
 
 const paymentController = {
   // Create a new payment
@@ -565,52 +863,64 @@ const paymentController = {
     }
   },
 
-  // Download receipt as PDF
-  async downloadReceipt(req, res) {
-    try {
-      const { id } = req.params;
-      const receipt = await Payment.getReceiptById(id);
+// In paymentController.js - Update downloadReceipt
 
-      if (!receipt) {
-        return res.status(404).json({
-          success: false,
-          message: "Receipt not found"
-        });
-      }
+async downloadReceipt(req, res) {
+  try {
+    const { id } = req.params;
+    const receipt = await Payment.getReceiptById(id);
 
-      // Create PDF document with better styling
-      const doc = new PDFDocument({ 
-        margin: 50,
-        size: 'A4',
-        info: {
-          Title: `Payment Receipt #${receipt.id}`,
-          Author: 'RoomAC',
-          Subject: 'Payment Receipt'
-        }
-      });
-      
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.id}.pdf`);
-      
-      doc.pipe(res);
-      
-      // Generate professional receipt PDF
-      await generateSimpleReceiptPDF(doc, receipt);
-      
-      doc.end();
-
-    } catch (error) {
-      console.error("Error downloading receipt:", error);
-      res.status(500).json({
+    if (!receipt) {
+      return res.status(404).json({
         success: false,
-        message: "Failed to download receipt",
-        error: error.message
+        message: "Receipt not found"
       });
     }
-  },
 
-  // Create demand payment
-// Add to your existing paymentController object
+    // Fetch settings from database
+    const [settingsRows] = await db.execute(
+      'SELECT setting_key, value FROM app_settings'
+    );
+    
+    const settings = {};
+    settingsRows.forEach(row => {
+      settings[row.setting_key] = { value: row.value };
+    });
+
+    // Create PDF document with better settings
+    const doc = new PDFDocument({ 
+      margin: 50,
+      size: 'A4',
+      info: {
+        Title: `Payment Receipt #${receipt.id}`,
+        Author: settings?.site_name?.value || 'RoomAC',
+        Subject: 'Payment Receipt',
+        Keywords: 'receipt, payment, rent',
+        Creator: 'RoomAC PMS'
+      },
+      bufferPages: true // Better performance for larger documents
+    });
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=receipt-${receipt.id}.pdf`);
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    doc.pipe(res);
+    
+    // Generate professional PDF
+    await generateProfessionalReceiptPDF(doc, receipt, settings);
+    
+    doc.end();
+
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to download receipt",
+      error: error.message
+    });
+  }
+},
 
 // Create demand payment
 async createDemandPayment(req, res) {
@@ -1024,6 +1334,81 @@ async deletePayment(req, res) {
     });
   }
 },
+
+// Get security deposit info
+async getSecurityDepositInfo(req, res) {
+  try {
+    const { tenantId } = req.params;
+    const depositInfo = await Payment.getSecurityDepositInfo(tenantId);
+
+    if (!depositInfo) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found or no active bed assignment"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: depositInfo
+    });
+
+  } catch (error) {
+    console.error("Error fetching security deposit info:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch security deposit info",
+      error: error.message
+    });
+  }
+},
+
+// Create notification for admin
+async createAdminNotification(req, res) {
+  try {
+    const {
+      title,
+      message,
+      notification_type,
+      related_entity_type,
+      related_entity_id,
+      priority
+    } = req.body;
+
+    // Insert notification for all admins (you can modify this to target specific admins)
+    const query = `
+      INSERT INTO notifications (
+        recipient_id, recipient_type, title, message, 
+        notification_type, related_entity_type, related_entity_id, priority
+      ) 
+      SELECT id, 'admin', ?, ?, ?, ?, ?, ?
+      FROM users WHERE role = 'admin'
+    `;
+
+    const [result] = await db.execute(query, [
+      title,
+      message,
+      notification_type,
+      related_entity_type || null,
+      related_entity_id || null,
+      priority || 'medium'
+    ]);
+
+    res.status(201).json({
+      success: true,
+      message: "Admin notifications created successfully",
+      count: result.affectedRows
+    });
+
+  } catch (error) {
+    console.error("Error creating admin notification:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create notification",
+      error: error.message
+    });
+  }
+}
 
 
 };
@@ -1511,210 +1896,6 @@ function numberToWords(num) {
 }
 
 
-// Simple Professional PDF Receipt Generator - FIXED VERSION
-async function generateSimpleReceiptPDF(doc, receipt) {
-  const paymentDate = new Date(receipt.payment_date).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-  
-  const createdDate = new Date(receipt.created_at).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  // Set default font
-  doc.font('Helvetica');
-
-  // Company Header
-  doc.fontSize(24)
-     .font('Helvetica-Bold')
-     .fillColor('#1e3c72')
-     .text('ROOMAC', 50, 50);
-  
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#666666')
-     .text('Premium Living Spaces', 50, 75);
-
-  // Receipt Title
-  doc.fontSize(16)
-     .font('Helvetica-Bold')
-     .fillColor('#333333')
-     .text('PAYMENT RECEIPT', 50, 120);
-
-  // Receipt Number and Date
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#666666')
-     .text(`Receipt No: RCP-${receipt.id.toString().padStart(6, '0')}`, 400, 120, { align: 'right' })
-     .text(`Date: ${paymentDate}`, 400, 135, { align: 'right' });
-
-  // Draw line
-  doc.strokeColor('#cccccc')
-     .lineWidth(1)
-     .moveTo(50, 160)
-     .lineTo(550, 160)
-     .stroke();
-
-  // Tenant Details Section
-  doc.fontSize(12)
-     .font('Helvetica-Bold')
-     .fillColor('#1e3c72')
-     .text('TENANT DETAILS', 50, 180);
-
-  let yPos = 200;
-  
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#333333')
-     .text(`Name: ${receipt.tenant_name || 'N/A'}`, 50, yPos);
-  yPos += 15;
-  
-  if (receipt.tenant_phone) {
-    doc.text(`Phone: ${receipt.tenant_phone}`, 50, yPos);
-    yPos += 15;
-  }
-  
-  if (receipt.tenant_email) {
-    doc.text(`Email: ${receipt.tenant_email}`, 50, yPos);
-    yPos += 15;
-  }
-
-  // Property Details Section
-  doc.fontSize(12)
-     .font('Helvetica-Bold')
-     .fillColor('#1e3c72')
-     .text('PROPERTY DETAILS', 300, 180);
-
-  let propYPos = 200;
-  
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#333333')
-     .text(`Property: ${receipt.property_name || 'RoomAC'}`, 300, propYPos);
-  propYPos += 15;
-  
-  let roomInfo = `Room: ${receipt.room_number || 'N/A'}`;
-  if (receipt.bed_number) {
-    roomInfo += `, Bed #${receipt.bed_number}`;
-  }
-  doc.text(roomInfo, 300, propYPos);
-  propYPos += 15;
-
-  if (receipt.bed_type) {
-    doc.text(`Bed Type: ${receipt.bed_type}`, 300, propYPos);
-    propYPos += 15;
-  }
-
-  // Draw line (use the higher Y position from both columns)
-  const lineY = Math.max(yPos, propYPos) + 10;
-  doc.strokeColor('#cccccc')
-     .lineWidth(1)
-     .moveTo(50, lineY)
-     .lineTo(550, lineY)
-     .stroke();
-
-  // Payment Details Section
-  let currentY = lineY + 20;
-  doc.fontSize(12)
-     .font('Helvetica-Bold')
-     .fillColor('#1e3c72')
-     .text('PAYMENT DETAILS', 50, currentY);
-
-  currentY += 20;
-  
-  // Amount Box - REDUCED FONT SIZE
-  doc.roundedRect(50, currentY, 500, 50, 5)  // Reduced height from 60 to 50
-     .fillAndStroke('#f8f9fa', '#dee2e6');
-  
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#666666')
-     .text('Amount Paid', 70, currentY + 10);
-  
-  doc.fontSize(18)  // REDUCED from 24 to 18
-     .font('Helvetica-Bold')
-     .fillColor('#28a745')
-     .text(`Rs ${parseFloat(receipt.amount).toLocaleString('en-IN')}`, 70, currentY + 25);
-
-  currentY += 60;  // Reduced from 70 to 60
-
-  // Payment Details Grid
-  const col1 = 50;
-  const col2 = 200;
-  
-  doc.fontSize(10)
-     .font('Helvetica')
-     .fillColor('#333333');
-
-  // Row 1
-  doc.font('Helvetica-Bold').text('Payment Mode:', col1, currentY);
-  doc.font('Helvetica').text(receipt.payment_mode.toUpperCase(), col1 + 100, currentY);
-  
-  doc.font('Helvetica-Bold').text('Month/Year:', col2, currentY);
-  doc.font('Helvetica').text(`${receipt.month} ${receipt.year}`, col2 + 100, currentY);
-  
-  currentY += 20;
-
-  // Row 2 - Bank details if available
-  if (receipt.bank_name) {
-    doc.font('Helvetica-Bold').text('Bank Name:', col1, currentY);
-    doc.font('Helvetica').text(receipt.bank_name, col1 + 100, currentY);
-    currentY += 20;
-  }
-
-  if (receipt.transaction_id) {
-    doc.font('Helvetica-Bold').text('Transaction ID:', col1, currentY);
-    doc.font('Helvetica').text(receipt.transaction_id, col1 + 100, currentY);
-    currentY += 20;
-  }
-
-  // Remark if exists
-  if (receipt.remark) {
-    currentY += 5;
-    doc.roundedRect(50, currentY, 500, 50, 5)
-       .fillAndStroke('#fff3cd', '#ffeeba');
-    
-    doc.font('Helvetica-Bold')
-       .fillColor('#856404')
-       .text('Remark:', 60, currentY + 10);
-    
-    doc.font('Helvetica')
-       .fontSize(9)
-       .text(receipt.remark, 60, currentY + 25, { width: 480 });
-    
-    currentY += 60;
-  }
-
-  // Draw line before footer
-  currentY += 10;
-  doc.strokeColor('#cccccc')
-     .lineWidth(1)
-     .moveTo(50, currentY)
-     .lineTo(550, currentY)
-     .stroke();
-
-  // Footer - Use dynamic positioning based on content
-  const footerY = currentY + 20;
-  
-  // Check if footer fits on current page, if not, add new page
-  if (footerY > doc.page.height - 50) {
-    doc.addPage();
-    currentY = 50;
-  }
-  
-  doc.fontSize(8)
-     .font('Helvetica')
-     .fillColor('#999999')
-     .text('This is a computer generated receipt. No signature required.', 50, footerY, { align: 'center', width: 500 })
-     .text(`Generated on: ${createdDate}`, 50, footerY + 12, { align: 'center', width: 500 })
-     .text('Thank you for your payment!', 50, footerY + 24, { align: 'center', width: 500 });
-}
 
 
 module.exports = paymentController;
