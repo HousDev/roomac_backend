@@ -48,6 +48,8 @@ const reportRoutes = require("./routes/reportRoutes");
 const propertyAnalyticsRoutes = require("./routes/propertyAnalyticsRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
 const templateRoutes = require('./routes/documentTemplateRoutes');
+const documentRoutes = require("./routes/documentRoutes");  // ← ADD THIS
+const documentListRoutes = require("./routes/documentListRoutes");  // ← ADD
 
 dotenv.config();
 
@@ -150,6 +152,8 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
 app.use('/api/document-templates', templateRoutes);
+app.use("/api/documents", documentRoutes);                   // ← ADD THIS
+app.use("/api/documents", documentListRoutes);                       // ← ADD (same endpoint)
 
 app.use("/api/expenses", expenseRoutes);
 /* =========================
