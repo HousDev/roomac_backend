@@ -62,4 +62,8 @@ router.get("/:id", paymentController.getPayment);
 router.post("/:id/proof", paymentController.uploadPaymentProof);
 router.get("/:id/proof", paymentController.getPaymentProof);
 
+// Notification routes
+router.post("/notifications", paymentController.createAdminNotification);
+router.get("/tenant/:tenantId/security-deposit", paymentController.getSecurityDepositInfo);
+
 module.exports = router;

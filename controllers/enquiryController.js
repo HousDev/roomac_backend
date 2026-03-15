@@ -455,6 +455,35 @@ const convertToTenant = async (req, res) => {
   }
 };
 
+// Bulk delete enquiries
+const bulkDeleteEnquiries = async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of enquiry IDs to delete",
+      });
+    }
+
+    const result = await EnquiryModel.bulkDeleteEnquiries(ids);
+
+    res.json({
+      success: true,
+      message: `${result.affectedRows} enquiries deleted successfully`,
+      affectedRows: result.affectedRows,
+    });
+  } catch (err) {
+    console.error("Error in bulkDeleteEnquiries:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+};
+
+
 // Make sure to export these methods
 module.exports = {
   getEnquiries,
@@ -470,5 +499,6 @@ module.exports = {
   updateVisitStatus,
   getUpcomingVisits,
   getTodayVisits,
-  convertToTenant
+  convertToTenant,
+  bulkDeleteEnquiries,
 };

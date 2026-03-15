@@ -656,6 +656,25 @@ checkExistingTenants: async (email, phone) => {
     throw err;
   }
 },
+// Bulk delete enquiries
+bulkDeleteEnquiries: async (ids) => {
+  try {
+    if (!ids || ids.length === 0) return { affectedRows: 0 };
+    
+    // Create placeholders for the query
+    const placeholders = ids.map(() => '?').join(',');
+    
+    const [result] = await db.query(
+      `DELETE FROM enquiries WHERE id IN (${placeholders})`,
+      ids
+    );
+    
+    return result;
+  } catch (err) {
+    console.error("EnquiryModel.bulkDeleteEnquiries Error:", err);
+    throw err;
+  }
+},
 };
 
 module.exports = EnquiryModel;
