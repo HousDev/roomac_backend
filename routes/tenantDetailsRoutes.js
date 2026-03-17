@@ -16,6 +16,8 @@ router.patch("/profile", tenantAuth, (req, res) => {
   TenantDetailsController.updateProfile(req, res);
 });
 
+
+
 // Profile routes (by ID - for admin or fallback)
 router.get("/profile/:tenantId", (req, res) => {
   TenantDetailsController.getProfile(req, res);
