@@ -372,6 +372,10 @@ async create(req, res) {
         : 0,
       notice_penalty_type: body.notice_penalty_type || "fixed",
 
+      // NEW: Aadhar and PAN fields
+      aadhar_number: body.aadhar_number || null,
+      pan_number: body.pan_number || null,
+
       // Files
       ...uploadedFiles,
       additional_documents: additionalDocs,
@@ -751,7 +755,6 @@ async create(req, res) {
   }
 },
 
-// In tenantController.js - Replace the update method with this complete version
 
 async update(req, res) {
   try {
@@ -769,7 +772,9 @@ async update(req, res) {
       work_mode: body.work_mode,
       shift_timing: body.shift_timing,
       occupation_category: body.occupation_category,
-      exact_occupation: body.exact_occupation
+      exact_occupation: body.exact_occupation,
+      aadhar_number: body.aadhar_number, // Add this for debugging
+      pan_number: body.pan_number // Add this for debugging
     });
 
     // Get existing tenant to preserve existing files
@@ -944,7 +949,8 @@ async update(req, res) {
       'employee_id', 'portfolio_url', 'work_mode', 'shift_timing',
       'address', 'city', 'state', 'pincode', 'preferred_sharing', 'preferred_room_type',
       'preferred_property_id', 'check_in_date',
-      'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation'
+      'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
+      'aadhar_number', 'pan_number' // ADD THESE FIELDS
     ];
 
     fields.forEach(field => {
@@ -954,6 +960,7 @@ async update(req, res) {
         } else if (field === 'monthly_income') {
           updateData[field] = body[field] ? parseNumber(body[field]) : null;
         } else {
+          // For aadhar_number and pan_number, we want to allow empty strings to clear the value
           updateData[field] = body[field] === '' ? null : body[field];
         }
       }
@@ -983,7 +990,9 @@ async update(req, res) {
       portal_access_enabled: updateData.portal_access_enabled,
       work_mode: updateData.work_mode,
       shift_timing: updateData.shift_timing,
-      organization: updateData.organization
+      organization: updateData.organization,
+      aadhar_number: updateData.aadhar_number, // Add for debugging
+      pan_number: updateData.pan_number // Add for debugging
     });
 
     // Update tenant

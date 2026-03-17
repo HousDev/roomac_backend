@@ -270,7 +270,9 @@ async findById(id) {
         p.lockin_penalty_type as property_lockin_penalty_type,
         p.notice_period_days as property_notice_period_days,
         p.notice_penalty_amount as property_notice_penalty_amount,
-        p.notice_penalty_type as property_notice_penalty_type
+        p.notice_penalty_type as property_notice_penalty_type.
+        t.aadhar_number,
+        t.pan_number,
       FROM tenants t
       LEFT JOIN properties p ON t.property_id = p.id
       WHERE t.id = ?
@@ -392,6 +394,8 @@ async create(payload) {
       id_proof_url,
       address_proof_url,
       photo_url,
+      aadhar_number,  // NEW
+      pan_number, 
       address,
       city,
       state,
@@ -455,6 +459,8 @@ async create(payload) {
       id_proof_url || null,
       address_proof_url || null,
       photo_url || null,
+      aadhar_number || null,
+      pan_number || null,
       address || null,
       city || null,
       state || null,
@@ -524,6 +530,8 @@ INSERT INTO tenants (
   id_proof_url,
   address_proof_url,
   photo_url,
+   aadhar_number,
+  pan_number,
   address,
   city,
   state,
@@ -545,7 +553,7 @@ INSERT INTO tenants (
   notice_penalty_type
 )
 VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?,? ,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `;
 
@@ -697,6 +705,9 @@ async update(id, payload) {
     setIf("id_proof_url", payload.id_proof_url);
     setIf("address_proof_url", payload.address_proof_url);
     setIf("photo_url", payload.photo_url);
+    setIf("aadhar_number", payload.aadhar_number);
+    setIf("pan_number", payload.pan_number);
+    
     
     // Address fields
     setIf("address", payload.address);
@@ -1086,6 +1097,8 @@ async getDeletedTenants() {
           gender,
           occupation_category,
           exact_occupation,
+          aadhar_number,  
+        pan_number,   
           address,
           city,
           state,
