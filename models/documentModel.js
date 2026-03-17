@@ -36,6 +36,23 @@ const DocumentModel = {
     if (f.priority)  { q += ` AND priority = ?`;  p.push(f.priority); }
     if (f.tenant_id) { q += ` AND tenant_id = ?`; p.push(f.tenant_id); }
 
+    // ── NEW: property_name filter ─────────────────────────────────────────────
+    if (f.property_name) {
+      q += ` AND property_name COLLATE utf8mb4_general_ci LIKE ?`;
+      p.push(`%${f.property_name}%`);
+    }
+
+    // ── NEW: floor filter — room_number starts with floor prefix e.g. "1" ─────
+    // Assumes room_number format is "<floor>XX" like "101","102" for floor 1
+    // We match by joining rooms table if you store floor separately,
+    // but here we filter via data_json->floor or room_number prefix
+    // Floor is stored in rooms table; here we filter documents by room_number prefix
+    if (f.floor !== undefined && f.floor !== null && f.floor !== "") {
+      // room_number like "101" starts with floor number
+      q += ` AND room_number LIKE ?`;
+      p.push(`${f.floor}%`);
+    }
+
     if (f.search) {
       q += ` AND (
         tenant_name     COLLATE utf8mb4_general_ci LIKE ? OR
@@ -49,6 +66,11 @@ const DocumentModel = {
 
     if (f.from_date) { q += ` AND DATE(created_at) >= ?`; p.push(f.from_date); }
     if (f.to_date)   { q += ` AND DATE(created_at) <= ?`; p.push(f.to_date); }
+
+    // ── NEW: hide_expired — exclude docs where expiry_date < TODAY ────────────
+    if (f.hide_expired === "true") {
+      q += ` AND (expiry_date IS NULL OR DATE(expiry_date) >= CURDATE())`;
+    }
 
     const pg = Math.max(1, parseInt(f.page     || "1"));
     const ps = Math.min(100, Math.max(1, parseInt(f.pageSize || "50")));
@@ -68,8 +90,18 @@ const DocumentModel = {
     return parseRow(rows[0]);
   },
 
+  // ── NEW: get distinct tenant_ids that already have a doc for a given template
+  // Used by DocumentCreate Step 2 to exclude those tenants
+  getTenantsWithTemplate: async (templateId) => {
+    const [rows] = await db.query(
+      `SELECT DISTINCT tenant_id FROM documents WHERE template_id = ? AND tenant_id IS NOT NULL`,
+      [templateId]
+    );
+    return rows; // [{ tenant_id: 1 }, { tenant_id: 5 }, ...]
+  },
+
   // With trigger, you don't need to generate document_number
-create: async (d) => {
+  create: async (d) => {
     const connection = await db.getConnection();
     
     try {
@@ -150,7 +182,7 @@ create: async (d) => {
     } finally {
         connection.release();
     }
-},
+  },
 
   updateStatus: async (id, status, performedBy = "Admin", extra = {}) => {
     const entry = JSON.stringify({
