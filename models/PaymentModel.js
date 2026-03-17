@@ -347,6 +347,8 @@ const Payment = {
 
 // models/paymentModel.js - Fixed FIFO calculation
 
+// models/paymentModel.js - Updated getTenantPaymentFormData function
+
 async getTenantPaymentFormData(tenantId) {
   try {
     // Step 1: Get tenant and bed assignment details including check_in_date
@@ -395,8 +397,8 @@ async getTenantPaymentFormData(tenantId) {
     // Calculate total months since joining (including current month)
     const totalMonthsSinceJoining = (currentYear - joiningYear) * 12 + (currentMonth - joiningMonth) + 1;
 
-    // Step 2: Get ALL payments for this tenant (ordered by date)
-    const [allPayments] = await db.execute(
+    // Step 2: Get ALL rent payments for this tenant (ordered by date)
+    const [rentPayments] = await db.execute(
       `SELECT 
         id,
         amount,
@@ -409,12 +411,29 @@ async getTenantPaymentFormData(tenantId) {
         remark,
         DATE_FORMAT(payment_date, '%Y-%m') as month_key
        FROM payments 
-       WHERE tenant_id = ? 
+       WHERE tenant_id = ? AND payment_type = 'rent'
        ORDER BY payment_date ASC`, // ASC to process oldest first
       [tenantId]
     );
 
-    // Step 3: Initialize all months with zero payments
+    // Step 3: Get ALL security deposit payments (for reference, but won't affect rent calculations)
+    const [securityDepositPayments] = await db.execute(
+      `SELECT 
+        id,
+        amount,
+        payment_date,
+        payment_mode,
+        transaction_id,
+        bank_name,
+        remark,
+        status
+       FROM payments 
+       WHERE tenant_id = ? AND payment_type = 'security_deposit'
+       ORDER BY payment_date ASC`,
+      [tenantId]
+    );
+
+    // Step 4: Initialize all months with zero payments (ONLY FOR RENT)
     const months = [];
     for (let i = 0; i < totalMonthsSinceJoining; i++) {
       const date = new Date(joiningYear, joiningMonth - 1 + i, 1);
@@ -433,10 +452,10 @@ async getTenantPaymentFormData(tenantId) {
       });
     }
 
-    // Step 4: Apply FIFO logic - each payment goes to oldest pending month
-    for (const payment of allPayments) {
+    // Step 5: Apply FIFO logic - each RENT payment goes to oldest pending month
+    for (const payment of rentPayments) {
       let remainingAmount = parseFloat(payment.amount);
-      console.log(`Processing payment of ₹${remainingAmount} on ${payment.payment_date}`);
+      console.log(`Processing RENT payment of ₹${remainingAmount} on ${payment.payment_date}`);
       
       // Find the oldest month with pending amount
       for (let i = 0; i < months.length && remainingAmount > 0; i++) {
@@ -471,7 +490,7 @@ async getTenantPaymentFormData(tenantId) {
       }
     }
 
-    // Step 5: Calculate status for each month based on paid amount
+    // Step 6: Calculate status for each month based on paid amount
     months.forEach(month => {
       if (month.paid >= month.rent) {
         month.status = 'paid';
@@ -488,7 +507,7 @@ async getTenantPaymentFormData(tenantId) {
       month.pending = Math.max(0, month.pending);
     });
 
-    // Step 6: Calculate totals
+    // Step 7: Calculate totals (ONLY FOR RENT)
     const totalPaid = months.reduce((sum, m) => sum + m.paid, 0);
     const totalExpected = monthlyRent * totalMonthsSinceJoining;
     const totalPending = months.reduce((sum, m) => sum + m.pending, 0);
@@ -513,16 +532,27 @@ async getTenantPaymentFormData(tenantId) {
       status: m.status
     })));
 
+    // Create unpaid_months array (months with pending amount > 0)
     const unpaid_months = months
-  .filter(month => month.pending > 0) // Only months with pending amount
-  .map(month => ({
-    month: month.month,
-    month_num: month.month_num,
-    year: month.year,
-    month_key: month.month_key,
-    pending: month.pending,
-    display: `${month.month} ${month.year} (₹${month.pending.toLocaleString()} pending)`
-  }));
+      .filter(month => month.pending > 0)
+      .map(month => ({
+        month: month.month,
+        month_num: month.month_num,
+        year: month.year,
+        month_key: month.month_key,
+        pending: month.pending,
+        display: `${month.month} ${month.year} (₹${month.pending.toLocaleString()} pending)`
+      }));
+
+    // Get the last RENT payment for reference
+    const lastRentPayment = rentPayments.length > 0 
+      ? rentPayments[rentPayments.length - 1] 
+      : null;
+
+    // Get the last SECURITY DEPOSIT payment for reference
+    const lastSecurityDepositPayment = securityDepositPayments.length > 0 
+      ? securityDepositPayments[securityDepositPayments.length - 1] 
+      : null;
 
     // Build the response
     const result = {
@@ -571,21 +601,33 @@ async getTenantPaymentFormData(tenantId) {
         status: currentMonthData.status
       },
       
-      // Complete month-wise history
+      // Complete month-wise history (ONLY FOR RENT)
       month_wise_history: months,
       
+      // Unpaid months for dropdown (ONLY FOR RENT)
       unpaid_months: unpaid_months,
+      
       // Recent months for quick view
       recent_months: recentMonths,
       
-      // Summary totals
+      // Summary totals (ONLY FOR RENT)
       total_paid: totalPaid,
       total_expected: totalExpected,
       total_pending: totalPending,
       suggested_amount: totalPending,
       
-      payment_count: allPayments.length,
-      last_payment_date: allPayments.length ? allPayments[allPayments.length - 1].payment_date : null
+      // Payment info
+      payment_count: rentPayments.length,
+      last_payment_date: lastRentPayment ? lastRentPayment.payment_date : null,
+      last_rent_payment: lastRentPayment,
+      last_security_deposit_payment: lastSecurityDepositPayment,
+      
+      // Security deposit summary (for reference)
+      security_deposit_summary: {
+        total_paid: securityDepositPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0),
+        payment_count: securityDepositPayments.length,
+        last_payment: lastSecurityDepositPayment
+      }
     };
 
     // Add a detailed note
@@ -1138,7 +1180,9 @@ async getSecurityDepositInfo(tenantId) {
     console.error("Error in getSecurityDepositInfo:", error);
     throw error;
   }
-}
+},
+
+
 };
 
 module.exports = Payment;

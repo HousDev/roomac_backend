@@ -931,8 +931,6 @@ async createDemandPayment(req, res) {
       due_date,
       payment_type,
       description,
-      include_late_fee,
-      late_fee_amount,
       send_email,
       send_sms
     } = req.body;
@@ -944,10 +942,6 @@ async createDemandPayment(req, res) {
       });
     }
 
-    // Calculate late fee
-    const lateFee = include_late_fee ? (late_fee_amount || 0) : 0;
-    const totalAmount = amount + lateFee;
-
     // Create demand payment
     const demandData = {
       tenant_id,
@@ -955,7 +949,7 @@ async createDemandPayment(req, res) {
       due_date,
       payment_type: payment_type || 'rent',
       description,
-      late_fee: lateFee,
+      late_fee: 0, // Always 0 since we removed late fee
       created_by: req.user?.id || null
     };
 
@@ -963,14 +957,11 @@ async createDemandPayment(req, res) {
 
     // Create notification for tenant
     if (newDemand) {
-      // Build notification message with all details
+      // Build notification message
       let notificationMessage = `Payment request details:\n`;
-      notificationMessage += `Base Amount: ₹${amount}\n`;
-      if (lateFee > 0) {
-        notificationMessage += `Late Fee: ₹${lateFee}\n`;
-      }
-      notificationMessage += `Total Amount: ₹${totalAmount}\n`;
+      notificationMessage += `Amount: ₹${amount}\n`;
       notificationMessage += `Due Date: ${new Date(due_date).toLocaleDateString()}\n`;
+      notificationMessage += `Payment Type: ${payment_type}\n`;
       if (description) {
         notificationMessage += `Note: ${description}`;
       }
@@ -980,7 +971,7 @@ async createDemandPayment(req, res) {
       
       await notificationController.createNotification({
         tenantId: tenant_id,
-        title: 'Payment Request',
+        title: `💰 Payment Request - ${payment_type === 'rent' ? 'Rent' : 'Security Deposit'}`,
         message: notificationMessage,
         notificationType: 'payment',
         relatedEntityType: 'demand',
@@ -998,9 +989,7 @@ async createDemandPayment(req, res) {
       message: "Payment demand created successfully",
       data: {
         ...newDemand,
-        total_amount: totalAmount,
-        base_amount: amount,
-        late_fee: lateFee
+        total_amount: amount
       }
     });
 
@@ -1014,7 +1003,6 @@ async createDemandPayment(req, res) {
   }
 },
 
-// Get all demands
 // Get all demands
 async getDemands(req, res) {
   try {
