@@ -40,22 +40,28 @@ exports.getReceiptRequests = async (req, res) => {
           LIMIT 1
         ) as room_number,
         
+        -- Receipt specific fields from receipt_requests table
+        rr.id as receipt_request_id,
+        rr.receipt_type,
+        rr.month as receipt_month,
+        rr.year as receipt_year,
+        rr.month_key,
+        rr.amount as receipt_amount,
+        rr.status as receipt_status,
+        
         tr.request_type,
         tr.title,
         tr.description,
         tr.priority,
         tr.status,
         tr.admin_notes,
-        tr.assigned_to,
-        s.name as staff_name,
-        s.role as staff_role,
         tr.resolved_at,
         tr.created_at,
         tr.updated_at
       FROM tenant_requests tr
       LEFT JOIN tenants t ON tr.tenant_id = t.id
       LEFT JOIN properties p ON tr.property_id = p.id
-      LEFT JOIN staff s ON tr.assigned_to = s.id
+      LEFT JOIN receipt_requests rr ON tr.id = rr.request_id
       WHERE tr.request_type = 'receipt'
       ORDER BY 
         CASE tr.priority 
@@ -83,7 +89,92 @@ exports.getReceiptRequests = async (req, res) => {
   }
 };
 
-// Add this function for bulk delete
+// Update receipt request status (approve/reject)
+exports.updateReceiptRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, admin_notes } = req.body;
+
+    console.log('🧾 Updating receipt request:', id, 'to status:', status);
+
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid status (pending/approved/rejected) is required"
+      });
+    }
+
+    // Start transaction
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    try {
+      // Update tenant_requests table
+      await connection.query(
+        `UPDATE tenant_requests 
+         SET status = ?, admin_notes = ?, updated_at = NOW() 
+         WHERE id = ? AND request_type = 'receipt'`,
+        [status, admin_notes || null, id]
+      );
+
+      // Also update receipt_requests table if it exists
+      await connection.query(
+        `UPDATE receipt_requests 
+         SET status = ? 
+         WHERE request_id = ?`,
+        [status, id]
+      );
+
+      // Create notification for tenant
+      const notificationTitle = status === 'approved' 
+        ? '✅ Receipt Request Approved' 
+        : '❌ Receipt Request Rejected';
+
+      const notificationMessage = status === 'approved'
+        ? `Your receipt request has been approved. You can now download the receipt from your payments page.`
+        : `Your receipt request has been rejected. ${admin_notes ? `Reason: ${admin_notes}` : 'Please contact support for more information.'}`;
+
+      // Get tenant_id first
+      const [requestData] = await connection.query(
+        `SELECT tenant_id FROM tenant_requests WHERE id = ?`,
+        [id]
+      );
+
+      if (requestData.length > 0) {
+        await connection.query(
+          `INSERT INTO notifications (
+            recipient_id, recipient_type, title, message, 
+            notification_type, related_entity_type, related_entity_id,
+            priority, is_read, created_at
+          ) VALUES (?, 'tenant', ?, ?, 'receipt_request', 'receipt_request', ?, 'medium', 0, NOW())`,
+          [requestData[0].tenant_id, notificationTitle, notificationMessage, id]
+        );
+      }
+
+      await connection.commit();
+      
+      res.json({ 
+        success: true, 
+        message: `Receipt request ${status} successfully`
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+  } catch (err) {
+    console.error('❌ Error updating receipt request:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to update receipt request"
+    });
+  }
+};
+
+// Bulk delete receipt requests
 exports.bulkDeleteReceiptRequests = async (req, res) => {
   try {
     const { ids } = req.body;
@@ -102,13 +193,11 @@ exports.bulkDeleteReceiptRequests = async (req, res) => {
     await connection.beginTransaction();
     
     try {
-      // First, check if there are any receipt details tables to delete from
-      // You may need to adjust this based on your database schema
-      // For example, if you have receipt_details table:
-      // await connection.query(
-      //   `DELETE FROM receipt_details WHERE request_id IN (?)`,
-      //   [ids]
-      // );
+      // Delete from receipt_requests first (foreign key constraint)
+      await connection.query(
+        `DELETE FROM receipt_requests WHERE request_id IN (?)`,
+        [ids]
+      );
       
       // Then delete the tenant requests
       const [result] = await connection.query(
@@ -122,8 +211,7 @@ exports.bulkDeleteReceiptRequests = async (req, res) => {
         success: true,
         message: `Successfully deleted ${result.affectedRows} receipt requests`,
         data: {
-          deletedCount: result.affectedRows,
-          deletedIds: ids
+          deletedCount: result.affectedRows
         }
       });
     } catch (error) {
@@ -136,117 +224,7 @@ exports.bulkDeleteReceiptRequests = async (req, res) => {
     console.error('❌ Error bulk deleting receipt requests:', err.message);
     res.status(500).json({ 
       success: false,
-      message: "Failed to delete receipt requests",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
-};
-exports.updateReceiptRequest = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = req.body;
-
-    console.log('🧾 Updating receipt request:', id, updateData);
-
-    // Build update query
-    const updates = [];
-    const params = [];
-
-    Object.keys(updateData).forEach(key => {
-      if (updateData[key] !== undefined && updateData[key] !== null) {
-        updates.push(`${key} = ?`);
-        params.push(updateData[key]);
-      }
-    });
-
-    if (updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No data provided for update"
-      });
-    }
-
-    params.push(id);
-
-    const sql = `
-      UPDATE tenant_requests 
-      SET ${updates.join(', ')} 
-      WHERE id = ? AND request_type = 'receipt'
-    `;
-
-    const [result] = await db.query(sql, params);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Receipt request not found"
-      });
-    }
-
-    res.json({ 
-      success: true, 
-      message: "Receipt request updated successfully"
-    });
-  } catch (err) {
-    console.error('❌ Error updating receipt request:', err.message);
-    res.status(500).json({ 
-      success: false,
-      message: "Failed to update receipt request"
-    });
-  }
-};
-
-// New: Generate receipt (you can expand this based on your payment system)
-exports.generateReceipt = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { receipt_details } = req.body;
-
-    console.log('🧾 Generating receipt for request:', id);
-
-    // First, get the request details
-    const [request] = await db.query(
-      `SELECT tr.*, t.full_name as tenant_name, t.email as tenant_email 
-       FROM tenant_requests tr
-       LEFT JOIN tenants t ON tr.tenant_id = t.id
-       WHERE tr.id = ? AND tr.request_type = 'receipt'`,
-      [id]
-    );
-
-    if (request.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Receipt request not found"
-      });
-    }
-
-    // Update request status
-    await db.query(
-      `UPDATE tenant_requests SET status = 'resolved', admin_notes = ? WHERE id = ?`,
-      [`Receipt generated: ${receipt_details}`, id]
-    );
-
-    // In a real app, you would:
-    // 1. Fetch tenant's payment history
-    // 2. Generate PDF receipt
-    // 3. Save receipt to database
-    // 4. Send email with receipt
-
-    res.json({ 
-      success: true, 
-      message: "Receipt generated successfully",
-      data: {
-        request_id: id,
-        tenant_name: request[0].tenant_name,
-        receipt_details: receipt_details,
-        generated_at: new Date().toISOString()
-      }
-    });
-  } catch (err) {
-    console.error('❌ Error generating receipt:', err.message);
-    res.status(500).json({ 
-      success: false,
-      message: "Failed to generate receipt"
+      message: "Failed to delete receipt requests"
     });
   }
 };

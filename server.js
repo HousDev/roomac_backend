@@ -50,6 +50,7 @@ const expenseRoutes = require("./routes/expenseRoutes");
 const templateRoutes = require('./routes/documentTemplateRoutes');
 const documentRoutes = require("./routes/documentRoutes");  // ← ADD THIS
 const documentListRoutes = require("./routes/documentListRoutes");  // ← ADD
+const noticePeriodRequestRoutes = require("./routes/noticePeriodRequestRoutes")
 
 dotenv.config();
 
@@ -131,6 +132,7 @@ app.use("/api/admin/change-bed-requests", adminChangeBedRoutes);
 app.use("/api/masters", masterRoutes);
 app.use("/api/vacate", vacateRoutes);
 app.use("/api/change-bed", changeBedRoutes);
+app.use("/api/notice-period-requests", noticePeriodRequestRoutes);
 app.use("/api/admin/notifications", notificationRoutes);
 app.use("/api/tenant-settings", tenantSettingsRoutes);
 app.use("/api/admin/deletion-requests", adminDeletionRequestsRoutes);
@@ -153,8 +155,8 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
 app.use('/api/document-templates', templateRoutes);
 app.use("/api/documents", documentRoutes);                   // ← ADD THIS
-app.use("/api/documents", documentListRoutes);                       // ← ADD (same endpoint)
-
+app.use("/api/documents", documentListRoutes); 
+app.use("/api/admin/request-counts", require("./routes/adminRequestCountsRoutes"));
 app.use("/api/expenses", expenseRoutes);
 /* =========================
    SERVER START

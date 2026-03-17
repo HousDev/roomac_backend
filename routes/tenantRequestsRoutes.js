@@ -55,6 +55,7 @@
 // module.exports = router;
 
 
+// routes/tenant/RequestsRoutes.js
 const router = require("express").Router();
 const tenantAuth = require("../middleware/tenantAuth");
 const controller = require("../controllers/tenantRequestController");

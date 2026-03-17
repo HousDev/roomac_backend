@@ -766,46 +766,67 @@ async getReceipts(filters = {}) {
 },
 
   // Get receipt by ID
-  async getReceiptById(id) {
-    const query = `
-      SELECT 
-        p.id,
-        p.amount,
-        p.payment_date,
-        p.payment_mode,
-        p.bank_name,
-        p.transaction_id,
-        p.remark,
-        p.payment_proof,
-        p.month,
-        p.year,
-        p.created_at,
-        t.full_name as tenant_name,
-        t.phone as tenant_phone,
-        t.email as tenant_email,
-        t.address as tenant_address,
-        r.room_number,
-        r.floor,
-        r.sharing_type,
-        prop.name as property_name,
-        prop.address as property_address,
-        ba.tenant_rent as monthly_rent,
-        ba.bed_number,
-        ba.bed_type
-      FROM payments p
-      LEFT JOIN tenants t ON p.tenant_id = t.id
-      LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
-      LEFT JOIN rooms r ON ba.room_id = r.id
-      LEFT JOIN properties prop ON r.property_id = prop.id
-      WHERE p.id = ?
-    `;
-    try {
-      const [rows] = await db.execute(query, [id]);
-      return rows[0];
-    } catch (error) {
-      throw error;
-    }
-  },
+// In your payment model, update getReceiptById
+async getReceiptById(id) {
+  const query = `
+    SELECT 
+      p.id,
+      p.amount,
+      p.previous_balance,
+      p.new_balance,
+      p.payment_date,
+      p.payment_mode,
+      p.bank_name,
+      p.transaction_id,
+      p.payment_proof,
+      p.month,
+      p.year,
+      p.remark,
+      p.created_at,
+      p.status,
+      t.full_name as tenant_name,
+      t.phone as tenant_phone,
+      t.email as tenant_email,
+      t.address as tenant_address,
+      r.room_number,
+      r.floor,
+      r.sharing_type,
+      prop.name as property_name,
+      prop.address as property_address,
+      ba.tenant_rent as monthly_rent,
+      ba.bed_number,
+      ba.bed_type,
+      
+      -- Calculate total paid for this tenant (all approved payments)
+      (SELECT COALESCE(SUM(amount), 0) 
+       FROM payments 
+       WHERE tenant_id = p.tenant_id 
+         AND status = 'approved'
+         AND id <= p.id
+      ) as total_paid,
+      
+      -- Calculate total pending for this tenant
+      (SELECT COALESCE(SUM(amount), 0) 
+       FROM payments 
+       WHERE tenant_id = p.tenant_id 
+         AND status = 'pending'
+      ) as total_pending
+      
+    FROM payments p
+    LEFT JOIN tenants t ON p.tenant_id = t.id
+    LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
+    LEFT JOIN rooms r ON ba.room_id = r.id
+    LEFT JOIN properties prop ON r.property_id = prop.id
+    WHERE p.id = ?
+  `;
+  try {
+    const [rows] = await db.execute(query, [id]);
+    return rows[0];
+  } catch (error) {
+    console.error("Error in getReceiptById:", error);
+    throw error;
+  }
+},
 
   // Get payment statistics
   async getStats(propertyId = null, tenantId = null) {

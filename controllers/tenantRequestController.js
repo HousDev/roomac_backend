@@ -44,6 +44,165 @@ calculatePenaltyAmount(amount, type, security_deposit = null) {
   return typeMap[type] || parseFloat(amount);
 }
 
+// Add this method to your TenantRequestController class
+async createReceiptRequest(req, res) {
+  try {
+    const tenant_id = req.user?.id;
+    if (!tenant_id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const { 
+      receipt_type,
+      month,
+      year,
+      month_key,
+      amount
+    } = req.body.receipt_data || {};
+
+    if (!receipt_type) {
+      return res.status(400).json({
+        success: false,
+        message: 'Receipt type is required'
+      });
+    }
+
+    if (receipt_type === 'rent' && (!month || !year)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month and year are required for rent receipt'
+      });
+    }
+
+    // Get tenant info for notification
+    const [tenantInfo] = await db.query(
+      `SELECT full_name, property_id FROM tenants WHERE id = ?`,
+      [tenant_id]
+    );
+
+    if (tenantInfo.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Tenant not found'
+      });
+    }
+
+    const tenantData = tenantInfo[0];
+
+    // Start transaction
+    await db.query('START TRANSACTION');
+
+    try {
+      // Create tenant request record
+      const title = receipt_type === 'rent' 
+        ? `Receipt Request - ${month} ${year}`
+        : 'Security Deposit Receipt Request';
+
+      const description = receipt_type === 'rent'
+        ? `Request for rent receipt of ${month} ${year}`
+        : 'Request for security deposit receipt';
+
+      const [result] = await db.query(
+        `INSERT INTO tenant_requests (
+          tenant_id,
+          property_id,
+          request_type,
+          title,
+          description,
+          priority,
+          status,
+          created_at
+        ) VALUES (?, ?, 'receipt', ?, ?, 'medium', 'pending', NOW())`,
+        [
+          tenant_id,
+          tenantData.property_id || null,
+          title,
+          description
+        ]
+      );
+
+      const requestId = result.insertId;
+      console.log(`✅ Receipt request created with ID: ${requestId}`);
+
+      // Create receipt request details
+      const [receiptResult] = await db.query(
+        `INSERT INTO receipt_requests (
+          request_id,
+          receipt_type,
+          month,
+          year,
+          month_key,
+          amount,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          requestId,
+          receipt_type,
+          month || null,
+          year || null,
+          month_key || null,
+          amount || null
+        ]
+      );
+
+      console.log(`✅ Receipt request details created with ID: ${receiptResult.insertId}`);
+
+      // Create notification for admin
+      const notificationTitle = receipt_type === 'rent'
+        ? `📄 New Rent Receipt Request - ${month} ${year}`
+        : `📄 New Security Deposit Receipt Request`;
+
+      const notificationMessage = receipt_type === 'rent'
+        ? `${tenantData.full_name} has requested a receipt for rent payment of ${month} ${year}`
+        : `${tenantData.full_name} has requested a security deposit receipt`;
+
+      await db.query(
+        `INSERT INTO notifications (
+          recipient_id,
+          recipient_type,
+          title,
+          message,
+          notification_type,
+          related_entity_type,
+          related_entity_id,
+          priority,
+          is_read,
+          created_at
+        ) VALUES (?, 'admin', ?, ?, 'receipt_request', 'receipt_request', ?, 'medium', 0, NOW())`,
+        [
+          1, // Default admin ID
+          notificationTitle,
+          notificationMessage,
+          requestId
+        ]
+      );
+
+      await db.query('COMMIT');
+
+      res.json({
+        success: true,
+        message: 'Receipt request submitted successfully',
+        request_id: requestId
+      });
+
+    } catch (error) {
+      await db.query('ROLLBACK');
+      console.error('❌ Transaction failed:', error);
+      throw error;
+    }
+
+  } catch (err) {
+    console.error('🔥 Create receipt request error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error'
+    });
+  }
+}
+
 
 async createRequest(req, res) {
   console.log('🎯 createRequest called with FULL body:', JSON.stringify(req.body, null, 2));
@@ -760,6 +919,97 @@ if (request_type === 'change_bed' && change_bed_data) {
         console.log('✅ vacate_bed_request record created successfully');
       }
 
+      // In your createRequest method, after the other request types
+// Add this where you handle different request types
+
+// ====================================================
+// 🚨 RECEIPT REQUEST CREATION
+// ====================================================
+if (request_type === 'receipt') {
+  console.log('📄 Creating receipt request...');
+  
+  const receiptData = req.body.receipt_data || {};
+  
+  console.log('📋 Receipt data received:', receiptData);
+  
+  // Validate receipt data
+  if (!receiptData.receipt_type) {
+    await db.query('ROLLBACK');
+    return res.status(400).json({
+      success: false,
+      message: 'Receipt type is required'
+    });
+  }
+  
+  if (receiptData.receipt_type === 'rent' && !receiptData.month_key) {
+    await db.query('ROLLBACK');
+    return res.status(400).json({
+      success: false,
+      message: 'Month selection is required for rent receipt'
+    });
+  }
+  
+  try {
+    // Create receipt request details
+    const [receiptResult] = await db.query(
+      `INSERT INTO receipt_requests (
+        request_id,
+        receipt_type,
+        month,
+        year,
+        month_key,
+        amount,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        requestId,
+        receiptData.receipt_type,
+        receiptData.month || null,
+        receiptData.year || null,
+        receiptData.month_key || null,
+        receiptData.amount || null
+      ]
+    );
+
+    console.log(`✅ Receipt request details created with ID: ${receiptResult.insertId}`);
+
+    // Create notification for admin
+    const notificationTitle = receiptData.receipt_type === 'rent'
+      ? `📄 New Rent Receipt Request - ${receiptData.month} ${receiptData.year}`
+      : `📄 New Security Deposit Receipt Request`;
+
+    const notificationMessage = receiptData.receipt_type === 'rent'
+      ? `${tenantData.full_name} has requested a receipt for rent payment of ${receiptData.month} ${receiptData.year}`
+      : `${tenantData.full_name} has requested a security deposit receipt`;
+
+    await db.query(
+      `INSERT INTO notifications (
+        recipient_id,
+        recipient_type,
+        title,
+        message,
+        notification_type,
+        related_entity_type,
+        related_entity_id,
+        priority,
+        is_read,
+        created_at
+      ) VALUES (?, 'admin', ?, ?, 'receipt_request', 'receipt_request', ?, 'medium', 0, NOW())`,
+      [
+        1,
+        notificationTitle,
+        notificationMessage,
+        requestId
+      ]
+    );
+
+  } catch (receiptError) {
+    console.error('❌ Error creating receipt request details:', receiptError);
+    await db.query('ROLLBACK');
+    throw receiptError;
+  }
+}
+
       // ====================================================
       // 🚨 MAINTENANCE REQUEST CREATION
       // ====================================================
@@ -1223,7 +1473,7 @@ if (request_type === 'change_bed' && change_bed_data) {
   }
 
 
-  async getMyRequests(req, res) {
+async getMyRequests(req, res) {
   try {
     const tenant_id = req.user?.id;
     if (!tenant_id) {
@@ -1235,12 +1485,12 @@ if (request_type === 'change_bed' && change_bed_data) {
 
     console.log('🔍 Getting requests for tenant ID:', tenant_id);
 
-const [requests] = await db.query(
+    const [requests] = await db.query(
       `SELECT 
         tr.*, 
         vbr.id as vacate_bed_request_id,
         vbr.primary_reason_id,
-        miv.name as primary_reason,  -- CHANGED: from mv.value to miv.name
+        miv.name as primary_reason,
         vbr.secondary_reasons,
         vbr.overall_rating,
         vbr.food_rating,
@@ -1265,7 +1515,7 @@ const [requests] = await db.query(
         cbr.request_status as change_bed_status,
         r2.room_number as preferred_room_number,
         p2.name as preferred_property_name,
-        miv2.name as change_reason,  -- CHANGED: from mv2.value to miv2.name
+        miv2.name as change_reason,
 
         -- Leave data
         lrd.id as leave_request_detail_id,
@@ -1293,19 +1543,29 @@ const [requests] = await db.query(
         crd.reason_master_value_id,
         crd.custom_reason,
         mt2.name as complaint_category_name,
-        miv3.name as complaint_reason_name  -- CHANGED: from mv3.value to miv3.name
+        miv3.name as complaint_reason_name,
+
+        -- ADD THIS: Receipt data
+        rr.id as receipt_request_id,
+        rr.receipt_type,
+        rr.month as receipt_month,
+        rr.year as receipt_year,
+        rr.month_key as receipt_month_key,
+        rr.amount as receipt_amount,
+        rr.status as receipt_status,
+        rr.receipt_url
         
        FROM tenant_requests tr
        
        -- Left join for vacate bed requests
        LEFT JOIN vacate_bed_requests vbr ON tr.id = vbr.tenant_request_id AND tr.request_type = 'vacate_bed'
-       LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id  -- CHANGED: master_values → master_item_values
+       LEFT JOIN master_item_values miv ON vbr.primary_reason_id = miv.id
        
        -- Left join for change bed requests
        LEFT JOIN change_bed_requests cbr ON tr.id = cbr.tenant_request_id AND tr.request_type = 'change_bed'
        LEFT JOIN rooms r2 ON cbr.preferred_room_id = r2.id
        LEFT JOIN properties p2 ON cbr.preferred_property_id = p2.id
-       LEFT JOIN master_item_values miv2 ON cbr.change_reason_id = miv2.id  -- CHANGED: master_values → master_item_values
+       LEFT JOIN master_item_values miv2 ON cbr.change_reason_id = miv2.id
 
        -- Left join for leave requests
        LEFT JOIN leave_request_details lrd ON tr.id = lrd.request_id AND tr.request_type = 'leave'
@@ -1316,13 +1576,15 @@ const [requests] = await db.query(
        -- Left join for complaint requests
        LEFT JOIN complaint_request_details crd ON tr.id = crd.request_id AND tr.request_type = 'complaint'
        LEFT JOIN master_types mt2 ON crd.category_master_type_id = mt2.id
-       LEFT JOIN master_item_values miv3 ON crd.reason_master_value_id = miv3.id  -- CHANGED: master_values → master_item_values
+       LEFT JOIN master_item_values miv3 ON crd.reason_master_value_id = miv3.id
+       
+       -- ADD THIS: Left join for receipt requests
+       LEFT JOIN receipt_requests rr ON tr.id = rr.request_id AND tr.request_type = 'receipt'
        
        WHERE tr.tenant_id = ?
        ORDER BY tr.created_at DESC`,
       [tenant_id]
     );
-
 
     console.log(`✅ Found ${requests.length} requests for tenant`);
 
@@ -1334,16 +1596,13 @@ const [requests] = await db.query(
         let secondaryReasons = [];
         if (req.secondary_reasons) {
           try {
-            // Check if it's already an array
             if (Array.isArray(req.secondary_reasons)) {
               secondaryReasons = req.secondary_reasons;
             } 
-            // Check if it's a JSON string
             else if (typeof req.secondary_reasons === 'string' && 
                     (req.secondary_reasons.startsWith('[') || req.secondary_reasons.startsWith('{'))) {
               secondaryReasons = JSON.parse(req.secondary_reasons);
             }
-            // It's a plain string - treat it as a single reason
             else if (typeof req.secondary_reasons === 'string') {
               secondaryReasons = [req.secondary_reasons];
             }
@@ -1359,7 +1618,7 @@ const [requests] = await db.query(
         
         req.vacate_data = {
           primary_reason_id: req.primary_reason_id,
-           primary_reason: req.primary_reason,
+          primary_reason: req.primary_reason,
           secondary_reasons: secondaryReasons,
           overall_rating: req.overall_rating,
           food_rating: req.food_rating,
@@ -1372,26 +1631,25 @@ const [requests] = await db.query(
         };
       }
 
-       // Create change_bed_data object if it's a change_bed request
-        if (req.request_type === 'change_bed' && req.change_bed_request_id) {
-          req.change_bed_data = {
-            preferred_property_id: req.preferred_property_id,
-            preferred_room_id: req.preferred_room_id,
-            change_reason_id: req.change_reason_id,
-            shifting_date: req.shifting_date,
-            notes: req.change_bed_notes,
-            assigned_bed_number: req.assigned_bed_number,
-            rent_difference: req.rent_difference,
-            admin_notes: req.change_bed_admin_notes,
-            request_status: req.change_bed_status,
-            preferred_room_number: req.preferred_room_number,
-            preferred_property_name: req.preferred_property_name,
-            change_reason: req.change_reason,
-            change_reason_code: req.change_reason_code 
-          };
-        }
+      // Create change_bed_data object if it's a change_bed request
+      if (req.request_type === 'change_bed' && req.change_bed_request_id) {
+        req.change_bed_data = {
+          preferred_property_id: req.preferred_property_id,
+          preferred_room_id: req.preferred_room_id,
+          change_reason_id: req.change_reason_id,
+          shifting_date: req.shifting_date,
+          notes: req.change_bed_notes,
+          assigned_bed_number: req.assigned_bed_number,
+          rent_difference: req.rent_difference,
+          admin_notes: req.change_bed_admin_notes,
+          request_status: req.change_bed_status,
+          preferred_room_number: req.preferred_room_number,
+          preferred_property_name: req.preferred_property_name,
+          change_reason: req.change_reason
+        };
+      }
 
-     // Create leave_data object if it's a leave request
+      // Create leave_data object if it's a leave request
       if (req.request_type === 'leave' && req.leave_request_detail_id) {
         req.leave_data = {
           leave_type: req.leave_type,
@@ -1404,90 +1662,66 @@ const [requests] = await db.query(
           keys_submitted: req.keys_submitted === 1,
           created_at: req.leave_detail_created_at
         };
-        
-        // Clean up extra fields
-        delete req.leave_request_detail_id;
-        delete req.leave_type;
-        delete req.leave_start_date;
-        delete req.leave_end_date;
-        delete req.total_days;
-        delete req.contact_address_during_leave;
-        delete req.emergency_contact_number;
-        delete req.room_locked;
-        delete req.keys_submitted;
-        delete req.leave_detail_created_at;
       }
 
-      // Add this in the parsedRequests.map() function, after parsing leave data:
-if (req.request_type === 'maintenance' && req.maintenance_request_detail_id) {
-  req.maintenance_data = {
-    issue_category: req.issue_category,
-    location: req.location,
-    preferred_visit_time: req.preferred_visit_time,
-    access_permission: req.access_permission === 1,
-    resolved_at: req.maintenance_resolved_at
-  };
-  
-  // Clean up extra fields
-  delete req.maintenance_request_detail_id;
-  delete req.issue_category;
-  delete req.location;
-  delete req.preferred_visit_time;
-  delete req.access_permission;
-  delete req.maintenance_resolved_at;
-}
+      // Create maintenance_data object if it's a maintenance request
+      if (req.request_type === 'maintenance' && req.maintenance_request_detail_id) {
+        req.maintenance_data = {
+          issue_category: req.issue_category,
+          location: req.location,
+          preferred_visit_time: req.preferred_visit_time,
+          access_permission: req.access_permission === 1,
+          resolved_at: req.maintenance_resolved_at
+        };
+      }
 
-// Add this in the parsedRequests.map() function, after parsing maintenance data:
-if (req.request_type === 'complaint' && req.complaint_request_detail_id) {
-  req.complaint_data = {
-    category_master_type_id: req.category_master_type_id,
-    reason_master_value_id: req.reason_master_value_id,
-    custom_reason: req.custom_reason,
-    complaint_category_name: req.complaint_category_name,
-    complaint_reason_name: req.complaint_reason_name
-  };
-  
-  // Clean up extra fields
-  delete req.complaint_request_detail_id;
-  delete req.category_master_type_id;
-  delete req.reason_master_value_id;
-  delete req.custom_reason;
-  delete req.complaint_category_name;
-  delete req.complaint_reason_name;
-}
+      // Create complaint_data object if it's a complaint request
+      if (req.request_type === 'complaint' && req.complaint_request_detail_id) {
+        req.complaint_data = {
+          category_master_type_id: req.category_master_type_id,
+          reason_master_value_id: req.reason_master_value_id,
+          custom_reason: req.custom_reason,
+          complaint_category_name: req.complaint_category_name,
+          complaint_reason_name: req.complaint_reason_name
+        };
+      }
+
+      // ADD THIS: Create receipt_data object if it's a receipt request
+      if (req.request_type === 'receipt' && req.receipt_request_id) {
+        req.receipt_data = {
+          receipt_type: req.receipt_type,
+          month: req.receipt_month,
+          year: req.receipt_year,
+          month_key: req.receipt_month_key,
+          amount: req.receipt_amount,
+          status: req.receipt_status,
+          receipt_url: req.receipt_url
+        };
+      }
       
-      // Clean up the extra fields
-      delete req.primary_reason_id;
-      delete req.secondary_reasons;
-      delete req.overall_rating;
-      delete req.food_rating;
-      delete req.cleanliness_rating;
-      delete req.management_rating;
-      delete req.improvement_suggestions;
-      delete req.expected_vacate_date;
-      delete req.lockin_penalty_accepted;
-      delete req.notice_penalty_accepted;
-      delete req.vacate_bed_request_id;
-      delete req.vacate_status;
-      delete req.primary_reason_name;
-      delete req.change_bed_request_id;
-        delete req.preferred_property_id;
-        delete req.preferred_room_id;
-        delete req.change_reason_id;
-        delete req.shifting_date;
-        delete req.change_bed_notes;
-        delete req.assigned_bed_number;
-        delete req.rent_difference;
-        delete req.change_bed_admin_notes;
-        delete req.change_bed_status;
-        delete req.preferred_room_number;
-        delete req.preferred_property_name;
-        delete req.change_reason;
-        delete req.change_reason_code; // Add this line
-delete req.complaint_category_name; // Add this line
-delete req.complaint_reason_name; // Add this line
-
-  
+      // Clean up all the extra fields
+      const fieldsToDelete = [
+        'vacate_bed_request_id', 'primary_reason_id', 'primary_reason', 'secondary_reasons',
+        'overall_rating', 'food_rating', 'cleanliness_rating', 'management_rating',
+        'improvement_suggestions', 'expected_vacate_date', 'lockin_penalty_accepted',
+        'notice_penalty_accepted', 'vacate_status',
+        'change_bed_request_id', 'preferred_property_id', 'preferred_room_id',
+        'change_reason_id', 'shifting_date', 'change_bed_notes', 'assigned_bed_number',
+        'rent_difference', 'change_bed_admin_notes', 'change_bed_status',
+        'preferred_room_number', 'preferred_property_name', 'change_reason',
+        'leave_request_detail_id', 'leave_type', 'leave_start_date', 'leave_end_date',
+        'total_days', 'contact_address_during_leave', 'emergency_contact_number',
+        'room_locked', 'keys_submitted', 'leave_detail_created_at',
+        'maintenance_request_detail_id', 'issue_category', 'location',
+        'preferred_visit_time', 'access_permission', 'maintenance_resolved_at',
+        'complaint_request_detail_id', 'category_master_type_id', 'reason_master_value_id',
+        'custom_reason', 'complaint_category_name', 'complaint_reason_name',
+        // ADD THIS: Receipt fields to delete
+        'receipt_request_id', 'receipt_type', 'receipt_month', 'receipt_year',
+        'receipt_month_key', 'receipt_amount', 'receipt_status', 'receipt_url'
+      ];
+      
+      fieldsToDelete.forEach(field => delete req[field]);
       
       return req;
     });
@@ -1496,7 +1730,7 @@ delete req.complaint_reason_name; // Add this line
       id: r.id,
       type: r.request_type,
       status: r.status,
-      has_vacate_data: !!r.vacate_data
+      has_receipt_data: !!r.receipt_data
     })));
 
     res.json({
