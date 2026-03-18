@@ -3,7 +3,6 @@ const db = require("../config/db");
 
 exports.getReceiptRequests = async (req, res) => {
   try {
-    console.log('🧾 Fetching receipt requests...');
     
     const sql = `
       SELECT 
@@ -74,7 +73,6 @@ exports.getReceiptRequests = async (req, res) => {
     `;
     
     const [requests] = await db.query(sql);
-    console.log(`✅ Found ${requests.length} receipt requests`);
     
     res.json({
       success: true,
@@ -95,7 +93,6 @@ exports.updateReceiptRequest = async (req, res) => {
     const { id } = req.params;
     const { status, admin_notes } = req.body;
 
-    console.log('🧾 Updating receipt request:', id, 'to status:', status);
 
     if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
       return res.status(400).json({
@@ -186,7 +183,6 @@ exports.bulkDeleteReceiptRequests = async (req, res) => {
       });
     }
     
-    console.log(`🗑️ Bulk deleting receipt requests:`, ids);
     
     // Start a transaction
     const connection = await db.getConnection();

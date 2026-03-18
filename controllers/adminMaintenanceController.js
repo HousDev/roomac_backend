@@ -3,7 +3,6 @@ const notificationController = require("./tenantNotificationController");
 
 exports.getMaintenanceRequests = async (req, res) => {
   try {
-    console.log('🔧 Fetching maintenance requests...');
     
     const sql = `
       SELECT 
@@ -75,10 +74,8 @@ exports.getMaintenanceRequests = async (req, res) => {
         tr.created_at DESC
     `;
     
-    console.log('📋 Executing SQL...');
     
     const [requests] = await db.query(sql);
-    console.log(`✅ Found ${requests.length} maintenance requests`);
     
     // Format the data properly
     const parsedRequests = requests.map(request => {
@@ -142,7 +139,6 @@ exports.bulkDeleteMaintenanceRequests = async (req, res) => {
       });
     }
     
-    console.log(`🗑️ Bulk deleting maintenance requests:`, ids);
     
     // Start a transaction
     const connection = await db.getConnection();
@@ -192,7 +188,6 @@ exports.updateMaintenanceRequest = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    console.log('🔧 Updating maintenance request:', id, updateData);
 
     // Get current maintenance request data to check if status changed
     const [currentRequest] = await db.query(

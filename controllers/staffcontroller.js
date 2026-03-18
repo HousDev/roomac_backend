@@ -15,7 +15,6 @@ const deleteOldFile = (fileUrl) => {
         
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            console.log('Deleted old file:', filePath);
         }
     } catch (error) {
         console.error('Error deleting old file:', error);
@@ -67,7 +66,6 @@ exports.createStaff = async (req, res) => {
     const files = req.files;
     const body = req.body;
 
-    console.log("Creating staff with data:", { ...body, password: '***' });
 
     // Parse boolean fields
     const is_whatsapp_same = body.is_whatsapp_same === 'true' || body.is_whatsapp_same === '1' || body.is_whatsapp_same === true;
@@ -182,8 +180,6 @@ exports.updateStaff = async (req, res) => {
     const { id } = req.params;
     const files = req.files;
     const body = req.body;
-
-    console.log("Updating staff:", id, { ...body, password: body.password ? '***' : undefined });
 
     // Get existing staff data
     const staffModel = require("../models/staffModel");
@@ -375,7 +371,6 @@ exports.deleteDocument = async (req, res) => {
     const { id } = req.params;
     const { documentType } = req.body;
 
-    console.log("Deleting document:", { id, documentType });
 
     if (!documentType || !['aadhar_document', 'pan_document', 'photo'].includes(documentType)) {
       return res.status(400).json({
@@ -397,19 +392,16 @@ exports.deleteDocument = async (req, res) => {
     const fieldName = `${documentType}_url`;
     const fileName = existing[fieldName];
 
-    console.log("Existing document URL:", fileName);
 
     // Delete the file if it exists
     if (fileName) {
       try {
         const filename = path.basename(fileName);
         const filePath = path.join(__dirname, '../uploads/staff-documents', filename);
-        
-        console.log("Attempting to delete file:", filePath);
+  
         
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
-          console.log("File deleted successfully");
         }
       } catch (error) {
         console.error(`Error deleting document file:`, error);
@@ -425,7 +417,6 @@ exports.deleteDocument = async (req, res) => {
       `SELECT ${fieldName} FROM staff WHERE id = ?`,
       [id]
     );
-    console.log(`Current ${fieldName} in DB:`, checkResult[0]?.[fieldName]);
 
     // Update the database directly
     const [updateResult] = await db.query(
@@ -433,7 +424,6 @@ exports.deleteDocument = async (req, res) => {
       [id]
     );
     
-    console.log(`Update result:`, updateResult);
     
     if (updateResult.affectedRows === 0) {
       throw new Error("Database update failed - no rows affected");
@@ -444,7 +434,6 @@ exports.deleteDocument = async (req, res) => {
       `SELECT ${fieldName} FROM staff WHERE id = ?`,
       [id]
     );
-    console.log(`After update - ${fieldName} in DB:`, verifyResult[0]?.[fieldName]);
 
     // Get the updated staff data with all fields
     const updatedStaff = await staffModel.getById(id);
@@ -460,11 +449,7 @@ exports.deleteDocument = async (req, res) => {
       photo_url: updatedStaff.photo_url ? buildFileUrl(updatedStaff.photo_url) : null
     };
 
-    console.log("Sending response data:", {
-      aadhar: responseData.aadhar_document_url,
-      pan: responseData.pan_document_url,
-      photo: responseData.photo_url
-    });
+  
 
     res.json({
       success: true,
@@ -506,12 +491,7 @@ exports.getStaffById = async (req, res) => {
       photo_url: staff.photo_url ? buildFileUrl(path.basename(staff.photo_url)) : null
     };
     
-    console.log("getStaffById response:", {
-      id: responseData.id,
-      aadhar: responseData.aadhar_document_url,
-      pan: responseData.pan_document_url,
-      photo: responseData.photo_url
-    });
+ 
     
     res.json({
       success: true,

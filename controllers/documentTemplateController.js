@@ -10,7 +10,6 @@ const uploadPath = path.join(__dirname, "..", "uploads", "template-logos");
 // Create folders if not exist
 if (!fs.existsSync(uploadPath)) {
   fs.mkdirSync(uploadPath, { recursive: true });
-  console.log("✅ Created template upload directory:", uploadPath);
 }
 
 // Multer configuration
@@ -74,7 +73,6 @@ const deleteLogoFile = (logoUrl) => {
     const filePath = path.join(uploadPath, filename);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log("✅ Deleted logo file:", filename);
     }
   } catch (e) {
     console.error("Error deleting logo file:", e);
@@ -115,8 +113,6 @@ const getById = async (req, res) => {
 // POST /api/document-templates
 const create = async (req, res) => {
   try {
-    console.log("📝 Creating template with body:", req.body);
-    console.log("📎 File uploaded:", req.file);
 
     const { name, category, description, html_content, change_notes } = req.body;
 
@@ -145,7 +141,6 @@ const create = async (req, res) => {
       created_by: req.user?.name || "Admin",
     });
 
-    console.log("✅ Template created with ID:", data.id);
 
     res.status(201).json({
       success: true,
@@ -163,9 +158,6 @@ const create = async (req, res) => {
 // PUT /api/document-templates/:id
 const update = async (req, res) => {
   try {
-    console.log("📝 Updating template ID:", req.params.id);
-    console.log("📎 File uploaded:", req.file);
-    console.log("📦 Body:", req.body);
 
     const existing = await DocumentTemplateModel.getById(req.params.id);
     if (!existing) {
@@ -208,7 +200,6 @@ const update = async (req, res) => {
       last_modified_by: req.user?.name || "Admin",
     });
 
-    console.log("✅ Template updated to version:", data.version);
 
     res.json({
       success: true,

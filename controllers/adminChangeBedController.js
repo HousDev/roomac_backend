@@ -179,9 +179,6 @@ async getChangeBedRequests(req, res) {
     baseQuery += ` LIMIT ? OFFSET ?`;
     queryParams.push(parseInt(limit), offset);
 
-    console.log('Executing query for change bed requests...');
-    console.log('Status filter:', status);
-    console.log('Search filter:', search);
 
     // Execute queries
     const [requests] = await db.query(baseQuery, queryParams);
@@ -190,16 +187,10 @@ async getChangeBedRequests(req, res) {
     const total = countResult[0]?.total || 0;
     const totalPages = Math.ceil(total / limit);
 
-    console.log(`Found ${requests.length} change bed requests out of ${total} total`);
 
     // Format the response
     const formattedRequests = requests.map(req => {
-      // Log each request's data for debugging
-      console.log(`Request ID ${req.tenant_request_id}:`, {
-        change_reason_id: req.change_reason_id,
-        change_reason: req.change_reason,
-        change_reason_category: req.change_reason_category
-      });
+ 
 
       // Calculate rent difference
       let rentDifference = req.rent_difference;
@@ -284,8 +275,6 @@ async getChangeBedRequests(req, res) {
 async getChangeBedRequestById(req, res) {
   try {
     const { id } = req.params;
-
-    console.log(`🔍 Getting change bed request details for ID: ${id}`);
 
     const query = `
       SELECT 
@@ -397,13 +386,7 @@ async getChangeBedRequestById(req, res) {
     }
 
     const request = requests[0];
-    
-    console.log('📊 Raw data for request:', {
-      id: request.id,
-      change_reason_id: request.change_reason_id,
-      change_reason: request.change_reason,
-      change_reason_category: request.change_reason_category
-    });
+  
 
     // Calculate rent difference
     let rentDifference = request.rent_difference;
@@ -467,7 +450,6 @@ async getChangeBedRequestById(req, res) {
       tenant_phone: request.tenant_phone
     };
 
-    console.log('✅ Sending response with change reason:', response.change_reason);
     
     res.json({
       success: true,
@@ -494,8 +476,6 @@ async bulkDeleteChangeBedRequests(req, res) {
         message: "Please provide an array of request IDs to delete"
       });
     }
-
-    console.log(`🗑️ Bulk deleting change bed requests:`, ids);
 
     // Start a transaction
     await db.query('START TRANSACTION');
@@ -525,7 +505,6 @@ async bulkDeleteChangeBedRequests(req, res) {
 
       await db.query('COMMIT');
 
-      console.log(`✅ Successfully deleted ${result.affectedRows} change bed requests`);
 
       res.json({
         success: true,
@@ -564,8 +543,6 @@ async updateRequestStatus(req, res) {
       process_request = false
     } = req.body;
 
-    console.log('📝 Updating change bed request:', { id, request_status, assigned_bed_number, rent_difference, admin_notes });
-
     // Get current request data with tenant info
     const [requestData] = await db.query(
       `SELECT cbr.*, tr.tenant_id, tr.id as tenant_request_id 
@@ -585,13 +562,6 @@ async updateRequestStatus(req, res) {
     const currentRequest = requestData[0];
     const oldStatus = currentRequest.request_status;
     const tenantId = currentRequest.tenant_id;
-
-    console.log('📊 Current request:', {
-      id: currentRequest.id,
-      tenant_id: tenantId,
-      old_status: oldStatus,
-      new_status: request_status
-    });
 
     // Start transaction
     await db.query('START TRANSACTION');
@@ -646,7 +616,6 @@ async updateRequestStatus(req, res) {
           admin_notes,
           { assigned_bed_number, rent_difference }
         );
-        console.log(`✅ Notification sent to tenant ${tenantId}`);
       } catch (notifError) {
         console.error('❌ Failed to send notification:', notifError);
         // Don't fail the request if notification fails
@@ -674,14 +643,6 @@ async updateRequestStatus(req, res) {
   // NEW METHOD: Send status notification
 // Send status notification
 async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNotes, requestData, status) {
-  console.log('========================================');
-  console.log('📨 SEND STATUS NOTIFICATION CALLED');
-  console.log('Request ID:', requestId);
-  console.log('Tenant ID:', tenantId);
-  console.log('Old Status:', oldStatus);
-  console.log('New Status:', newStatus);
-  console.log('Admin Notes:', adminNotes);
-  console.log('========================================');
 
   // Verify tenant exists
   const [tenantCheck] = await db.query(
@@ -694,7 +655,6 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
     return null;
   }
   
-  console.log(`✅ Tenant verified: ${tenantCheck[0].full_name} (ID: ${tenantCheck[0].id})`);
 
 
   const statusMessages = {
@@ -727,13 +687,8 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
   const notification = statusMessages[newStatus];
   
   if (!notification) {
-    console.error(`❌ No message defined for status: ${status}`);
     return null;
   }
-
-  console.log('📨 Notification to create:');
-  console.log('  - Title:', notification.title);
-  console.log('  - Message:', notification.message);
 
   // Add rent difference info if available
   if (status === 'approved' && requestData.rent_difference) {
@@ -745,13 +700,12 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
         : ' Your rent will remain the same.';
     
     notification.message += diffText;
-    console.log('  - Added rent difference:', diffText);
   }
 
   // Add assigned bed info if available
   if (status === 'approved' && requestData.assigned_bed_number) {
     notification.message += ` Bed number ${requestData.assigned_bed_number} has been reserved for you.`;
-    console.log('  - Added bed assignment info');
+
   }
 
   try {
@@ -779,21 +733,16 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
       status === 'approved' ? 'high' : (status === 'rejected' ? 'medium' : 'low')
     ];
     
-    console.log('📝 Executing SQL:', sql);
-    console.log('📝 With params:', params);
+
     
     const [result] = await db.query(sql, params);
-    
-    console.log('✅ Notification inserted successfully!');
-    console.log('✅ Insert ID:', result.insertId);
+
     
     // Verify the notification was inserted
     const [verify] = await db.query(
       'SELECT * FROM notifications WHERE id = ?',
       [result.insertId]
     );
-    
-    console.log('✅ Verified notification in DB:', verify[0]);
     
     return result.insertId;
   } catch (error) {
@@ -861,8 +810,6 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
           tenantId
         ]
       );
-
-      console.log(`✅ Bed change processed for tenant ${tenantId}`);
 
     } catch (error) {
       console.error('Error processing bed change:', error);

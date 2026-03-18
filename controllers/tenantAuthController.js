@@ -30,7 +30,6 @@ class TenantAuthController {
   // Login with email and password
  static async login(req, res) {
   try {
-    console.log('🔍 Login attempt:', req.body);
 
     const { email, password } = req.body;
 
@@ -120,7 +119,6 @@ class TenantAuthController {
       'SELECT * FROM users WHERE email = ? ',
       [email]
     );
-    console.log(admins)
     if (admins.length === 0) {
       return res.status(401).json({
         success: false,
@@ -189,7 +187,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 OTP request for:', email);
 
       // Check if tenant has credential and portal access
       const credential = await TenantCredential.findByEmail(email);
@@ -229,7 +226,6 @@ if (admin.is_active == 0) {
       });
 
       // In production: Send OTP via email/SMS
-      console.log(`OTP for ${email}: ${otp}`);
 
       res.json({
         success: true,
@@ -258,7 +254,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 OTP verification for:', email);
 
       // Get stored OTP
       const storedData = otpStore.get(email);
@@ -308,7 +303,6 @@ if (admin.is_active == 0) {
       // Clear OTP after successful verification
       otpStore.delete(email);
 
-      console.log('✅ OTP login successful for tenant:', tenantId);
 
       res.json({
         success: true,
@@ -341,7 +335,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 Getting profile for tenant:', tenantId);
 
       const [tenant] = await db.query(
         `SELECT t.*, tc.email as credential_email
@@ -397,7 +390,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 Password change request for tenant:', tenantId);
 
       // Get current credential
       const credential = await TenantCredential.findByTenantId(tenantId);
@@ -421,7 +413,6 @@ if (admin.is_active == 0) {
       const updated = await TenantCredential.updatePassword(tenantId, newPassword);
 
       if (updated) {
-        console.log('✅ Password updated for tenant:', tenantId);
         res.json({
           success: true,
           message: 'Password updated successfully'
@@ -454,7 +445,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 Password reset request for:', email);
 
       // Check if tenant exists and has active credential
       const credential = await TenantCredential.findByEmail(email);
@@ -479,7 +469,6 @@ if (admin.is_active == 0) {
 
       // In production: Send email with reset link
       // Example: https://yourdomain.com/tenant/reset-password?token=xyz
-      console.log(`Reset token for ${email}: ${resetToken}`);
 
       res.json({
         success: true,
@@ -508,7 +497,6 @@ if (admin.is_active == 0) {
         });
       }
 
-      console.log('🔍 Password reset with token');
 
       // Verify token
       let decoded;
@@ -533,7 +521,6 @@ if (admin.is_active == 0) {
       const updated = await TenantCredential.updatePassword(decoded.tenantId, newPassword);
 
       if (updated) {
-        console.log('✅ Password reset successful for tenant:', decoded.tenantId);
         res.json({
           success: true,
           message: 'Password reset successfully'
@@ -557,7 +544,6 @@ if (admin.is_active == 0) {
 // Logout
   static async logout(req, res) {
     try {
-      console.log('🔍 Tenant logout:', req.user?.tenantId);
       
       res.json({
         success: true,
@@ -603,7 +589,6 @@ if (admin.is_active == 0) {
 
  static async test(req, res) {
     try {
-      console.log('✅ Tenant Auth Test endpoint called');
       res.json({
         success: true,
         message: 'Tenant Auth API is working!',

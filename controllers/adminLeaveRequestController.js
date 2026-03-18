@@ -17,8 +17,6 @@ class LeaveRequestController {
         });
       }
 
-      console.log('📋 Admin fetching leave requests...');
-
       // Extract query parameters
       const {
         status = 'all',
@@ -93,7 +91,6 @@ class LeaveRequestController {
         return request;
       });
 
-      console.log(`✅ Found ${formattedRequests.length} leave requests`);
 
       res.json({
         success: true,
@@ -129,7 +126,6 @@ class LeaveRequestController {
         });
       }
 
-      console.log(`📋 Fetching leave request ${requestId}...`);
 
       const request = await LeaveRequestModel.findById(requestId);
 
@@ -212,7 +208,6 @@ async bulkDeleteLeaveRequests(req, res) {
       });
     }
 
-    console.log(`🗑️ Admin ${admin_id} bulk deleting leave requests:`, ids);
 
     // Start a transaction
     await db.query('START TRANSACTION');
@@ -232,7 +227,6 @@ async bulkDeleteLeaveRequests(req, res) {
 
       await db.query('COMMIT');
 
-      console.log(`✅ Successfully deleted ${result.affectedRows} leave requests`);
 
       res.json({
         success: true,
@@ -280,7 +274,6 @@ async updateLeaveRequestStatus(req, res) {
       });
     }
 
-    console.log(`🔄 Admin ${admin_id} updating leave request ${requestId} to ${status}`);
 
     // Check if request exists and get current status
     const request = await LeaveRequestModel.findById(requestId);
@@ -313,7 +306,6 @@ async updateLeaveRequestStatus(req, res) {
             status,
             admin_notes // Pass admin notes
           );
-          console.log(`📨 Notification sent to tenant ${request.tenant_id} for leave request ${requestId}`);
         } catch (notifError) {
           console.error('❌ Failed to send notification:', notifError);
           // Don't fail the main operation if notification fails
@@ -322,7 +314,6 @@ async updateLeaveRequestStatus(req, res) {
 
       await db.query('COMMIT');
 
-      console.log(`✅ Leave request ${requestId} updated to ${status}`);
 
       res.json({
         success: true,

@@ -66,7 +66,6 @@ async bulkDeleteDeletionRequests(req, res) {
       });
     }
 
-    console.log(`🗑️ Admin ${adminId} bulk deleting deletion requests:`, ids);
 
     // Start transaction
     await db.query('START TRANSACTION');
@@ -80,7 +79,6 @@ async bulkDeleteDeletionRequests(req, res) {
 
       await db.query('COMMIT');
 
-      console.log(`✅ Successfully deleted ${result.affectedRows} deletion requests`);
 
       res.json({
         success: true,

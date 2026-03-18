@@ -83,7 +83,6 @@ const deleteFiles = (filePaths, isVideo = false) => {
       const filePath = path.join(basePath, filename);
       if (fs.existsSync(filePath)) {
         fs.unlink(filePath, (err) => {
-          if (err) console.error(`Error deleting file ${filename}:`, err);
         });
       }
     }
@@ -158,7 +157,6 @@ async getRoomsByPropertyId(req, res) {
   try {
     const { propertyId } = req.params;
     
-    console.log(`Getting rooms for property ID: ${propertyId}`);
     
     // Validate propertyId
     if (!propertyId || isNaN(propertyId)) {
@@ -170,7 +168,6 @@ async getRoomsByPropertyId(req, res) {
     
     const rooms = await RoomModel.findByPropertyId(parseInt(propertyId));
     
-    console.log(`Found ${rooms.length} rooms for property ${propertyId}`);
     
     // Filter to only show active rooms
     const activeRooms = rooms.filter(room => room.is_active);
@@ -197,8 +194,6 @@ async createRoom(req, res) {
   try {
     const body = req.body || {};
 
-    console.log("Received body:", body); // Add this to debug
-       console.log("Raw beds_config from body:", body.beds_config); // Add this debug line
     const {
       property_id,
       room_number,
@@ -219,7 +214,6 @@ async createRoom(req, res) {
       beds_config = "[]"
     } = body;
 
-    console.log("Destructured room_type:", room_type); // Add this to debug
 
     if (
       property_id === undefined ||
@@ -265,8 +259,6 @@ async createRoom(req, res) {
       video_url = req.compressedVideo.path;
     }
 
-     console.log("beds_config extracted:", beds_config);
-
     // Parse beds_config - with better error handling
     let bedsConfigArray = [];
     if (beds_config) {
@@ -279,24 +271,13 @@ async createRoom(req, res) {
         else if (Array.isArray(beds_config)) {
           bedsConfigArray = beds_config;
         }
-        console.log("Parsed beds_config array:", bedsConfigArray);
       } catch (e) {
         console.error("Error parsing beds_config:", e);
         bedsConfigArray = [];
       }
     }
 
-    console.log("Creating room with data:", {
-      property_id,
-      room_number,
-      sharing_type,
-      room_type, // This should now show 'corner room'
-      total_beds,
-      floor,
-      rent_per_bed,
-      room_gender_preference,
-       beds_config: bedsConfigArray 
-    });
+
 
     const roomId = await RoomModel.create({
       property_id: parseInt(property_id),
@@ -344,11 +325,9 @@ async updateRoom(req, res) {
 
     const body = req.body || {};
     const roomId = req.params.id;
-    console.log(req.body)
 
     // Fetch existing room
     const existingRoom = await RoomModel.findById(roomId);
-    console.log("existing room data", existingRoom)
 
     if (!existingRoom) {
       return res.status(404).json({
@@ -362,7 +341,6 @@ async updateRoom(req, res) {
     if (body.beds_config) {
       try {
         bedsConfigArray = JSON.parse(body.beds_config);
-        console.log("Parsed beds_config for update:", bedsConfigArray);
       } catch (e) {
         console.error("Error parsing beds_config for update:", e);
       }
@@ -374,23 +352,19 @@ async updateRoom(req, res) {
 
     let currentPhotos = existingRoom.photo_urls || [];
 
-    console.log("current photos", currentPhotos)
 
     // Remove selected photos
     let photosToRemove = [];
     try {
-      console.log("body of remove ",body.remove_photos)
       photosToRemove = JSON.parse(body.remove_photos || "[]");
     } catch {}
 
-    console.log("---- REMOVE CHECK ----");
 
 
     // if (photosToRemove.length) {
     //   const removeNames = photosToRemove.map(p => p.url || p);
     //   currentPhotos = currentPhotos.filter(p => !removeNames.includes(p.url || p));
     // }
-    console.log("before photos to remove ", photosToRemove.length)
 if (photosToRemove.length) {
 
   const extractPath = (url) => {
@@ -410,21 +384,15 @@ if (photosToRemove.length) {
     return extractPath(raw);
   });
 
-  console.log("REMOVE LIST CLEAN:", removeList);
 
   const keptPhotos = [];
-  console.log("CURRENT PHOTOS:", currentPhotos);
-  console.log("REMOVE PHOTOS:", removeList);
 
   for (const photo of currentPhotos) {
 
     const photoPath = extractPath(photo.url);
     
-console.log("CHECKING PHOTO:", photoPath);
-console.log("REMOVE LIST:", removeList);
     const shouldRemove = removeList.includes(photoPath);
 
-    console.log("CHECK:", photoPath, "REMOVE?", shouldRemove);
 
     if (shouldRemove) {
 
@@ -432,7 +400,6 @@ console.log("REMOVE LIST:", removeList);
 
       if (fs.existsSync(fullPath)) {
         fs.unlinkSync(fullPath);
-        console.log("🗑 Deleted file:", fullPath);
       }
 
     } else {
@@ -468,7 +435,6 @@ if (req.compressedPhotos?.length) {
   });
 }
 
-console.log("Photos:", req.compressedPhotos);
 
 
     // =====================
@@ -497,7 +463,6 @@ console.log("Photos:", req.compressedPhotos);
     if (req.compressedVideo) {
   video_url = req.compressedVideo.path;
 }
-console.log("Video:", req.compressedVideo);
 
 
     // =====================
@@ -633,7 +598,6 @@ console.log("Video:", req.compressedVideo);
       const conn = connection || db;
       
       try {
-          console.log(`[DEBUG] updateRoomOccupants for room ${roomId}`);
           
           // First, get all occupied beds with gender
           const [occupiedBeds] = await conn.query(
@@ -649,7 +613,6 @@ console.log("Video:", req.compressedVideo);
             // Extract genders
             const genders = occupiedBeds.map(bed => bed.tenant_gender);
             
-            console.log(`[DEBUG] Found ${occupiedCount} occupied beds, genders:`, genders);
             
             // Convert to JSON string safely
             const gendersJson = JSON.stringify(genders);
@@ -662,8 +625,6 @@ console.log("Video:", req.compressedVideo);
                 WHERE id = ?`,
                 [occupiedCount, gendersJson, roomId]
             );
-            
-            console.log(`[DEBUG] Updated room ${roomId} to ${occupiedCount} occupied beds`);
             
             return occupiedCount;
             
@@ -735,9 +696,7 @@ async assignBed(req, res) {
   try {
     const { room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple } = req.body;
     
-    console.log('[CONTROLLER] assignBed request - FULL BODY:', req.body);
-    console.log('[CONTROLLER] tenant_rent received:', tenant_rent, 'type:', typeof tenant_rent);
-    console.log('[CONTROLLER] is_couple received:', is_couple, 'type:', typeof is_couple);
+ 
     
     // Validate required fields
     if (!room_id || !bed_number || !tenant_id || !tenant_gender) {
@@ -773,14 +732,7 @@ async assignBed(req, res) {
       }
     }
     
-    console.log('[CONTROLLER] Processed values:', {
-      roomId,
-      bedNumber,
-      tenantId,
-      tenant_gender,
-      customRent,
-      coupleStatus
-    });
+   
     
     if (isNaN(roomId) || isNaN(bedNumber) || isNaN(tenantId)) {
       return res.status(400).json({
@@ -808,8 +760,7 @@ async assignBed(req, res) {
     });
     
   } catch (err) {
-    console.error("[CONTROLLER] assignBed error:", err.message);
-    console.error("[CONTROLLER] Full error:", err);
+   
     
     // Handle specific errors
     let status = 400;
@@ -836,9 +787,6 @@ async updateBedAssignment(req, res) {
     const { id } = req.params; // bed assignment ID
     const { tenant_id, tenant_gender, is_available, vacate_reason, tenant_rent, is_couple } = req.body;
     
-    console.log('[CONTROLLER] updateBedAssignment FULL BODY:', req.body);
-    console.log('[CONTROLLER] tenant_rent received:', tenant_rent, 'type:', typeof tenant_rent);
-    console.log('[CONTROLLER] is_couple received:', is_couple, 'type:', typeof is_couple);
     
     if (!id) {
       return res.status(400).json({
@@ -883,7 +831,6 @@ async updateBedAssignment(req, res) {
         const rentValue = parseFloat(tenant_rent);
         processedData.tenant_rent = isNaN(rentValue) ? null : rentValue;
       }
-      console.log('[CONTROLLER] Processed tenant_rent:', processedData.tenant_rent);
     }
     
     // FIX: Add is_couple to processedData
@@ -896,10 +843,8 @@ async updateBedAssignment(req, res) {
       } else {
         processedData.is_couple = Boolean(is_couple);
       }
-      console.log('[CONTROLLER] Processed is_couple:', processedData.is_couple);
     }
     
-    console.log('[CONTROLLER] Final processed data:', processedData);
     
     // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
@@ -964,7 +909,6 @@ async getAvailableBeds(req, res) {
     const { id } = req.params;
     const { gender } = req.query;
     
-    console.log(`[CONTROLLER] getAvailableBeds for room ${id}, gender: ${gender}`);
     
     if (!id) {
       return res.status(400).json({
@@ -1092,7 +1036,6 @@ async testTenants(req, res) {
                 });
             }
 
-            console.log(`🛏️ Getting available beds for room ID: ${roomId}`);
 
             // Get all beds for the room
             const [allBeds] = await db.query(
@@ -1134,7 +1077,6 @@ async testTenants(req, res) {
                 bedNumber => !occupiedBedNumbers.includes(bedNumber)
             );
 
-            console.log(`✅ Found ${availableBeds.length} available beds out of ${totalBeds} total beds`);
 
             res.json({
                 success: true,
@@ -1185,7 +1127,6 @@ async bulkUpdateRooms(req, res) {
     });
 
   } catch (err) {
-    console.error("bulkUpdateRooms error:", err);
 
     // Foreign key constraint handling
     if (
@@ -1249,7 +1190,6 @@ async getFilteredRooms(req, res) {
 
  async import(req, res) {
     try {
-      console.log("📥 Room import request received");
       
       if (!req.file) {
         return res.status(400).json({
@@ -1258,7 +1198,6 @@ async getFilteredRooms(req, res) {
         });
       }
 
-      console.log("📁 File received:", req.file.originalname);
 
       // Read Excel file
       const workbook = XLSX.readFile(req.file.path);
@@ -1266,7 +1205,6 @@ async getFilteredRooms(req, res) {
       const worksheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(worksheet);
 
-      console.log(`📊 Found ${data.length} rows in Excel`);
 
       const created = [];
       const errors = [];
@@ -1279,7 +1217,6 @@ async getFilteredRooms(req, res) {
         const row = data[i];
         const rowNum = i + 2; // +2 for header row
 
-        console.log(`🔍 Processing row ${rowNum}:`, row);
 
         try {
           // Validate required fields
@@ -1379,7 +1316,6 @@ async getFilteredRooms(req, res) {
             video_url: null
           };
 
-          console.log(`✅ Creating room:`, roomData);
 
           // Create room
           const roomId = await RoomModel.create(roomData);
@@ -1399,12 +1335,10 @@ async getFilteredRooms(req, res) {
       // Clean up uploaded file
       try {
         fs.unlinkSync(req.file.path);
-        console.log("✅ Temporary file deleted");
       } catch (err) {
         console.error("Error deleting temp file:", err);
       }
 
-      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
 
       return res.json({
         success: true,

@@ -4,7 +4,6 @@ class ChangeBedController {
   // 1. Get change reasons
   static async getChangeReasons(req, res) {
     try {
-      console.log(`[CONTROLLER] Getting change reasons`);
       const reasons = await ChangeBedModel.getChangeReasons();
       
       res.json({
@@ -24,7 +23,6 @@ class ChangeBedController {
   // 2. Get sharing types
   static async getSharingTypes(req, res) {
     try {
-      console.log(`[CONTROLLER] Getting sharing types`);
       const sharingTypes = await ChangeBedModel.getSharingTypes();
       
       res.json({
@@ -45,7 +43,6 @@ class ChangeBedController {
   static async getCurrentAssignment(req, res) {
     try {
       const { tenantId } = req.params;
-      console.log(`[CONTROLLER] Getting current assignment for tenant ${tenantId}`);
       
       if (!tenantId) {
         return res.status(400).json({
@@ -72,58 +69,11 @@ class ChangeBedController {
     }
   }
 
-  // 4. Get compatible rooms
-  // static async getCompatibleRooms(req, res) {
-  //   try {
-  //     const { tenantId, sharingType, propertyId } = req.query;
-  //     console.log(`[CONTROLLER] Getting compatible rooms for tenant ${tenantId}, sharing: ${sharingType}, property: ${propertyId}`);
-      
-  //     if (!tenantId) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Tenant ID is required"
-  //       });
-  //     }
-
-  //     const rooms = await ChangeBedModel.getCompatibleRooms({
-  //       tenantId: parseInt(tenantId),
-  //       sharingType: sharingType || null,
-  //       propertyId: propertyId ? parseInt(propertyId) : null
-  //     });
-
-  //     // Also get current assignment for context
-  //     let currentAssignment;
-  //     try {
-  //       currentAssignment = await ChangeBedModel.getCurrentAssignment(parseInt(tenantId));
-  //     } catch (error) {
-  //       console.log('[CONTROLLER] Could not fetch current assignment:', error.message);
-  //       currentAssignment = null;
-  //     }
-      
-  //     res.json({
-  //       success: true,
-  //       data: {
-  //         current_assignment: currentAssignment,
-  //         compatible_rooms: rooms,
-  //         total_rooms_found: rooms.length
-  //       },
-  //       message: "Compatible rooms fetched successfully"
-  //     });
-  //   } catch (error) {
-  //     console.error('[CONTROLLER] Error getting compatible rooms:', error);
-  //     res.status(500).json({
-  //       success: false,
-  //       message: error.message || 'Failed to fetch compatible rooms'
-  //     });
-  //   }
-  // }
-  // In getCompatibleRooms controller method
-// In changeBedController.js, modify getCompatibleRooms method:
+ 
 
 static async getCompatibleRooms(req, res) {
   try {
     const { tenantId, sharingType, propertyId } = req.query;
-    console.log(`\n🔍 [CONTROLLER] Getting compatible rooms for tenant ${tenantId}`);
     
     if (!tenantId) {
       return res.status(400).json({
@@ -142,15 +92,13 @@ static async getCompatibleRooms(req, res) {
     const fixedRooms = rooms.map(room => {
       // If DB says room has occupied beds but our calculation says 0, use DB value
       if (room.occupied_beds > 0 && room.occupants_count === 0) {
-        console.log(`⚠️ [CONTROLLER FIX] Room ${room.room_number}: DB has ${room.occupied_beds} occupied beds, but calculation shows 0`);
-        console.log(`   Using DB value: ${room.occupied_beds}`);
+
         
         // Update occupants_count to match DB
         room.occupants_count = room.occupied_beds;
         
         // If we have current_occupants data but count is wrong, log it
         if (room.current_occupants && room.current_occupants.length > 0) {
-          console.log(`   But current_occupants has ${room.current_occupants.length} entries!`);
           console.log('   Occupants:', room.current_occupants.map(o => ({
             name: o.full_name,
             bed: o.bed_number
@@ -169,8 +117,6 @@ static async getCompatibleRooms(req, res) {
       currentAssignment = null;
     }
     
-    // Log final results
-    console.log(`\n✅ [CONTROLLER FINAL] Returning ${fixedRooms.length} rooms:`);
     fixedRooms.forEach(room => {
       console.log(`   Room ${room.room_number}: ${room.occupants_count} occupants`);
     });
@@ -197,7 +143,6 @@ static async getCompatibleRooms(req, res) {
   static async getAvailableBeds(req, res) {
     try {
       const { roomId } = req.query;
-      console.log(`[CONTROLLER] Getting all beds for room ${roomId}`);
       
       if (!roomId) {
         return res.status(400).json({
@@ -244,7 +189,6 @@ static async getCompatibleRooms(req, res) {
   static async calculateRentDifference(req, res) {
     try {
       const { oldRoomId, newRoomId } = req.query;
-      console.log(`[CONTROLLER] Calculating rent difference: old=${oldRoomId}, new=${newRoomId}`);
       
       if (!oldRoomId || !newRoomId) {
         return res.status(400).json({
@@ -285,12 +229,7 @@ static async getCompatibleRooms(req, res) {
         notes
       } = req.body;
       
-      console.log(`[CONTROLLER] Executing bed change:`, {
-        tenantId,
-        currentAssignmentId,
-        newRoomId,
-        newBedNumber
-      });
+      
 
       // Validate required fields
       if (!tenantId || !currentAssignmentId || !newRoomId || !newBedNumber) {

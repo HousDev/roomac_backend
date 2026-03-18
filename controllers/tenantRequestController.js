@@ -125,7 +125,6 @@ async createReceiptRequest(req, res) {
       );
 
       const requestId = result.insertId;
-      console.log(`✅ Receipt request created with ID: ${requestId}`);
 
       // Create receipt request details
       const [receiptResult] = await db.query(
@@ -148,7 +147,6 @@ async createReceiptRequest(req, res) {
         ]
       );
 
-      console.log(`✅ Receipt request details created with ID: ${receiptResult.insertId}`);
 
       // Create notification for admin
       const notificationTitle = receipt_type === 'rent'
@@ -205,7 +203,6 @@ async createReceiptRequest(req, res) {
 
 
 async createRequest(req, res) {
-  console.log('🎯 createRequest called with FULL body:', JSON.stringify(req.body, null, 2));
   try {
     const tenant_id = req.user?.id;
     if (!tenant_id) {
@@ -235,7 +232,6 @@ async createRequest(req, res) {
 
     // 🚨 CRITICAL: CHECK FOR EXISTING PENDING VACATE REQUESTS
     if (request_type === 'vacate_bed') {
-      console.log('🔍 Checking for existing vacate_bed requests...');
       
       const [existingRequests] = await db.query(
         `SELECT tr.id, tr.status, tr.title, tr.created_at,
@@ -251,7 +247,6 @@ async createRequest(req, res) {
         [tenant_id]
       );
 
-      console.log('📋 Found existing vacate requests:', existingRequests.length);
 
       // if (existingRequests.length > 0) {
       //   const existingRequest = existingRequests[0];
@@ -310,13 +305,7 @@ async createRequest(req, res) {
 
     const tenantData = tenantInfo[0];
     
-    console.log('📊 Tenant details loaded:', {
-      tenant_name: tenantData.full_name,
-      property_id: tenantData.property_id,
-      bed_assignment_id: tenantData.bed_assignment_id,
-      room_id: tenantData.room_id,
-      bed_number: tenantData.bed_number
-    });
+    
 
     // Check lock-in period for vacate_bed request
     let lockinDetails = null;
@@ -356,8 +345,6 @@ async createRequest(req, res) {
             tenantData.security_deposit
           )
         };
-        
-        console.log('🔒 Lock-in details:', lockinDetails);
       }
 
       // Notice period details
@@ -382,7 +369,6 @@ async createRequest(req, res) {
           requiresAgreement: !!tenantData.notice_penalty_amount
         };
         
-        console.log('📋 Notice details:', noticeDetails);
       }
 
       // Validate penalty agreements if required
@@ -410,7 +396,6 @@ async createRequest(req, res) {
     // Validate change bed request data
     if (request_type === 'change_bed' && change_bed_data) {
       
-        console.log('✅ change_bed_data is already an object:', typeof change_bed_data, change_bed_data);
 
       // Validate required fields for change bed
       const requiredFields = [
@@ -488,18 +473,15 @@ async createRequest(req, res) {
       );
 
       const requestId = result.insertId;
-      console.log(`✅ Tenant request created with ID: ${requestId}`);
 
       // ====================================================
       // 🚨 LEAVE REQUEST VALIDATION AND CREATION
       // ====================================================
       if (request_type === 'leave') {
-        console.log('🏖️ Creating leave request...');
         
         // Validate leave request data
         const leaveData = req.body.leave_data || {};
         
-        console.log('📋 Leave data received:', leaveData);
 
         // Validate required fields for leave
         const requiredLeaveFields = [
@@ -525,16 +507,7 @@ async createRequest(req, res) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        console.log('🔍 DEBUG Date Values:', {
-          startDate: startDate,
-          endDate: endDate,
-          today: today,
-          startDateString: leaveData.leave_start_date,
-          todayString: new Date().toISOString().split('T')[0],
-          startDateTimestamp: startDate.getTime(),
-          todayTimestamp: today.getTime(),
-          isPast: startDate < today
-        });
+        
 
         if (startDate < today) {
           await db.query('ROLLBACK');
@@ -600,7 +573,6 @@ async createRequest(req, res) {
             ]
           );
 
-          console.log(`✅ Leave request details created with ID: ${leaveResult.insertId}`);
 
         } catch (leaveError) {
           console.error('❌ Error creating leave request details:', leaveError);
@@ -613,11 +585,9 @@ async createRequest(req, res) {
       // 🚨 COMPLAINT REQUEST CREATION
       // ====================================================
       if (request_type === 'complaint') {
-        console.log('📢 Creating complaint request...');
         
         const complaintData = req.body.complaint_data || {};
         
-        console.log('📋 Complaint data received:', complaintData);
         
         // Validate required fields for complaint
         if (!complaintData.category_master_type_id) {
@@ -656,7 +626,6 @@ async createRequest(req, res) {
             ]
           );
 
-          console.log(`✅ Complaint request details created with ID: ${complaintResult.insertId}`);
 
         } catch (complaintError) {
           console.error('❌ Error creating complaint request details:', complaintError);
@@ -671,9 +640,7 @@ async createRequest(req, res) {
 // In your createRequest function, replace the change bed section with this:
 
 if (request_type === 'change_bed' && change_bed_data) {
-  console.log('🛏️ ===== CREATING CHANGE BED REQUEST =====');
-  console.log('📋 Full change_bed_data:', JSON.stringify(change_bed_data, null, 2));
-  console.log('📝 Request ID:', requestId);
+
   
   try {
     // Extract data
@@ -689,17 +656,7 @@ if (request_type === 'change_bed' && change_bed_data) {
       preferred_bed_number
     } = change_bed_data;
     
-    console.log('📊 Extracted values:', {
-      preferred_property_id,
-      preferred_room_id,
-      change_reason_id,
-      shifting_date,
-      notes,
-      current_property_id,
-      current_room_id,
-      current_bed_number,
-      preferred_bed_number
-    });
+    
     
     // Validate required fields
     const requiredFields = [
@@ -711,7 +668,6 @@ if (request_type === 'change_bed' && change_bed_data) {
     
     for (const req of requiredFields) {
       if (!req.value) {
-        console.error(`❌ Missing required field: ${req.field}`);
         await db.query('ROLLBACK');
         return res.status(400).json({
           success: false,
@@ -721,7 +677,6 @@ if (request_type === 'change_bed' && change_bed_data) {
     }
     
     // Get current room info
-    console.log('🔍 Getting current room info for tenant:', tenant_id);
     const [currentRoom] = await db.query(
       `SELECT 
         r.property_id,
@@ -734,12 +689,10 @@ if (request_type === 'change_bed' && change_bed_data) {
       [tenant_id]
     );
     
-    console.log('📍 Current room query result:', currentRoom);
     
     let currentRoomInfo = {};
     if (currentRoom && currentRoom.length > 0) {
       currentRoomInfo = currentRoom[0];
-      console.log('📍 Using current room from DB:', currentRoomInfo);
     } else {
       console.warn('⚠️ No current room assignment, using provided values');
       currentRoomInfo = {
@@ -751,14 +704,12 @@ if (request_type === 'change_bed' && change_bed_data) {
     }
     
     // Get reason text
-    console.log('🔍 Getting reason text for ID:', change_reason_id);
     const [reasonRows] = await db.query(
       'SELECT name FROM master_item_values WHERE id = ?',
       [change_reason_id]
     );
     
     if (!reasonRows || reasonRows.length === 0) {
-      console.error('❌ Change reason ID not found in master_item_values:', change_reason_id);
       await db.query('ROLLBACK');
       return res.status(400).json({
         success: false,
@@ -767,7 +718,6 @@ if (request_type === 'change_bed' && change_bed_data) {
     }
     
     const reasonText = reasonRows[0].name;
-    console.log('✅ Reason text:', reasonText);
     
     // Prepare insert data
     const insertData = {
@@ -783,8 +733,6 @@ if (request_type === 'change_bed' && change_bed_data) {
       shifting_date: shifting_date,
       notes: notes || null
     };
-    
-    console.log('📝 Insert data prepared:', insertData);
     
     // Perform insert
     const [changeBedResult] = await db.query(
@@ -818,7 +766,6 @@ if (request_type === 'change_bed' && change_bed_data) {
       ]
     );
     
-    console.log(`✅ SUCCESS: Change bed request inserted with ID:`, changeBedResult);
     
   } catch (insertError) {
     console.error('❌ ERROR inserting change bed request:');
@@ -855,24 +802,7 @@ if (request_type === 'change_bed' && change_bed_data) {
           notice_penalty_accepted = false
         } = vacate_data;
 
-        console.log('📝 Creating vacate_bed_request record with data:', {
-          tenant_id,
-          property_id: tenantData.property_id,
-          bed_id: tenantData.bed_assignment_id,
-          room_id: tenantData.room_id,
-          primary_reason_id,
-          primary_reason_name,
-          secondary_reasons,
-          overall_rating,
-          food_rating,
-          cleanliness_rating,
-          management_rating,
-          improvement_suggestions,
-          expected_vacate_date,
-          lockin_penalty_accepted,
-          notice_penalty_accepted,
-          tenant_request_id: requestId
-        });
+
 
      await db.query(
   `INSERT INTO vacate_bed_requests (
@@ -916,7 +846,6 @@ if (request_type === 'change_bed' && change_bed_data) {
   ]
 );
 
-        console.log('✅ vacate_bed_request record created successfully');
       }
 
       // In your createRequest method, after the other request types
@@ -926,11 +855,9 @@ if (request_type === 'change_bed' && change_bed_data) {
 // 🚨 RECEIPT REQUEST CREATION
 // ====================================================
 if (request_type === 'receipt') {
-  console.log('📄 Creating receipt request...');
   
   const receiptData = req.body.receipt_data || {};
   
-  console.log('📋 Receipt data received:', receiptData);
   
   // Validate receipt data
   if (!receiptData.receipt_type) {
@@ -970,8 +897,6 @@ if (request_type === 'receipt') {
         receiptData.amount || null
       ]
     );
-
-    console.log(`✅ Receipt request details created with ID: ${receiptResult.insertId}`);
 
     // Create notification for admin
     const notificationTitle = receiptData.receipt_type === 'rent'
@@ -1014,9 +939,7 @@ if (request_type === 'receipt') {
       // 🚨 MAINTENANCE REQUEST CREATION
       // ====================================================
       if (request_type === 'maintenance' && maintenance_data) {
-        console.log('🔧 Creating maintenance request...');
-        
-        console.log('📋 Maintenance data received:', maintenance_data);
+       
         
         // Validate required fields for maintenance
         if (!maintenance_data.issue_category || !maintenance_data.location) {
@@ -1047,7 +970,6 @@ if (request_type === 'receipt') {
             ]
           );
 
-          console.log(`✅ Maintenance request details created with ID: ${maintenanceResult.insertId}`);
 
         } catch (maintenanceError) {
           console.error('❌ Error creating maintenance request details:', maintenanceError);
@@ -1059,7 +981,6 @@ if (request_type === 'receipt') {
       // ====================================================
       // 🚨 CRITICAL: CREATE SINGLE NOTIFICATION BASED ON REQUEST TYPE
       // ====================================================
-      console.log('🚨 CREATING SINGLE NOTIFICATION FOR ADMIN...');
       
       try {
         // Default values for notification
@@ -1181,13 +1102,7 @@ if (request_type === 'receipt') {
             break;
         }
         
-        console.log('📨 Creating notification with data:', {
-          title: notificationTitle,
-          message: notificationMessage,
-          request_id: requestId,
-          tenant: tenantData.full_name,
-          type: request_type
-        });
+        
         
         // Insert SINGLE notification
         const [notificationResult] = await db.query(
@@ -1216,8 +1131,6 @@ if (request_type === 'receipt') {
           ]
         );
         
-        console.log(`✅ SINGLE NOTIFICATION CREATED SUCCESSFULLY! ID: ${notificationResult.insertId}`);
-        console.log(`🔔 ONE notification created for request type: ${request_type}`);
         
       } catch (notificationError) {
         console.error('❌ FAILED TO CREATE NOTIFICATION:', notificationError);
@@ -1294,7 +1207,6 @@ if (request_type === 'receipt') {
         });
       }
 
-      console.log('🔍 Getting contract details for tenant ID:', tenant_id);
 
       // Get tenant's contract details with monthly rent
       const [tenantInfo] = await db.query(
@@ -1328,7 +1240,6 @@ if (request_type === 'receipt') {
         [tenant_id]
       );
 
-      console.log('✅ SQL query executed, rows found:', tenantInfo.length);
 
       if (tenantInfo.length === 0) {
         return res.status(404).json({
@@ -1339,28 +1250,8 @@ if (request_type === 'receipt') {
 
       const tenantData = tenantInfo[0];
 
-       // ⚠️ ADD DEBUG LOGS HERE:
-    console.log('🔍 getTenantContractDetails - All fields:', Object.keys(tenantData));
-    console.log('🔍 getTenantContractDetails - Security deposit:', tenantData.security_deposit);
-    console.log('🔍 getTenantContractDetails - Monthly rent:', tenantData.monthly_rent);
       
-      console.log('📊 Tenant data loaded:', {
-        check_in_date: tenantData.check_in_date,
-        lockin_period_months: tenantData.lockin_period_months,
-        lockin_penalty_amount: tenantData.lockin_penalty_amount,
-        lockin_penalty_type: tenantData.lockin_penalty_type,
-        notice_period_days: tenantData.notice_period_days,
-        notice_penalty_amount: tenantData.notice_penalty_amount,
-        notice_penalty_type: tenantData.notice_penalty_type,
-        monthly_rent: tenantData.monthly_rent,
-        room_number: tenantData.room_number,
-        bed_number: tenantData.bed_number,
-        property_name: tenantData.property_name,
-        property_id: tenantData.property_id,
-        full_name: tenantData.full_name,
-        id: tenantData.id,
-        security_deposit: tenantData.security_deposit
-      });
+      
       
       // Calculate lock-in period status
       let lockinInfo = null;
@@ -1401,7 +1292,6 @@ if (request_type === 'receipt') {
           }
         };
         
-        console.log('🔒 Lock-in info calculated:', lockinInfo);
       } else {
         console.log('⚠️ No lock-in period data found');
       }
@@ -1431,7 +1321,6 @@ if (request_type === 'receipt') {
           requiresAgreement: !!tenantData.notice_penalty_amount
         };
         
-        console.log('📋 Notice info calculated:', noticeInfo);
       } else {
         console.log('⚠️ No notice period data found');
       }
@@ -1483,7 +1372,6 @@ async getMyRequests(req, res) {
       });
     }
 
-    console.log('🔍 Getting requests for tenant ID:', tenant_id);
 
     const [requests] = await db.query(
       `SELECT 
@@ -1586,7 +1474,6 @@ async getMyRequests(req, res) {
       [tenant_id]
     );
 
-    console.log(`✅ Found ${requests.length} requests for tenant`);
 
     // Parse JSON fields SAFELY
     const parsedRequests = requests.map(req => {
@@ -1726,12 +1613,7 @@ async getMyRequests(req, res) {
       return req;
     });
 
-    console.log('📋 Parsed requests:', parsedRequests.map(r => ({
-      id: r.id,
-      type: r.request_type,
-      status: r.status,
-      has_receipt_data: !!r.receipt_data
-    })));
+    
 
     res.json({
       success: true,
@@ -1801,14 +1683,7 @@ async getMyRequests(req, res) {
    // ====================================================
 // CREATE NOTIFICATION FOR ADMIN DASHBOARD
 // ====================================================
-console.log('🚨🚨🚨 CREATING NOTIFICATION FOR TENANT REQUEST 🚨🚨🚨');
-console.log('📊 Request details:', {
-  request_id: requestId,
-  request_type: request_type,
-  title: title,
-  tenant_name: tenantData.full_name,
-  priority: priority
-});
+
 
 try {
   // Always use recipient_id = 1 for admin dashboard
@@ -1845,7 +1720,6 @@ try {
     created_at: new Date()
   };
   
-  console.log('📨 CREATING NOTIFICATION WITH DATA:', notificationData);
   
   // Direct database insert - SIMPLE and GUARANTEED to work
   const [notificationResult] = await db.query(
@@ -1867,8 +1741,6 @@ try {
     ]
   );
   
-  console.log(`✅ NOTIFICATION CREATED SUCCESSFULLY! ID: ${notificationResult.insertId}`);
-  console.log(`🔔 Notification should appear in admin dashboard immediately!`);
   
 } catch (notificationError) {
   console.error('❌❌❌ FAILED TO CREATE NOTIFICATION:', notificationError);
@@ -1950,7 +1822,6 @@ async getCurrentRoomInfo(req, res) {
       });
     }
 
-    console.log('🔍 Getting current room info for tenant ID:', tenant_id);
 
     // Get tenant basic info
     const [tenantInfo] = await db.query(
@@ -2094,7 +1965,6 @@ async getCurrentRoomInfo(req, res) {
       available_beds: assignment.total_bed - (occupiedBeds[0]?.occupied_count || 0)
     };
 
-    console.log('✅ Current room info loaded successfully');
     
     return res.json({
       success: true,
@@ -2124,7 +1994,6 @@ async getActiveProperties(req, res) {
       });
     }
 
-    console.log('🏢 Getting active properties...');
 
     const [properties] = await db.query(
       `SELECT 
@@ -2168,7 +2037,6 @@ async getActiveProperties(req, res) {
        ORDER BY p.name, p.city_id`
     );
 
-    console.log(`✅ Found ${properties.length} active properties`);
 
     res.json({
       success: true,
@@ -2204,7 +2072,6 @@ async getAvailableRooms(req, res) {
       });
     }
 
-    console.log(`🚪 Getting available rooms for property ID: ${propertyId}`);
 
     // Get current tenant info to exclude current room
     const [tenantCurrentRoom] = await db.query(
@@ -2267,7 +2134,6 @@ async getAvailableRooms(req, res) {
       currentRoomId ? [propertyId, currentRoomId] : [propertyId]
     );
 
-    console.log(`✅ Found ${rooms.length} available rooms for property ${propertyId}`);
 
     res.json({
       success: true,
@@ -2295,7 +2161,6 @@ async getChangeBedReasons(req, res) {
       });
     }
 
-    console.log('📋 Getting change bed reasons...');
 
     // Try to get from master values - your table structure
     const [reasons] = await db.query(
@@ -2317,8 +2182,6 @@ async getChangeBedReasons(req, res) {
     );
 
     if (reasons.length > 0) {
-      console.log(`✅ Found ${reasons.length} change reasons from master values`);
-      
       const formattedReasons = reasons.map(reason => ({
         id: reason.id,
         value: reason.value,
@@ -2334,8 +2197,6 @@ async getChangeBedReasons(req, res) {
       });
     }
 
-    // Fallback reasons
-    console.log('⚠️ No reasons found in master values, using fallback');
     
     const fallbackReasons = [
       { id: 1, value: 'Need larger room', description: 'Need more space', display_order: 1, is_active: 1, reason_code: 'LARGER_ROOM' },
@@ -2466,8 +2327,6 @@ async getLeaveTypes(req, res) {
       });
     }
 
-    console.log('📋 Getting leave types...');
-
     try {
       // Try to get from master_values table using your schema
       const [leaveTypes] = await db.query(
@@ -2486,7 +2345,6 @@ async getLeaveTypes(req, res) {
       );
 
       if (leaveTypes.length > 0) {
-        console.log(`✅ Found ${leaveTypes.length} leave types from database`);
         
         const formattedTypes = leaveTypes.map(type => ({
           id: type.id,
@@ -2506,8 +2364,6 @@ async getLeaveTypes(req, res) {
       console.log('⚠️ Database query failed, using fallback:', dbError.message);
     }
 
-    // Fallback leave types
-    console.log('⚠️ No leave types found in database, using fallback');
     
     const fallbackTypes = [
       { id: 1, value: 'Personal Leave', description: 'For personal reasons', display_order: 1, is_active: true, type_code: 'PERSONAL' },
@@ -2558,7 +2414,6 @@ async getComplaintCategories(req, res) {
       });
     }
 
-    console.log('📋 Getting complaint categories...');
 
     // SIMPLE QUERY: Just get all active master_types
     const [allTypes] = await db.query(
@@ -2573,7 +2428,6 @@ async getComplaintCategories(req, res) {
        ORDER BY name`
     );
 
-    console.log(`✅ Found ${allTypes.length} total master types`);
     
     // Log what we found
     allTypes.forEach(type => {
@@ -2585,13 +2439,10 @@ async getComplaintCategories(req, res) {
       type.tab && type.tab.toLowerCase() === 'complaint'
     );
 
-    console.log(`✅ Filtered to ${complaintTypes.length} complaint categories`);
     
     if (complaintTypes.length === 0) {
-      console.log('⚠️ No complaint categories found with tab="Complaint"');
       
       // If still nothing, return a manual list
-      console.log('⚠️ No complaint categories found, returning manual list');
       const manualList = [
         { id: 9, code: 'COMPLAINT_FOOD', name: 'Food', tab: 'Complaint', is_active: 1 },
         { id: 10, code: 'COMPLAINT_ROOM', name: 'Room', tab: 'Complaint', is_active: 1 },
@@ -2652,7 +2503,6 @@ async getComplaintReasons(req, res) {
       });
     }
 
-    console.log(`📋 Getting complaint reasons for category ID: ${categoryId}`);
 
     // Direct query to master_values - ONLY EXACT FIELDS
     const [reasons] = await db.query(
@@ -2667,7 +2517,6 @@ async getComplaintReasons(req, res) {
       [categoryId]
     );
 
-    console.log(`✅ Found ${reasons.length} reasons for category ${categoryId}`);
     
     if (reasons.length > 0) {
       console.log('📝 Reasons found:', reasons.map(r => r.value));
@@ -2675,7 +2524,6 @@ async getComplaintReasons(req, res) {
 
     // If no reasons found, check what master_type exists
     if (reasons.length === 0) {
-      console.log(`⚠️ No reasons found for category ID ${categoryId}`);
       
       // Check what master_type this is
       const [categoryInfo] = await db.query(
