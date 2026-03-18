@@ -16,7 +16,7 @@ async getById(tenantId) {
         t.phone,
         t.date_of_birth,
         t.gender,
-        t.occupation,
+        t.occupation, 
         t.occupation_category,
         t.exact_occupation,
         t.is_active,  
@@ -41,6 +41,9 @@ async getById(tenantId) {
         t.id_proof_url,
 t.address_proof_url,
 t.additional_documents,  
+t.aadhar_number,
+t.pan_number,
+
 
         
         -- Bed Assignment 
