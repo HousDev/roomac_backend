@@ -39,7 +39,6 @@ const upload = multer({
 // Get current user's profile
 exports.getProfile = async (req, res) => {
   try {
-    console.log('🔍 GET /api/profile called');
     const userId = req.user.adminId || req.user.id;
     
     if (!userId) {
@@ -56,14 +55,11 @@ exports.getProfile = async (req, res) => {
     );
     
     if (userRows.length === 0) {
-      console.error('❌ User not found in database');
       return res.status(404).json({ 
         success: false, 
         message: 'User not found' 
       });
     }
-    
-    console.log('✅ User found:', userRows[0].email);
     
     // Get profile
     const [profileRows] = await db.query(
@@ -72,7 +68,6 @@ exports.getProfile = async (req, res) => {
     );
     
     let profile = profileRows[0];
-    console.log('📋 Profile found:', profile ? 'Yes' : 'No');
     
     // Get notification settings
     const [settingsRows] = await db.query(
@@ -81,11 +76,9 @@ exports.getProfile = async (req, res) => {
     );
     
     let notificationSettings = settingsRows[0];
-    console.log('📋 Notification settings found:', notificationSettings ? 'Yes' : 'No');
     
     // If profile doesn't exist, create default one
     if (!profile) {
-      console.log('📝 Creating default profile for user:', userId);
       
       // Create profile
       const [insertResult] = await db.query(
@@ -100,12 +93,10 @@ exports.getProfile = async (req, res) => {
       );
       
       profile = newProfileRows[0];
-      console.log('✅ Created default profile');
     }
     
     // If notification settings don't exist, create default
     if (!notificationSettings) {
-      console.log('📝 Creating default notification settings for user:', userId);
       
       await db.query(
         'INSERT INTO notification_settings (user_id) VALUES (?)',
@@ -118,10 +109,8 @@ exports.getProfile = async (req, res) => {
       );
       
       notificationSettings = newSettingsRows[0];
-      console.log('✅ Created default notification settings');
     }
     
-    console.log('✅ Returning profile data');
     
     res.json({
       success: true,
@@ -143,7 +132,6 @@ exports.getProfile = async (req, res) => {
 // Update profile
 exports.updateProfile = async (req, res) => {
   try {
-    console.log('🔍 PUT /api/profile called');
     const userId = req.user.adminId || req.user.id;
     const { full_name, phone, address, bio } = req.body;
     
@@ -208,7 +196,6 @@ exports.updateProfile = async (req, res) => {
 // Change password
 exports.changePassword = async (req, res) => {
   try {
-    console.log('🔍 PUT /api/profile/password called');
     const userId = req.user.adminId || req.user.id;
     const { current_password, new_password } = req.body;
     
@@ -284,7 +271,6 @@ exports.changePassword = async (req, res) => {
 // Update notification settings
 exports.updateNotificationSettings = async (req, res) => {
   try {
-    console.log('🔍 PUT /api/profile/notifications called');
     const userId = req.user.adminId || req.user.id;
     const settings = req.body;
     
@@ -365,11 +351,9 @@ exports.updateNotificationSettings = async (req, res) => {
 
 // Upload avatar
 exports.uploadAvatar = (req, res) => {
-  console.log('🔍 POST /api/profile/avatar called');
   
   upload(req, res, async (err) => {
     if (err) {
-      console.error('❌ Multer upload error:', err);
       return res.status(400).json({ 
         success: false, 
         message: err.message 
@@ -380,7 +364,6 @@ exports.uploadAvatar = (req, res) => {
       const userId = req.user.adminId || req.user.id;
       
       if (!userId) {
-        console.error('❌ No user ID found in request');
         return res.status(401).json({ 
           success: false, 
           message: 'User not authenticated' 
@@ -388,14 +371,12 @@ exports.uploadAvatar = (req, res) => {
       }
       
       if (!req.file) {
-        console.error('❌ No file uploaded');
         return res.status(400).json({ 
           success: false, 
           message: 'No file uploaded' 
         });
       }
       
-      console.log('📁 File uploaded:', req.file);
       
       // Construct avatar URL
       const avatarUrl = `/uploads/avatars/${req.file.filename}`;

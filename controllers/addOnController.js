@@ -4,7 +4,6 @@ class AddOnController {
   // Get all add-ons
 async getAll(req, res) {
   try {
-    console.log('GET /add-ons called with query:', req.query);
     
     const {
       category,
@@ -51,11 +50,8 @@ async getAll(req, res) {
     
     query += ` ORDER BY ${safeOrderBy} ${safeOrderDir}`;
     
-    console.log('Executing query:', query, 'with values:', values);
-    
     const [rows] = await db.query(query, values);
     
-    console.log(`Found ${rows.length} add-ons`);
     
     res.json({
       success: true,

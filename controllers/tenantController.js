@@ -200,9 +200,6 @@ async create(req, res) {
     const body = req.body || {};
     const files = req.files || {};
 
-    console.log("=== CREATE TENANT START ===");
-    console.log("Body fields:", Object.keys(body));
-    console.log("Files received:", Object.keys(files));
 
     // Process uploaded files
     const uploadedFiles = {};
@@ -229,7 +226,6 @@ async create(req, res) {
         ? files["additional_documents[]"]
         : [files["additional_documents[]"]];
 
-      console.log(`Found ${additionalFiles.length} additional files`);
 
       additionalDocs = additionalFiles.map((file) => ({
         filename: file.originalname,
@@ -240,7 +236,6 @@ async create(req, res) {
         file_mimetype: file.mimetype,
       }));
 
-      console.log("Processed additional documents:", additionalDocs);
     }
 
     // Also check for other patterns
@@ -274,8 +269,6 @@ async create(req, res) {
       }
     });
 
-    console.log("Uploaded file URLs:", uploadedFiles);
-    console.log("Additional documents:", additionalDocs);
 
     // Parse numeric fields
     const parseNumber = (value, defaultValue = 0) => {
@@ -538,7 +531,6 @@ async create(req, res) {
       }
     }
 
-    console.log("Creating tenant with data keys:", Object.keys(tenantData));
     
     // --- IMPORTANT PART: Check for existing soft-deleted tenant ---
     // Check if tenant with same email or phone already exists (including soft-deleted)
@@ -551,7 +543,6 @@ async create(req, res) {
     if (existingTenant) {
       if (existingTenant.deleted_at) {
         // Tenant is soft-deleted - restore and update instead of creating new
-        console.log(`Found soft-deleted tenant (ID: ${existingTenant.id}). Restoring and updating...`);
         
         // Restore the tenant (set deleted_at to NULL)
         await TenantModel.restore(existingTenant.id);
@@ -613,7 +604,6 @@ async create(req, res) {
             if (credentials && credentials.length > 0) {
               // Update existing credentials
               await TenantModel.updateCredential(existingTenant.id, { password_hash });
-              console.log('Credentials updated for restored tenant:', existingTenant.id);
             } else {
               // Create new credentials
               await TenantModel.createCredential({
@@ -621,7 +611,6 @@ async create(req, res) {
                 email: body.email,
                 password_hash,
               });
-              console.log('Credentials created for restored tenant:', existingTenant.id);
             }
           } catch (credErr) {
             console.error("Failed to create/update credentials for restored tenant:", credErr);
@@ -661,7 +650,6 @@ async create(req, res) {
     // --- Normal flow: No existing tenant found ---
     // Create new tenant
     const tenantId = await TenantModel.create(tenantData);
-    console.log("Tenant created with ID:", tenantId);
 
     // Create credentials if password is provided
     if (
@@ -692,7 +680,6 @@ async create(req, res) {
       try {
         const portalUrl = "https://roomac.in/login";
 
-        console.log("📧 Sending tenant email to:", tenantData.email);
 
         await sendEmail(
           tenantData.email,
@@ -720,7 +707,6 @@ async create(req, res) {
       `,
         );
 
-        console.log("✅ Tenant credentials email sent");
       } catch (emailErr) {
         console.error("❌ Failed to send welcome email:", emailErr);
       }
@@ -762,20 +748,7 @@ async update(req, res) {
     const body = req.body || {};
     const files = req.files || {};
 
-    console.log('Update tenant id:', id);
-    console.log('Update tenant body fields:', Object.keys(body));
-    console.log('Update tenant body values:', {
-      portal_access_enabled: body.portal_access_enabled,
-      create_credentials: body.create_credentials,
-      update_credentials: body.update_credentials,
-      password: body.password ? '***' : undefined,
-      work_mode: body.work_mode,
-      shift_timing: body.shift_timing,
-      occupation_category: body.occupation_category,
-      exact_occupation: body.exact_occupation,
-      aadhar_number: body.aadhar_number, // Add this for debugging
-      pan_number: body.pan_number // Add this for debugging
-    });
+    
 
     // Get existing tenant to preserve existing files
     const existingTenant = await TenantModel.findById(id);
@@ -845,7 +818,6 @@ async update(req, res) {
             
             if (!uniqueFiles.has(fileKey)) {
               uniqueFiles.set(fileKey, file);
-              console.log(`Found unique additional file: ${file.originalname} (${file.size} bytes)`);
             }
           }
         });
@@ -938,7 +910,6 @@ async update(req, res) {
       updateData.portal_access_enabled = body.portal_access_enabled === 'true' || 
                                          body.portal_access_enabled === true || 
                                          body.portal_access_enabled === '1';
-      console.log('Setting portal_access_enabled to:', updateData.portal_access_enabled);
     }
 
     // Add other fields
@@ -986,14 +957,7 @@ async update(req, res) {
       }
     }
 
-    console.log('Final update data:', {
-      portal_access_enabled: updateData.portal_access_enabled,
-      work_mode: updateData.work_mode,
-      shift_timing: updateData.shift_timing,
-      organization: updateData.organization,
-      aadhar_number: updateData.aadhar_number, // Add for debugging
-      pan_number: updateData.pan_number // Add for debugging
-    });
+    
 
     // Update tenant
     const ok = await TenantModel.update(id, updateData);
@@ -1006,8 +970,7 @@ async update(req, res) {
                                  body.create_credentials === "true" || 
                                  body.update_credentials === "true";
 
-    console.log('Should have credentials:', shouldHaveCredentials);
-    console.log('Password provided:', body.password ? 'Yes' : 'No');
+
 
     if (shouldHaveCredentials && body.password) {
       try {
@@ -1019,7 +982,7 @@ async update(req, res) {
         if (credentials && credentials.length > 0) {
           // Update existing credentials
           await TenantModel.updateCredential(id, { password_hash });
-          console.log('Credentials updated for tenant:', id);
+          
         } else {
           // Create new credentials
           await TenantModel.createCredential({
@@ -1027,7 +990,7 @@ async update(req, res) {
             email: body.email || existingTenant.email,
             password_hash,
           });
-          console.log('Credentials created for tenant:', id);
+       
         }
       } catch (credErr) {
         console.error("Failed to update credentials:", credErr);
@@ -1359,7 +1322,6 @@ async bulkDelete(req, res) {
   async getAvailableRooms(req, res) {
     try {
       const { gender, property_id } = req.query;
-      console.log('getAvailableRooms query:', { gender, property_id });
       const rows = await TenantModel.getAvailableRooms(gender, property_id);
       return res.json({ success: true, data: rows || [] });
     } catch (err) {
@@ -1445,8 +1407,6 @@ async bulkDelete(req, res) {
       const tenantId = req.params.tenantId;
       const files = req.files || {};
       
-      console.log('Upload document for tenant:', tenantId);
-      console.log('Files received:', Object.keys(files));
 
       // Check if tenant exists
       const tenant = await TenantModel.findById(tenantId);
@@ -1792,7 +1752,6 @@ async listWithAssignments(req, res) {
 
  async import(req, res) {
     try {
-      console.log("📥 Tenant import request received");
       
       if (!req.file) {
         return res.status(400).json({
@@ -1801,15 +1760,12 @@ async listWithAssignments(req, res) {
         });
       }
 
-      console.log("📁 File received:", req.file.originalname);
-
       // Read Excel file
       const workbook = xlsx.readFile(req.file.path);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const data = xlsx.utils.sheet_to_json(worksheet);
 
-      console.log(`📊 Found ${data.length} rows in Excel`);
 
       const created = [];
       const errors = [];
@@ -1819,7 +1775,6 @@ async listWithAssignments(req, res) {
         const row = data[i];
         const rowNum = i + 2; // +2 for header row
 
-        console.log(`🔍 Processing row ${rowNum}:`, row);
 
         try {
           // Validate required fields
@@ -1929,7 +1884,6 @@ async listWithAssignments(req, res) {
             additional_documents: []
           };
 
-          console.log(`✅ Creating tenant:`, tenantData.full_name);
 
           // Create tenant
           const tenantId = await TenantModel.create(tenantData);
@@ -1946,7 +1900,6 @@ async listWithAssignments(req, res) {
                 password_hash,
               });
               
-              console.log(`🔑 Created login credentials for tenant ${tenantId}`);
             } catch (credErr) {
               console.error(`Failed to create credentials for tenant ${tenantId}:`, credErr);
               // Don't fail the import, just log the error
@@ -1968,12 +1921,10 @@ async listWithAssignments(req, res) {
       // Clean up uploaded file
       try {
         fs.unlinkSync(req.file.path);
-        console.log("✅ Temporary file deleted");
       } catch (err) {
         console.error("Error deleting temp file:", err);
       }
 
-      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
 
       return res.json({
         success: true,

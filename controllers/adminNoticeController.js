@@ -4,7 +4,6 @@ const db = require("../config/db");
 // Get all notice requests
 exports.getNoticeRequests = async (req, res) => {
   try {
-    console.log('📋 Fetching notice requests...');
     
     const sql = `
       SELECT 
@@ -56,7 +55,6 @@ exports.getNoticeRequests = async (req, res) => {
     `;
     
     const [requests] = await db.query(sql);
-    console.log(`✅ Found ${requests.length} notice requests`);
     
     res.json({
       success: true,
@@ -226,7 +224,6 @@ exports.bulkDeleteNoticeRequests = async (req, res) => {
       });
     }
     
-    console.log(`🗑️ Bulk deleting notice requests:`, ids);
     
     const [result] = await db.query(
       `DELETE FROM notice_period_requests WHERE id IN (?)`,

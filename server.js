@@ -57,9 +57,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-wss.on('connection', (ws) => {
-  console.log('Client connected');
-  
+wss.on('connection', (ws) => { 
   ws.on('message', (message) => {
     console.log('Received:', message);
   });

@@ -16,9 +16,6 @@ class AdminVacateRequestController {
   // Get all vacate requests with filters
   async getAllVacateRequests(req, res) {
     try {
-      console.log('🔍 Admin: Getting all vacate requests');
-      console.log('Query params:', req.query);
-      
       // Extract filters from query params
       const filters = {
         status: req.query.status,
@@ -66,7 +63,6 @@ async bulkDeleteVacateRequests(req, res) {
       });
     }
 
-    console.log(`🗑️ Admin ${adminId} bulk deleting vacate requests:`, ids);
 
     // Start a transaction
     await db.query('START TRANSACTION');
@@ -87,7 +83,6 @@ async bulkDeleteVacateRequests(req, res) {
 
       await db.query('COMMIT');
 
-      console.log(`✅ Successfully deleted ${result.affectedRows} vacate requests`);
 
       res.json({
         success: true,
@@ -117,7 +112,6 @@ async bulkDeleteVacateRequests(req, res) {
     try {
       const { id } = req.params;
       
-      console.log(`🔍 Admin: Getting vacate request ID: ${id}`);
       
       const request = await VacateRequestModel.getVacateRequestById(id);
       
@@ -168,8 +162,6 @@ async bulkDeleteVacateRequests(req, res) {
         penalty_deduction
       } = req.body;
       
-      console.log(`🔄 Admin: Updating vacate request ${id} by admin ${adminId}`);
-      console.log('Update data:', req.body);
       
       // Validate required fields
       if (!status) {
@@ -234,7 +226,6 @@ async bulkDeleteVacateRequests(req, res) {
               status,
               admin_notes // Pass admin notes
             );
-            console.log(`📨 Notification sent to tenant ${request.tenant_id} for vacate request ${id}`);
           } catch (notifError) {
             console.error('❌ Failed to send notification:', notifError);
             // Don't fail the main operation if notification fails
@@ -328,7 +319,6 @@ async bulkDeleteVacateRequests(req, res) {
         priority: status === 'approved' || status === 'rejected' ? 'high' : 'medium'
       });
       
-      console.log(`📨 Notification created for tenant ${tenantId}`);
       
     } catch (error) {
       console.error('❌ Error creating tenant notification:', error);
@@ -339,7 +329,6 @@ async bulkDeleteVacateRequests(req, res) {
   // Get statistics
   async getVacateRequestStats(req, res) {
     try {
-      console.log('📊 Admin: Getting vacate request statistics');
       
       const stats = await VacateRequestModel.getVacateRequestStats();
       
@@ -362,7 +351,6 @@ async bulkDeleteVacateRequests(req, res) {
   // Get properties for filter dropdown
   async getPropertiesForFilter(req, res) {
     try {
-      console.log('🏠 Admin: Getting properties for filter');
       
       const properties = await VacateRequestModel.getPropertiesForFilter();
       

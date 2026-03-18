@@ -56,13 +56,11 @@ const AuthController = {
         const newHashed = await bcrypt.hash(stored, 10);
         try {
           await UserModel.updatePassword(user.id, newHashed);
-          console.log(`Auto-hashed password for user id=${user.id} (${email})`);
         } catch (err) {
           console.error("Failed to update password hash for user:", email, err);
           // proceed without failing login - password already matched
         }
       }
-      console.log('is_active value:', user.is_active, typeof user.is_active);
 
 if (user.is_active == 0) {
   return res.status(403).json({
@@ -75,7 +73,6 @@ if (user.is_active == 0) {
         expiresIn: JWT_EXPIRES_IN,
       });
 
-      console.log("tokennnnnnnnnnnnn",token)
 
       return res.status(200).json({
         success: true,
@@ -95,7 +92,7 @@ if (user.is_active == 0) {
     const {email} = req.params;
     try{
       const [user] = await db.query(`select s.* , r.name as role_name from staff as s  LEFT JOIN master_item_values r ON r.id = s.role where email = ?   `,[email])
-    console.log(user)
+   
       return res.status(200).json({message:"successsfulyyyy ", user:user[0]})
   }catch(error) {
     console.log(error)

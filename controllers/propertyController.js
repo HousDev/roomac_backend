@@ -151,7 +151,6 @@ function deletePhotoFiles(photoUrls) {
       // Check if file exists and delete
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        console.log(`✅ Deleted photo file: ${filename}`);
       }
     } catch (err) {
       console.error(`❌ Error deleting photo ${photoUrl}:`, err.message);
@@ -227,9 +226,6 @@ const PropertyController = {
 // CREATE PROPERTY
 async create(req, res) {
   try {
-    console.log("📥 CREATE Property Request:");
-    console.log("Body:", req.body);
-    console.log("Compressed Files:", req.compressedImages?.length || 0);
 
     const body = req.body || {};
 
@@ -274,7 +270,6 @@ async create(req, res) {
         ? req.compressedImages.map((img) => img.path)
         : [];
 
-    console.log("📸 Compressed Photo URLs:", photo_urls);
 
     // =====================
     // SLUG
@@ -293,7 +288,6 @@ async create(req, res) {
     const services = readArray(body, "services");
     const tags = readArray(body, "tags");
 
-    console.log("🏷️ Tags:", tags);
 
     // =====================
     // TERMS & CONDITIONS
@@ -304,10 +298,7 @@ async create(req, res) {
       body.terms_conditions
     );
 
-    console.log("📝 Terms parsed:", {
-      termsCount: termsData.terms_json?.length || 0,
-      hasText: !!termsData.terms_conditions,
-    });
+
 
     // =====================
     // CREATE PROPERTY
@@ -392,7 +383,6 @@ async create(req, res) {
       tags,
     });
 
-    console.log("✅ Property created with ID:", newId);
 
     return res.status(201).json({
       success: true,
@@ -423,9 +413,6 @@ async update(req, res) {
     const { id } = req.params;
     const body = req.body || {};
 
-    console.log("📥 UPDATE Property Request for ID:", id);
-    console.log("Request Body:", JSON.stringify(body, null, 2));
-    console.log("Compressed Files:", req.compressedImages?.length || 0);
 
     // Check if property exists
     const existing = await PropertyModel.findById(id);
@@ -435,7 +422,6 @@ async update(req, res) {
         .json({ success: false, message: "Property not found" });
     }
 
-    console.log("📸 Existing photos from DB:", existing.photo_urls);
 
     // CRITICAL FIX: Parse removed_photos properly - handle both array and string formats
     let removedPhotos = [];
@@ -451,11 +437,9 @@ async update(req, res) {
       }
     }
     
-    console.log("🗑️  Removed photos from request:", removedPhotos);
 
     // Delete removed photos from filesystem
     if (removedPhotos.length > 0) {
-      console.log("🔄 Deleting photos from filesystem...");
       deletePhotoFiles(removedPhotos);
     }
 
@@ -469,10 +453,7 @@ async update(req, res) {
       (photo) => !removedPhotos.includes(photo)
     );
 
-    console.log(
-      "✅ Existing photos after removal:",
-      filteredExistingPhotoUrls
-    );
+
 
     // Add new uploaded (COMPRESSED) photos
     const newPhotoUrls =
@@ -480,19 +461,14 @@ async update(req, res) {
         ? req.compressedImages.map((img) => img.path)
         : [];
 
-    console.log("🆕 New uploaded photos:", newPhotoUrls);
 
     // Combine existing (filtered) and new photos
     const finalPhotoUrls = [...filteredExistingPhotoUrls, ...newPhotoUrls];
 
-    console.log("🖼️  Final photo URLs for database:", finalPhotoUrls);
 
     // Parse terms data
     const termsData = parseTermsData(body.terms_json, body.terms_conditions);
-    console.log("📝 Updated terms data:", {
-      termsCount: termsData.terms_json?.length || 0,
-      hasTermsText: !!termsData.terms_conditions
-    });
+
 
     // Prepare update data
     const updateData = {
@@ -516,7 +492,6 @@ async update(req, res) {
     // ADD STATE FIELD UPDATE
     if (body.state !== undefined && body.state.trim() !== "") {
       updateData.state = body.state.trim();
-      console.log("🏷️ Updated state:", updateData.state);
     }
 
     if (body.area !== undefined && body.area.trim() !== "") {
@@ -534,8 +509,6 @@ async update(req, res) {
       updateData.map_direction_url = body.map_direction_url.trim() || null;
     }
 
-    console.log("🏷️ State value received:", body.state);
-    console.log("🏷️ State will be updated to:", updateData.state);
 
     // Handle numeric fields
     const numericFields = [
@@ -648,27 +621,23 @@ async update(req, res) {
     // Parse tags from request
     if (body["tags[]"] !== undefined || body.tags !== undefined) {
       updateData.tags = readArray(body, "tags");
-      console.log("🏷️ Updated tags:", updateData.tags);
     }
 
     // Update timestamp
     updateData.updated_at = new Date();
     updateData.floor = body.floor;
 
-    console.log("📊 Update data to save in database:", updateData);
 
     // Perform database update
     const updated = await PropertyModel.update(id, updateData);
 
     if (!updated) {
-      console.error("❌ Database update failed");
       return res.status(500).json({
         success: false,
         message: "Failed to update property in database",
       });
     }
 
-    console.log("✅ Property updated successfully in database");
 
     // Fetch updated property to verify
     const updatedProperty = await PropertyModel.findById(id);
@@ -687,16 +656,7 @@ async update(req, res) {
       ).terms_json;
     }
 
-    console.log("🔄 Updated property from DB:", {
-      id: updatedProperty.id,
-      name: updatedProperty.name,
-      state: updatedProperty.state,
-      photo_urls: updatedProperty.photo_urls,
-      photo_count: Array.isArray(updatedProperty.photo_urls)
-        ? updatedProperty.photo_urls.length
-        : 0,
-      terms_count: updatedProperty.terms_json?.length || 0
-    });
+
 
     return res.json({
       success: true,
@@ -734,7 +694,6 @@ async update(req, res) {
 
       // Delete associated photos
       if (property.photo_urls && property.photo_urls.length > 0) {
-        console.log("🗑️  Deleting photos for property:", id);
         deletePhotoFiles(property.photo_urls);
       }
 
@@ -773,7 +732,6 @@ async update(req, res) {
     try {
       const { ids } = req.body;
 
-      console.log("📝 Bulk delete request:", { ids });
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return res
@@ -800,7 +758,6 @@ async update(req, res) {
       // Delete properties from database
       const deletedCount = await PropertyModel.bulkDelete(ids);
 
-      console.log(`✅ Successfully deleted ${deletedCount} properties`);
 
       return res.json({
         success: true,
@@ -833,7 +790,6 @@ async update(req, res) {
     try {
       const { ids, is_active } = req.body;
 
-      console.log("📝 Bulk status update request:", { ids, is_active });
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return res
@@ -855,7 +811,6 @@ async update(req, res) {
 
       const result = await PropertyModel.bulkUpdateStatus(ids, !!is_active);
 
-      console.log(`✅ Bulk status update result: ${result} properties updated`);
 
       return res.json({
         success: true,
@@ -923,12 +878,7 @@ async bulkUpdateTags(req, res) {
   try {
     const { ids, tags, operation = 'add' } = req.body;
 
-    console.log("📝 Bulk tags update request:", { 
-      ids, 
-      tags, 
-      operation,
-      timestamp: new Date().toISOString() 
-    });
+
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ 
@@ -956,7 +906,6 @@ async bulkUpdateTags(req, res) {
     // Use PropertyModel.bulkUpdateTags
     const updatedCount = await PropertyModel.bulkUpdateTags(ids, tags, operation);
 
-    console.log(`✅ Bulk tags update result: ${updatedCount} properties updated`);
 
     return res.json({
       success: true,
@@ -980,11 +929,8 @@ async getBulkTagsInfo(req, res) {
   try {
     const { ids } = req.query;
     
-    console.log("🔍 getBulkTagsInfo called with ids:", ids);
-    console.log("🔍 Request query parameters:", req.query);
     
     if (!ids) {
-      console.log("❌ No IDs provided in query");
       return res.status(400).json({
         success: false,
         message: "Property IDs are required"
@@ -993,18 +939,14 @@ async getBulkTagsInfo(req, res) {
 
     const idArray = ids.split(',').map(id => {
       const parsedId = parseInt(id.trim());
-      console.log(`Parsing ID: "${id}" -> ${parsedId}`);
       return parsedId;
     }).filter(id => {
       const isValid = !isNaN(id);
-      console.log(`Filtering ID: ${id}, valid: ${isValid}`);
       return isValid;
     });
     
-    console.log("✅ Parsed ID array:", idArray);
     
     if (idArray.length === 0) {
-      console.log("❌ No valid IDs found");
       return res.status(400).json({
         success: false,
         message: "Valid property IDs are required"
@@ -1013,21 +955,14 @@ async getBulkTagsInfo(req, res) {
 
     const placeholders = idArray.map(() => '?').join(',');
     const query = `SELECT id, name, tags FROM properties WHERE id IN (${placeholders})`;
-    
-    console.log("📝 Executing query:", query);
-    console.log("📝 With parameters:", idArray);
+   
 
     const [properties] = await db.query(query, idArray);
 
-    console.log(`📊 Database query returned ${properties.length} properties`);
     
     // Detailed debug for each property
     properties.forEach((property, index) => {
-      console.log(`\n=== Property ${index + 1} ===`);
-      console.log(`ID: ${property.id}`);
-      console.log(`Name: ${property.name}`);
-      console.log(`Raw tags: ${property.tags}`);
-      console.log(`Tags type: ${typeof property.tags}`);
+ 
       
       if (property.tags) {
         // Try to parse
@@ -1049,8 +984,7 @@ async getBulkTagsInfo(req, res) {
             parsedTags = [];
           }
           
-          console.log(`Parsed tags:`, parsedTags);
-          console.log(`Parsed tags type: ${typeof parsedTags}, length: ${Array.isArray(parsedTags) ? parsedTags.length : 'N/A'}`);
+       
         } catch (error) {
           console.log(`❌ Error parsing tags: ${error.message}`);
         }
@@ -1067,27 +1001,22 @@ async getBulkTagsInfo(req, res) {
         if (property.tags) {
           let tags = property.tags;
           
-          console.log(`\nProcessing tags for property ${property.id}:`, tags);
           
           // Parse JSON if it's a string
           if (typeof tags === 'string') {
-            console.log(`Tags is string, attempting to parse...`);
             try {
               // Try to parse as JSON
               if (tags.trim().startsWith('[') || tags.trim().startsWith('{')) {
                 tags = JSON.parse(tags);
-                console.log(`✅ Successfully parsed as JSON:`, tags);
               } else if (tags.includes(',')) {
-                // Split comma-separated string
-                console.log(`Splitting comma-separated string...`);
                 tags = tags.split(',').map(t => t.trim()).filter(t => t);
-                console.log(`✅ Split result:`, tags);
+               
               } else if (tags.trim() !== '') {
                 // Single tag
-                console.log(`Single tag found: "${tags}"`);
+               
                 tags = [tags.trim()];
               } else {
-                console.log(`Empty string, setting to empty array`);
+                
                 tags = [];
               }
             } catch (e) {
@@ -1098,7 +1027,7 @@ async getBulkTagsInfo(req, res) {
             console.log(`Tags is not a string, type: ${typeof tags}`);
           }
           
-          console.log(`Final tags array for property ${property.id}:`, tags);
+          
           
           if (Array.isArray(tags)) {
             tags.forEach(tag => {
@@ -1120,9 +1049,7 @@ async getBulkTagsInfo(req, res) {
     });
 
     const uniqueTags = Array.from(allTags).sort();
-    
-    console.log("🏷️ Unique tags from properties:", uniqueTags);
-    console.log(`🔢 Found ${uniqueTags.length} unique tags across ${properties.length} properties`);
+   
 
     return res.json({
       success: true,
@@ -1164,7 +1091,6 @@ async getBulkTagsInfo(req, res) {
 
 async import(req, res) {
     try {
-      console.log("📥 Import request received");
       
       if (!req.file) {
         return res.status(400).json({
@@ -1173,7 +1099,6 @@ async import(req, res) {
         });
       }
 
-      console.log("📁 File received:", req.file.originalname);
 
       // Read Excel file
       const workbook = XLSX.readFile(req.file.path);
@@ -1181,7 +1106,6 @@ async import(req, res) {
       const worksheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(worksheet);
 
-      console.log(`📊 Found ${data.length} rows in Excel`);
 
       const created = [];
       const errors = [];
@@ -1191,7 +1115,6 @@ async import(req, res) {
         const row = data[i];
         const rowNum = i + 2; // +2 for header row
 
-        console.log(`🔍 Processing row ${rowNum}:`, row);
 
         try {
           // Validate required fields
@@ -1279,7 +1202,6 @@ async import(req, res) {
             terms_json: null
           };
 
-          console.log(`✅ Inserting property:`, propertyData.name);
 
           // Insert into database
           const [result] = await db.query(
@@ -1331,7 +1253,6 @@ async import(req, res) {
             name: propertyData.name
           });
 
-          console.log(`✅ Created property ID: ${result.insertId}`);
 
         } catch (err) {
           console.error(`❌ Error processing row ${rowNum}:`, err);
@@ -1342,12 +1263,10 @@ async import(req, res) {
       // Clean up uploaded file
       try {
         fs.unlinkSync(req.file.path);
-        console.log("✅ Temporary file deleted");
       } catch (err) {
         console.error("Error deleting temp file:", err);
       }
 
-      console.log(`📊 Import complete: ${created.length} created, ${errors.length} errors`);
 
       return res.json({
         success: true,

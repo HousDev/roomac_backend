@@ -10,7 +10,6 @@ async getProfile(req, res) {
         return res.status(400).json({ success: false, message: "Valid Tenant ID required" });
       }
 
-      console.log('🔍 Fetching profile for tenant ID:', tenantId);
 
       const profile = await TenantDetailsModel.getById(parseInt(tenantId));
       
@@ -40,7 +39,6 @@ async getProfile(req, res) {
         return res.status(401).json({ success: false, message: "Not authenticated" });
       }
 
-      console.log('🔍 [Token Auth] Getting profile for tenant ID:', tenantId);
 
       const profile = await TenantDetailsModel.getById(tenantId);
       
@@ -147,7 +145,6 @@ async debugProfile(req, res) {
       return res.status(400).json({ success: false, message: "Tenant ID required" });
     }
 
-    console.log('🔍 DEBUG - Getting full profile for tenant ID:', tenantId);
     
     const [rows] = await pool.query(`
       SELECT 
@@ -170,7 +167,6 @@ async debugProfile(req, res) {
       WHERE t.id = ?
     `, [tenantId]);
     
-    console.log('📊 DEBUG - Full query result:', JSON.stringify(rows[0], null, 2));
     
     res.json({
       success: true,

@@ -20,7 +20,6 @@ class TenantNotificationController {
       const tenantId = req.user.id; // Use req.user.id instead of req.tenant.id
       const limit = parseInt(req.query.limit) || 20;
       
-      console.log(`🔍 Fetching notifications for tenant ID: ${tenantId}, limit: ${limit}`);
       
       const sql = `
         SELECT 
@@ -42,7 +41,6 @@ class TenantNotificationController {
       
       const [notifications] = await db.query(sql, [tenantId, limit]);
       
-      console.log(`✅ Found ${notifications.length} notifications for tenant ${tenantId}`);
       
       res.json({
         success: true,
@@ -65,7 +63,6 @@ class TenantNotificationController {
     try {
       // Check if req.user exists
       if (!req.user) {
-        console.error('❌ req.user is undefined in getUnreadCount');
         return res.status(401).json({
           success: false,
           message: "Tenant authentication failed"
@@ -74,7 +71,6 @@ class TenantNotificationController {
 
       const tenantId = req.user.id; // Use req.user.id instead of req.tenant.id
       
-      console.log(`🔍 Getting unread count for tenant ID: ${tenantId}`);
       
       const sql = `
         SELECT COUNT(*) as count
@@ -85,7 +81,6 @@ class TenantNotificationController {
       const [result] = await db.query(sql, [tenantId]);
       const count = result[0].count;
       
-      console.log(`✅ Unread count for tenant ${tenantId}: ${count}`);
       
       res.json({
         success: true,
@@ -108,7 +103,6 @@ class TenantNotificationController {
     try {
       // Check if req.user exists
       if (!req.user) {
-        console.error('❌ req.user is undefined in markAsRead');
         return res.status(401).json({
           success: false,
           message: "Tenant authentication failed"
@@ -118,7 +112,6 @@ class TenantNotificationController {
       const tenantId = req.user.id; // Use req.user.id instead of req.tenant.id
       const notificationId = req.params.id;
       
-      console.log(`📝 Marking notification ${notificationId} as read for tenant ${tenantId}`);
       
       const sql = `
         UPDATE notifications
@@ -135,7 +128,6 @@ class TenantNotificationController {
         });
       }
       
-      console.log(`✅ Notification ${notificationId} marked as read`);
       
       res.json({
         success: true,
@@ -158,7 +150,6 @@ class TenantNotificationController {
     try {
       // Check if req.user exists
       if (!req.user) {
-        console.error('❌ req.user is undefined in markAllAsRead');
         return res.status(401).json({
           success: false,
           message: "Tenant authentication failed"
@@ -167,7 +158,6 @@ class TenantNotificationController {
 
       const tenantId = req.user.id; // Use req.user.id instead of req.tenant.id
       
-      console.log(`📝 Marking all notifications as read for tenant ${tenantId}`);
       
       const sql = `
         UPDATE notifications
@@ -177,7 +167,6 @@ class TenantNotificationController {
       
       const [result] = await db.query(sql, [tenantId]);
       
-      console.log(`✅ Marked ${result.affectedRows} notifications as read for tenant ${tenantId}`);
       
       res.json({
         success: true,
@@ -198,11 +187,6 @@ class TenantNotificationController {
    */
 async createNotification({ tenantId, title, message, notificationType, relatedEntityType, relatedEntityId, priority }) {
   try {
-    console.log('📝 Creating notification in database:');
-    console.log('  - Tenant ID:', tenantId);
-    console.log('  - Title:', title);
-    console.log('  - Type:', notificationType);
-    console.log('  - Related Entity:', relatedEntityType, relatedEntityId);
 
     const sql = `
       INSERT INTO notifications (
@@ -228,7 +212,6 @@ async createNotification({ tenantId, title, message, notificationType, relatedEn
       priority
     ]);
 
-    console.log('✅ Notification inserted with ID:', result.insertId);
     return result.insertId;
   } catch (error) {
     console.error('❌ Error creating notification:', error);
@@ -268,7 +251,6 @@ async notifyComplaintStatusUpdate(complaintId, tenantId, newStatus, adminNotes){
       [tenantId, title, message, complaintId]
     );
     
-    console.log(`✅ Notification created for complaint ${complaintId} status update`);
   } catch (error) {
     console.error('❌ Error creating notification:', error);
     throw error;
@@ -451,7 +433,6 @@ async notifyVacateStatusUpdate(requestId, tenantId, status, adminNotes = null) {
 // Send status notification to tenant
 async sendStatusNotification(tenantId, requestId, oldStatus, newStatus, adminNotes, requestData) {
   try {
-    console.log(`📨 Preparing notification for tenant ${tenantId} - Status change: ${oldStatus} → ${newStatus}`);
     
     // Get tenant info for better messaging
     const [tenantInfo] = await db.query(
@@ -508,7 +489,6 @@ async sendStatusNotification(tenantId, requestId, oldStatus, newStatus, adminNot
       notification.message += ` Bed number ${requestData.assigned_bed_number} has been assigned to you.`;
     }
     
-    console.log('📨 Notification details:', notification);
     
     // Insert notification into database
     const [result] = await db.query(
@@ -533,7 +513,6 @@ async sendStatusNotification(tenantId, requestId, oldStatus, newStatus, adminNot
       ]
     );
     
-    console.log(`✅ Notification created with ID: ${result.insertId}`);
     return result.insertId;
     
   } catch (error) {
