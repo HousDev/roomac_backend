@@ -130,7 +130,6 @@ const NoticePeriodRequestController = {
           <p>Thank you,<br/>ROOMAC Team</p>
           `
         );
-        console.log("✅ Notice period email sent to tenant");
       } catch (emailErr) {
         console.error("❌ Failed to send notice period email:", emailErr);
       }
@@ -216,6 +215,7 @@ const NoticePeriodRequestController = {
 
   // Mark a request as seen (when tenant clicks notification)
   async markAsSeen(req, res) {
+    console.log("is seen " )
     try {
       const id = req.params.id;
       const tenantId = req.user.id; // From tenantAuth middleware

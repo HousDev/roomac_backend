@@ -150,6 +150,71 @@ const DocumentModel = {
     const [r] = await db.query(`DELETE FROM documents WHERE id IN (${ph})`, ids);
     return r;
   },
+
+getByTenantId: async (tenantId, options = {}) => {
+  const { page = 1, pageSize = 50, status, search } = options;
+  
+  let query = `
+    SELECT id, document_number, template_id, document_name, document_title, document_type,
+           tenant_id, tenant_name, tenant_phone, tenant_email,
+           property_name, room_number, bed_number, rent_amount, security_deposit,
+           company_name, status, created_by, signature_required, priority,
+           expiry_date, tags, notes, signed_at, signed_by, share_token,
+           html_content, data_json,
+           created_at, updated_at
+    FROM documents 
+    WHERE tenant_id = ?`;
+  
+  const params = [tenantId];
+
+  if (status) {
+    query += ` AND status = ?`;
+    params.push(status);
+  }
+
+  if (search) {
+    query += ` AND (
+      document_name COLLATE utf8mb4_general_ci LIKE ? OR
+      document_title COLLATE utf8mb4_general_ci LIKE ? OR
+      document_type COLLATE utf8mb4_general_ci LIKE ? OR
+      document_number COLLATE utf8mb4_general_ci LIKE ?
+    )`;
+    const s = `%${search}%`;
+    params.push(s, s, s, s);
+  }
+
+  // Get total count
+  const countQuery = `
+    SELECT COUNT(*) as total 
+    FROM documents 
+    WHERE tenant_id = ? 
+    ${status ? 'AND status = ?' : ''} 
+    ${search ? 'AND (document_name LIKE ? OR document_title LIKE ? OR document_type LIKE ? OR document_number LIKE ?)' : ''}
+  `;
+  
+  const countParams = [tenantId];
+  if (status) countParams.push(status);
+  if (search) {
+    const s = `%${search}%`;
+    countParams.push(s, s, s, s);
+  }
+  
+  const [[{ total }]] = await db.query(countQuery, countParams);
+
+  // Add pagination
+  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  params.push(parseInt(pageSize), (parseInt(page) - 1) * parseInt(pageSize));
+
+  const [rows] = await db.query(query, params);
+  
+  return { 
+    data: rows.map(parseRow), 
+    total, 
+    page: parseInt(page), 
+    pageSize: parseInt(pageSize),
+    totalPages: Math.ceil(total / parseInt(pageSize))
+  };
+},
 };
 
 module.exports = { DocumentListModel: DocumentModel };

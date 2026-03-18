@@ -117,4 +117,32 @@ const bulkDelete = async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
-module.exports = { getAll, getById, create, updateStatus, generateShareLink, remove, bulkDelete };
+// GET /api/documents/tenant - Get documents for logged-in tenant
+const getByTenant = async (req, res) => {
+  try {
+    const tenantId = req.user.id; // From tenantAuth middleware
+    
+    const { page = 1, pageSize = 50, status, search } = req.query;
+    
+    const result = await DocumentModel.getByTenantId(tenantId, {
+      page: parseInt(page),
+      pageSize: parseInt(pageSize),
+      status,
+      search
+    });
+    
+    res.json({ 
+      success: true, 
+      data: result.data,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalPages: result.totalPages
+    });
+  } catch (e) { 
+    console.error("Error fetching tenant documents:", e);
+    res.status(500).json({ success: false, message: e.message }); 
+  }
+};
+
+module.exports = { getAll, getById, create, updateStatus, generateShareLink, remove, bulkDelete, getByTenant };

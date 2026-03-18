@@ -155,7 +155,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/properties", propertyAnalyticsRoutes);
 app.use('/api/document-templates', templateRoutes);
 app.use("/api/documents", documentRoutes);                   // ← ADD THIS
-app.use("/api/documents", documentListRoutes); 
+app.use("/api/documents-list", documentListRoutes); 
 app.use("/api/admin/request-counts", require("./routes/adminRequestCountsRoutes"));
 app.use("/api/expenses", expenseRoutes);
 /* =========================
