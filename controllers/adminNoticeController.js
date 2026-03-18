@@ -1,26 +1,27 @@
+// controllers/adminNoticeController.js
 const db = require("../config/db");
 
-// Get all admin notice requests
+// Get all notice requests
 exports.getNoticeRequests = async (req, res) => {
   try {
-    console.log('📋 Fetching admin notice requests...');
+    console.log('📋 Fetching notice requests...');
     
     const sql = `
       SELECT 
-        anr.id,
-        anr.tenant_id,
+        npr.id,
+        npr.tenant_id,
         t.full_name as tenant_name,
         t.email as tenant_email,
         t.phone as tenant_phone,
         
-        -- Get property name from bed_assignments
+        -- Get property name
         COALESCE(
           (
             SELECT p.name 
             FROM bed_assignments ba
             INNER JOIN rooms r ON ba.room_id = r.id
             INNER JOIN properties p ON r.property_id = p.id
-            WHERE ba.tenant_id = anr.tenant_id 
+            WHERE ba.tenant_id = npr.tenant_id 
               AND ba.is_available = 0
             ORDER BY ba.created_at DESC
             LIMIT 1
@@ -34,43 +35,28 @@ exports.getNoticeRequests = async (req, res) => {
           SELECT r.room_number 
           FROM bed_assignments ba
           INNER JOIN rooms r ON ba.room_id = r.id
-          WHERE ba.tenant_id = anr.tenant_id 
+          WHERE ba.tenant_id = npr.tenant_id 
             AND ba.is_available = 0
           ORDER BY ba.created_at DESC
           LIMIT 1
         ) as room_number,
         
-        (
-          SELECT ba.bed_number 
-          FROM bed_assignments ba
-          WHERE ba.tenant_id = anr.tenant_id 
-            AND ba.is_available = 0
-          ORDER BY ba.created_at DESC
-          LIMIT 1
-        ) as bed_number,
-        
-        anr.notice_period_days,
-        anr.requested_vacate_date,
-        anr.reason,
-        anr.status,
-        anr.admin_notes,
-        anr.created_at,
-        anr.updated_at
-      FROM admin_notice_requests anr
-      LEFT JOIN tenants t ON anr.tenant_id = t.id
+        npr.title,
+        npr.description,
+        npr.notice_period_date,
+        npr.is_seen,
+        npr.created_at,
+        npr.updated_at
+      FROM notice_period_requests npr
+      LEFT JOIN tenants t ON npr.tenant_id = t.id
       LEFT JOIN properties p ON t.property_id = p.id
       ORDER BY 
-        CASE anr.status 
-          WHEN 'pending' THEN 1
-          WHEN 'accepted' THEN 2
-          WHEN 'rejected' THEN 3
-          WHEN 'completed' THEN 4
-        END,
-        anr.created_at DESC
+        npr.is_seen ASC,
+        npr.created_at DESC
     `;
     
     const [requests] = await db.query(sql);
-    console.log(`✅ Found ${requests.length} admin notice requests`);
+    console.log(`✅ Found ${requests.length} notice requests`);
     
     res.json({
       success: true,
@@ -85,21 +71,20 @@ exports.getNoticeRequests = async (req, res) => {
   }
 };
 
-// Create a new admin notice request
+// Create a new notice request
 exports.createNoticeRequest = async (req, res) => {
   try {
     const { 
       tenant_id, 
-      notice_period_days, 
-      requested_vacate_date, 
-      reason,
-      admin_notes 
+      title, 
+      description,
+      notice_period_date
     } = req.body;
 
-    if (!tenant_id || !notice_period_days || !requested_vacate_date || !reason) {
+    if (!tenant_id || !title || !notice_period_date) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: tenant_id, notice_period_days, requested_vacate_date, reason"
+        message: "Missing required fields: tenant_id, title, notice_period_date"
       });
     }
 
@@ -124,24 +109,31 @@ exports.createNoticeRequest = async (req, res) => {
 
       const tenant = tenantInfo[0];
 
-      // Create admin notice request
+      // Create notice request
       const [result] = await connection.query(
-        `INSERT INTO admin_notice_requests (
+        `INSERT INTO notice_period_requests (
           tenant_id,
-          notice_period_days,
-          requested_vacate_date,
-          reason,
-          admin_notes,
-          status,
+          title,
+          description,
+          notice_period_date,
+          is_seen,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())`,
-        [tenant_id, notice_period_days, requested_vacate_date, reason, admin_notes || null]
+        ) VALUES (?, ?, ?, ?, 0, NOW())`,
+        [tenant_id, title, description || null, notice_period_date]
       );
 
       const requestId = result.insertId;
 
       // Create notification for tenant
-      const notificationMessage = `Admin has issued a notice period request of ${notice_period_days} days. Requested vacate date: ${new Date(requested_vacate_date).toLocaleDateString()}. Reason: ${reason}`;
+      const formattedDate = new Date(notice_period_date).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+
+      const notificationMessage = description 
+        ? `Admin has sent a notice period request: "${title}" ending on ${formattedDate}. Description: ${description}`
+        : `Admin has sent a notice period request: "${title}" ending on ${formattedDate}`;
 
       await connection.query(
         `INSERT INTO notifications (
@@ -155,10 +147,10 @@ exports.createNoticeRequest = async (req, res) => {
           priority,
           is_read,
           created_at
-        ) VALUES (?, 'tenant', ?, ?, 'notice_request', 'notice_request', ?, 'high', 0, NOW())`,
+        ) VALUES (?, 'tenant', ?, ?, 'notice_period', 'notice_period', ?, 'high', 0, NOW())`,
         [
           tenant_id,
-          '📋 Notice Period Request from Admin',
+          `📋 Notice Period: ${title}`,
           notificationMessage,
           requestId
         ]
@@ -188,96 +180,30 @@ exports.createNoticeRequest = async (req, res) => {
   }
 };
 
-// Update notice request status
+// Update notice request (if needed - e.g., admin marks as something)
 exports.updateNoticeRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, admin_notes } = req.body;
+    const { is_seen } = req.body;
 
-    if (!status || !['pending', 'accepted', 'rejected', 'completed'].includes(status)) {
-      return res.status(400).json({
+    const [result] = await db.query(
+      `UPDATE notice_period_requests 
+       SET is_seen = ?, updated_at = NOW() 
+       WHERE id = ?`,
+      [is_seen, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
         success: false,
-        message: "Valid status (pending/accepted/rejected/completed) is required"
+        message: "Notice request not found"
       });
     }
 
-    const connection = await db.getConnection();
-    await connection.beginTransaction();
-
-    try {
-      // Get the request details for notification
-      const [requestData] = await connection.query(
-        `SELECT anr.*, t.full_name, t.email 
-         FROM admin_notice_requests anr
-         LEFT JOIN tenants t ON anr.tenant_id = t.id
-         WHERE anr.id = ?`,
-        [id]
-      );
-
-      if (requestData.length === 0) {
-        await connection.rollback();
-        return res.status(404).json({
-          success: false,
-          message: "Notice request not found"
-        });
-      }
-
-      const request = requestData[0];
-
-      // Update the request
-      await connection.query(
-        `UPDATE admin_notice_requests 
-         SET status = ?, admin_notes = CONCAT(IFNULL(admin_notes, ''), '\n', ?), updated_at = NOW() 
-         WHERE id = ?`,
-        [status, admin_notes || `Status updated to ${status}`, id]
-      );
-
-      // Create notification for tenant about status change
-      let notificationTitle = '';
-      let notificationMessage = '';
-
-      if (status === 'accepted') {
-        notificationTitle = '✅ Notice Period Request Accepted';
-        notificationMessage = `Your notice period request has been accepted. You need to vacate by ${new Date(request.requested_vacate_date).toLocaleDateString()}.`;
-      } else if (status === 'rejected') {
-        notificationTitle = '❌ Notice Period Request Rejected';
-        notificationMessage = `Your notice period request has been rejected. ${admin_notes ? `Reason: ${admin_notes}` : 'Please contact admin for more information.'}`;
-      } else if (status === 'completed') {
-        notificationTitle = '🏁 Notice Period Completed';
-        notificationMessage = `Your notice period has been completed successfully. Thank you for your cooperation.`;
-      }
-
-      if (notificationTitle) {
-        await connection.query(
-          `INSERT INTO notifications (
-            recipient_id,
-            recipient_type,
-            title,
-            message,
-            notification_type,
-            related_entity_type,
-            related_entity_id,
-            priority,
-            is_read,
-            created_at
-          ) VALUES (?, 'tenant', ?, ?, 'notice_request', 'notice_request', ?, 'high', 0, NOW())`,
-          [request.tenant_id, notificationTitle, notificationMessage, id]
-        );
-      }
-
-      await connection.commit();
-
-      res.json({
-        success: true,
-        message: `Notice request ${status} successfully`
-      });
-
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
+    res.json({
+      success: true,
+      message: "Notice request updated successfully"
+    });
 
   } catch (err) {
     console.error('❌ Error updating notice request:', err.message);
@@ -303,7 +229,7 @@ exports.bulkDeleteNoticeRequests = async (req, res) => {
     console.log(`🗑️ Bulk deleting notice requests:`, ids);
     
     const [result] = await db.query(
-      `DELETE FROM admin_notice_requests WHERE id IN (?)`,
+      `DELETE FROM notice_period_requests WHERE id IN (?)`,
       [ids]
     );
     

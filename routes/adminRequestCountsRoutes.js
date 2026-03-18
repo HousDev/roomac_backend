@@ -6,8 +6,6 @@ const db = require("../config/db");
 // Get all request counts in one endpoint
 router.get("/all", adminAuth, async (req, res) => {
   try {
-    console.log('📊 Fetching all request counts...');
-
     // Run all count queries in parallel
     const [
       complaintsResult,
@@ -44,8 +42,8 @@ router.get("/all", adminAuth, async (req, res) => {
       // Vacate requests count
       db.query(`
         SELECT COUNT(*) as count 
-        FROM vacate_bed_requests 
-        WHERE request_status = 'pending'
+        FROM vacate_bed_requests
+        WHERE status = 'pending'
       `),
       
       // Change bed requests count
