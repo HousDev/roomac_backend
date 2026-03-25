@@ -1,58 +1,4 @@
-// // routes/tenantRequests.js
-// const express = require('express');
-// const router = express.Router();
-// const TenantRequestController = require('../controllers/tenantRequestController');
-// const tenantAuth = require('../middleware/tenantAuth');
-// const adminAuth = require('../middleware/adminAuth');
 
-// // ================= TENANT ROUTES (requires tenant token) =================
-
-// // Create new request (tenant)
-// router.post('/', tenantAuth, TenantRequestController.createRequest);
-
-// // Get my requests (tenant)
-// router.get('/my', tenantAuth, TenantRequestController.getMyRequests);
-
-// // Get single request by ID (tenant can only see their own)
-// router.get('/my/:id', tenantAuth, TenantRequestController.getMyRequestById);
-
-// // ================= ADMIN ROUTES (requires admin token) =================
-
-// // Get all requests (admin)
-// router.get('/', adminAuth, TenantRequestController.getAllRequests);
-
-// // Get requests by type (for admin dashboard pages)
-// router.get('/type/:type', adminAuth, TenantRequestController.getRequestsByType);
-
-// // Get request by ID (admin)
-// router.get('/:id', adminAuth, TenantRequestController.getRequestById);
-
-// // Update request (admin)
-// router.put('/:id', adminAuth, TenantRequestController.updateRequest);
-
-// // Update request status (admin)
-// router.patch('/:id/status', adminAuth, TenantRequestController.updateRequestStatus);
-
-// // Assign request to staff (admin)
-// router.patch('/:id/assign', adminAuth, TenantRequestController.assignRequest);
-
-// // Get statistics (admin)
-// router.get('/stats/summary', adminAuth, TenantRequestController.getStats);
-
-// // Delete request (admin)
-// router.delete('/:id', adminAuth, TenantRequestController.deleteRequest);
-
-// module.exports = router;
-
-
-// const router = require("express").Router();
-// const tenantAuth = require("../middleware/tenantAuth");
-// const controller = require("../controllers/tenantRequestController");
-
-// router.post("/", tenantAuth, controller.createRequest);
-// router.get("/", tenantAuth, controller.getMyRequests);
-
-// module.exports = router;
 
 
 // routes/tenant/RequestsRoutes.js
@@ -91,7 +37,6 @@ router.get('/debug/simple', tenantAuth, async (req, res) => {
   try {
     const tenant_id = req.user?.id;
     
-    console.log('🔍 Simple debug for tenant ID:', tenant_id);
     
     // Simple query without complex joins
     const [tenantRequests] = await db.query(
@@ -123,7 +68,6 @@ router.get('/debug/simple', tenantAuth, async (req, res) => {
 // In tenantRequestsRoutes.js, add this test route (no auth required for testing)
 router.get('/debug/no-auth', async (req, res) => {
   try {
-    console.log('🔍 Debug: Testing master data (no auth)');
     
     // Direct query - no auth - EXACT FIELDS ONLY
     const [complaintTypes] = await db.query(`
@@ -139,7 +83,6 @@ router.get('/debug/no-auth', async (req, res) => {
       ORDER BY name
     `);
     
-    console.log(`✅ Found ${complaintTypes.length} complaint types directly`);
     
     res.json({
       success: true,
@@ -160,7 +103,6 @@ router.get('/debug/no-auth', async (req, res) => {
 // In tenantRequestsRoutes.js, add this test route
 router.get('/test/master-data', async (req, res) => {
   try {
-    console.log('🔍 Testing master data...');
     
     // Test 1: Check all master_types - EXACT FIELDS
     const [allTypes] = await db.query(`
@@ -170,7 +112,6 @@ router.get('/test/master-data', async (req, res) => {
       ORDER BY id
     `);
     
-    console.log('📋 All master_types:');
     allTypes.forEach(type => {
       console.log(`ID: ${type.id}, Code: "${type.code}", Name: "${type.name}", Tab: "${type.tab}"`);
     });
@@ -183,7 +124,6 @@ router.get('/test/master-data', async (req, res) => {
       ORDER BY id
     `);
     
-    console.log('📋 Complaint types (case-insensitive search):');
     complaintTypes.forEach(type => {
       console.log(`ID: ${type.id}, Code: "${type.code}", Name: "${type.name}", Tab: "${type.tab}"`);
     });
@@ -196,8 +136,6 @@ router.get('/test/master-data', async (req, res) => {
       WHERE mt.id = 9 AND mv.is_active = 1
       ORDER BY mv.id
     `);
-    
-    console.log('📋 Food complaint reasons (master_type_id = 9):');
     foodValues.forEach(value => {
       console.log(`ID: ${value.id}, Value: "${value.value}", Category: "${value.category_name}", Tab: "${value.tab}"`);
     });

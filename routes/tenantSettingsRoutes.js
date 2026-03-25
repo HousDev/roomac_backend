@@ -12,8 +12,6 @@ router.post('/request-deletion', tenantAuth, TenantSettingsController.requestAcc
 router.post('/cancel-deletion', tenantAuth, TenantSettingsController.cancelDeletionRequest);
 router.get('/deletion-status', tenantAuth, TenantSettingsController.getDeletionStatus);
 router.post('/logout', tenantAuth, TenantSettingsController.logout);
-router.get('/test', (req, res) => {
-  res.json({ success: true, message: 'Tenant settings API is working' });
-});
+
 
 module.exports = router;

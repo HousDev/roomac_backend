@@ -248,26 +248,7 @@ async createRequest(req, res) {
       );
 
 
-      // if (existingRequests.length > 0) {
-      //   const existingRequest = existingRequests[0];
-      //   return res.status(400).json({
-      //     success: false,
-      //     message: 'You already have a pending or active vacate request.',
-      //     code: 'DUPLICATE_VACATE_REQUEST',
-      //     data: {
-      //       existing_request_id: existingRequest.id,
-      //       existing_vacate_request_id: existingRequest.vacate_request_id,
-      //       status: existingRequest.status || existingRequest.vacate_status,
-      //       title: existingRequest.title,
-      //       created_at: existingRequest.created_at,
-      //       expected_vacate_date: existingRequest.expected_vacate_date
-      //     },
-      //     debug: {
-      //       message: 'Tenant cannot create multiple vacate requests simultaneously',
-      //       allowed_statuses: ['cancelled', 'rejected', 'completed']
-      //     }
-      //   });
-      // }
+     
     }
 
     // Get tenant's property and bed info with lock-in details
@@ -450,27 +431,27 @@ async createRequest(req, res) {
 
       // Create tenant request
       const [result] = await db.query(
-        `INSERT INTO tenant_requests (
-          tenant_id,
-          property_id,
-          request_type,
-          title,
-          description,
-          priority,
-          status,
-          admin_notes,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW())`,
-        [
-          tenant_id, 
-          tenantData.property_id, 
-          request_type, 
-          title, 
-          description, 
-          priority,
-          adminNotes || null
-        ]
-      );
+  `INSERT INTO tenant_requests (
+    tenant_id,
+    property_id,
+    request_type,
+    title,
+    description,
+    priority,
+    status,
+    admin_notes,
+    created_at
+  ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NOW())`,  // <-- This should be 'pending'
+  [
+    tenant_id, 
+    tenantData.property_id, 
+    request_type, 
+    title, 
+    description, 
+    priority,
+    adminNotes || null
+  ]
+);
 
       const requestId = result.insertId;
 
@@ -700,7 +681,6 @@ if (request_type === 'change_bed' && change_bed_data) {
         room_id: current_room_id || 1,
         bed_number: current_bed_number || 1
       };
-      console.log('📍 Using fallback room info:', currentRoomInfo);
     }
     
     // Get reason text

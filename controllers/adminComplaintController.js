@@ -4,7 +4,6 @@ const notificationController = require("../controllers/tenantNotificationControl
 
 exports.getComplaints = async (req, res) => {
   try {
-    console.log('🔍 Fetching complaints...');
     
     const sql = `
       SELECT 
@@ -86,7 +85,6 @@ exports.getComplaints = async (req, res) => {
     `;
     
     const [complaints] = await db.query(sql);
-    console.log(`✅ Found ${complaints.length} complaints`);
     
     // Format the data
     const formattedComplaints = complaints.map(complaint => {
@@ -133,7 +131,6 @@ exports.bulkDeleteComplaints = async (req, res) => {
       });
     }
     
-    console.log(`🗑️ Bulk deleting complaints:`, ids);
     
     // Start a transaction
     const connection = await db.getConnection();
@@ -177,11 +174,10 @@ exports.bulkDeleteComplaints = async (req, res) => {
     });
   }
 };
+
 exports.getComplaintById = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    console.log(`🔍 Fetching complaint with ID: ${id}`);
     
     const sql = `
       SELECT 
@@ -257,6 +253,7 @@ exports.getComplaintById = async (req, res) => {
     // Format the complaint data
     const formattedComplaint = {
       ...complaint,
+      admin_notes: complaint.admin_notes, // Make sure this is included
       complaint_details: {
         category_master_type_id: complaint.category_master_type_id,
         category_name: complaint.category_name,
@@ -289,16 +286,12 @@ exports.getComplaintById = async (req, res) => {
 };
 
 
-// controllers/adminComplaintController.js - UPDATE THIS FUNCTION
-
 exports.updateComplaint = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
 
-    console.log('📝 Updating complaint:', id, updateData);
-
-    // Get current complaint data to check if status changed
+    // Get current complaint data
     const [currentComplaint] = await db.query(
       `SELECT tenant_id, status, admin_notes FROM tenant_requests WHERE id = ? AND request_type = 'complaint'`,
       [id]
@@ -314,12 +307,13 @@ exports.updateComplaint = async (req, res) => {
     const tenantId = currentComplaint[0].tenant_id;
     const oldStatus = currentComplaint[0].status;
     const newStatus = updateData.status;
+    const currentNotes = currentComplaint[0]?.admin_notes || '';
 
     // Build update query
     const updates = [];
     const params = [];
 
-    // Handle status update - THIS IS CRITICAL
+    // Handle status update
     if (updateData.status) {
       updates.push('status = ?');
       params.push(updateData.status);
@@ -331,15 +325,22 @@ exports.updateComplaint = async (req, res) => {
       params.push(updateData.assigned_to);
     }
 
-    // Handle admin notes - append to existing notes or create new
+    // Handle admin notes - APPEND to existing notes, don't replace
     if (updateData.admin_notes) {
-      const currentNotes = currentComplaint[0]?.admin_notes || '';
-      const timestamp = new Date().toLocaleString();
-      const newNoteEntry = `\n[${timestamp}] Status changed to ${updateData.status || 'updated'}: ${updateData.admin_notes}`;
+      const timestamp = new Date().toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
       
-      const updatedNotes = currentNotes 
-        ? currentNotes + newNoteEntry
-        : newNoteEntry;
+      // Create the new note entry with timestamp and status
+      const statusText = updateData.status ? updateData.status.replace('_', ' ').toUpperCase() : 'UPDATED';
+      const newNoteEntry = `\n\n[${timestamp}] Status: ${statusText}\nNote: ${updateData.admin_notes}\n----------------------------------------`;
+      
+      // Append to existing notes
+      const updatedNotes = currentNotes ? currentNotes + newNoteEntry : `--- Complaint History ---\n${newNoteEntry}`;
       
       updates.push('admin_notes = ?');
       params.push(updatedNotes);
@@ -368,9 +369,6 @@ exports.updateComplaint = async (req, res) => {
       WHERE id = ? AND request_type = 'complaint'
     `;
 
-    console.log('Executing SQL:', sql);
-    console.log('With params:', params);
-
     const [result] = await db.query(sql, params);
 
     if (result.affectedRows === 0) {
@@ -380,30 +378,26 @@ exports.updateComplaint = async (req, res) => {
       });
     }
 
-    console.log(`✅ Complaint ${id} updated successfully, affected rows: ${result.affectedRows}`);
-
     // Send notification to tenant if status changed
     if (newStatus && newStatus !== oldStatus) {
       try {
         // Include admin notes in notification if provided
         const notificationMessage = updateData.admin_notes
-          ? `Your complaint status has been updated to ${newStatus.replace('_', ' ')}. Notes: ${updateData.admin_notes}`
+          ? `Your complaint status has been updated to ${newStatus.replace('_', ' ')}. \n\nAdmin Note: ${updateData.admin_notes}`
           : `Your complaint status has been updated to ${newStatus.replace('_', ' ')}.`;
         
         await notificationController.notifyComplaintStatusUpdate(
           id,
           tenantId,
           newStatus,
-          updateData.admin_notes // Pass admin notes
+          updateData.admin_notes 
         );
-        console.log(`📨 Notification sent to tenant ${tenantId} for complaint ${id}`);
       } catch (notifError) {
         console.error('❌ Failed to send notification:', notifError);
-        // Don't fail the main operation if notification fails
       }
     }
 
-    // Get the updated complaint
+    // Get the updated complaint with full admin_notes
     const getSql = `
       SELECT 
         tr.*,

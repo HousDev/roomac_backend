@@ -20,12 +20,9 @@ async function sendEmail(to, subject, html) {
     const settings = await getSMTPSettings();
 
     if (settings.email_enabled !== "true") {
-      console.log("📧 Email disabled in settings");
       return;
     }
 
-    console.log("SMTP Host:", settings.smtp_host);
-    console.log("SMTP User:", settings.smtp_username);
 
     const transporter = nodemailer.createTransport({
       host: settings.smtp_host,
@@ -39,7 +36,6 @@ async function sendEmail(to, subject, html) {
 
     // verify connection
     await transporter.verify();
-    console.log("✅ SMTP connection successful");
 
     const info = await transporter.sendMail({
       from: `"${settings.smtp_from_name}" <${settings.smtp_from_email}>`,

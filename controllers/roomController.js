@@ -361,10 +361,7 @@ async updateRoom(req, res) {
 
 
 
-    // if (photosToRemove.length) {
-    //   const removeNames = photosToRemove.map(p => p.url || p);
-    //   currentPhotos = currentPhotos.filter(p => !removeNames.includes(p.url || p));
-    // }
+    
 if (photosToRemove.length) {
 
   const extractPath = (url) => {
@@ -417,15 +414,7 @@ if (photosToRemove.length) {
       labels = JSON.parse(body.photo_labels || "{}");
     } catch {}
 
-    // Add new photos
-    // if (req.compressedPhotos?.photos) {
-    //   req.compressedPhotos.photos.forEach((file, index) => {
-    //     currentPhotos.push({
-    //       url: file.path,
-    //       label: labels[index] || "Room View"
-    //     });
-    //   });
-    // }
+    
 if (req.compressedPhotos?.length) {
   req.compressedPhotos.forEach((file, index) => {
     currentPhotos.push({

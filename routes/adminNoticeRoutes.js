@@ -37,10 +37,7 @@ router.get("/tenant/unseen", tenantAuth, async (req, res) => {
 
 // Mark notice request as seen - THIS IS THE CRITICAL ROUTE
 router.patch("/tenant/:id/seen", tenantAuth, async (req, res) => {
-  console.log('🔍 [BACKEND] markAsSeen called with:', { 
-    id: req.params.id, 
-    tenantId: req.user.id 
-  });
+  
   
   try {
     const { id } = req.params;
@@ -51,7 +48,6 @@ router.patch("/tenant/:id/seen", tenantAuth, async (req, res) => {
       [id, tenantId]
     );
 
-    console.log('📊 [BACKEND] Update result:', result);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({

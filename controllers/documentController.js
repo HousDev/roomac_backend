@@ -1,6 +1,4 @@
-// controllers/documentController.js — COLLATION FIX
-// Change: LIKE queries now use COLLATE utf8mb4_general_ci
-// Also: data_json fields are extracted properly before INSERT
+// controllers/documentController.js — 
 
 const { DocumentModel } = require("../models/documentModel");
 

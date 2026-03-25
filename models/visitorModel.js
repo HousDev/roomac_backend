@@ -153,7 +153,6 @@ const VisitorModel = {
   },
 
   // ── Block visitor — updates ALL rows matching phone + id_proof ──────────
-  // This marks every existing visit record for this person as blocked
   blockVisitor: async ({ visitor_phone, id_proof_number, reason, blocked_by }) => {
     const [result] = await db.query(
       `UPDATE visitor_logs

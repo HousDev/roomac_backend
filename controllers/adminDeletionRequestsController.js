@@ -71,7 +71,6 @@ async bulkDeleteDeletionRequests(req, res) {
     await db.query('START TRANSACTION');
 
     try {
-      // Delete the tenant deletion requests
       const [result] = await db.query(
         `DELETE FROM tenant_deletion_requests WHERE id IN (?)`,
         [ids]
@@ -162,7 +161,6 @@ async approveDeletionRequest(req, res) {
     const { requestId, reviewNotes } = req.body;
     const adminId = req.user.adminId || req.user.id;
 
-    // Get deletion request details
     const [request] = await db.query(
       `SELECT dr.*, 
               t.full_name, 
@@ -203,7 +201,6 @@ async approveDeletionRequest(req, res) {
       [adminId, reviewNotes || null, requestId]
     );
 
-    // ✅ NOW disable tenant account (only when admin approves)
     await db.query(
       `UPDATE tenants 
        SET deleted_at = NOW(),

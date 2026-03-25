@@ -10,11 +10,6 @@ const {
 const adminAuth = require("../middleware/adminAuth");
 const uploadImport = require("../middleware/uploadImport");
 
-// Debug middleware to log all requests
-router.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
-});
 
 // Import route - add this BEFORE other POST routes
 router.post(

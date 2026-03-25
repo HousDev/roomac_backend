@@ -1,138 +1,4 @@
-// // middlewares/roomUpload.js
-// const multer = require("multer");
-// const path = require("path");
-// const fs = require("fs");
 
-// const uploadPath = path.join(__dirname, "..", "uploads", "rooms");
-// if (!fs.existsSync(uploadPath)) {
-//     fs.mkdirSync(uploadPath, { recursive: true });
-// }
-
-// const storage = multer.diskStorage({
-//     destination: function (req, file, cb) {
-//         cb(null, uploadPath);
-//     },
-//     filename: function (req, file, cb) {
-//         const ext = path.extname(file.originalname).toLowerCase();
-//         const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-//         cb(null, "room-" + unique + ext);
-//     },
-// });
-
-// const fileFilter = (req, file, cb) => {
-//     const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-//     if (allowedMimes.includes(file.mimetype)) {
-//         cb(null, true);
-//     } else {
-//         cb(new Error("Only image files (jpeg, jpg, png, webp) are allowed"), false);
-//     }
-// };
-
-// const upload = multer({
-//     storage: storage,
-//     fileFilter: fileFilter,
-//     limits: { 
-//         fileSize: 5 * 1024 * 1024,
-//         files: 10
-//     }
-// });
-
-// module.exports = upload;
-
-
-// // middlewares/roomUpload.js
-// const multer = require("multer");
-// const path = require("path");
-// const fs = require("fs");
-
-// // Base folders
-// const baseUploadPath = path.join(__dirname, "..", "uploads", "rooms");
-// const imagePath = baseUploadPath;
-// const videoPath = path.join(baseUploadPath, "videos");
-
-// // Create folders if not exist
-// fs.mkdirSync(imagePath, { recursive: true });
-// fs.mkdirSync(videoPath, { recursive: true });
-
-// // Storage config
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     if (file.fieldname === "video") {
-//       cb(null, videoPath);
-//     } else if (file.fieldname === "photos") {
-//       cb(null, imagePath);
-//     } else {
-//       cb(new Error("Invalid field name"), false);
-//     }
-//   },
-
-//   filename: (req, file, cb) => {
-//     const ext = path.extname(file.originalname).toLowerCase();
-//     const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-
-//     if (file.fieldname === "video") {
-//       cb(null, `room-video-${unique}${ext}`);
-//     } else {
-//       cb(null, `room-${unique}${ext}`);
-//     }
-//   }
-// });
-
-// // File filter
-// const fileFilter = (req, file, cb) => {
-
-//   // Video validation
-//   if (file.fieldname === "video") {
-//     const allowedVideos = [
-//       "video/mp4",
-//       "video/webm",
-//       "video/ogg",
-//       "video/quicktime"
-//     ];
-
-//     if (allowedVideos.includes(file.mimetype)) {
-//       cb(null, true);
-//     } else {
-//       cb(new Error("Only mp4, webm, ogg, mov videos allowed"), false);
-//     }
-//   }
-
-//   // Image validation
-//   else if (file.fieldname === "photos") {
-//     const allowedImages = [
-//       "image/jpeg",
-//       "image/jpg",
-//       "image/png",
-//       "image/webp",
-//       "image/gif"
-//     ];
-
-//     if (allowedImages.includes(file.mimetype)) {
-//       cb(null, true);
-//     } else {
-//       cb(new Error("Only jpeg, jpg, png, webp, gif images allowed"), false);
-//     }
-//   }
-
-//   else {
-//     cb(new Error("Invalid file field"), false);
-//   }
-// };
-
-// // Multer instance
-// const roomUpload = multer({
-//   storage,
-//   fileFilter,
-//   limits: {
-//     fileSize: 50 * 1024 * 1024, // 50MB
-//     files: 11 // 10 images + 1 video
-//   }
-// }).fields([
-//   { name: "photos", maxCount: 10 },
-//   { name: "video", maxCount: 1 }
-// ]);
-
-// module.exports = roomUpload;
 
 
 
@@ -237,7 +103,6 @@ const compressRoomMedia = async (req, res, next) => {
     }
 
     req.compressedPhotos = compressedImages;
-    console.log("compressedIMage ", compressedImages)
 
     // ----------- VIDEO -----------
     const videoFile = req.files.video?.[0];
@@ -250,24 +115,7 @@ const compressRoomMedia = async (req, res, next) => {
         // Small video, keep original
         fs.renameSync(videoFile.path, finalVideoPath);
       } else {
-        // Large video, compress
-        // await new Promise((resolve, reject) => {
-        //   ffmpeg(videoFile.path)
-        //     .outputOptions([
-        //       "-vcodec libx264",
-        //       "-crf 28", // adjust for quality vs size
-        //       "-preset fast"
-        //     ])
-        //     .on("end", () => {
-        //       fs.unlinkSync(videoFile.path); // remove temp
-        //       resolve();
-        //     })
-        //     .on("error", (err) => {
-        //       console.error("Video compression error:", err);
-        //       reject(err);
-        //     })
-        //     .save(finalVideoPath);
-        // });
+        
         await new Promise((resolve, reject) => {
   ffmpeg(videoFile.path)
     .videoCodec("libx264")
@@ -293,7 +141,6 @@ const compressRoomMedia = async (req, res, next) => {
         filename: finalVideoName,
         path: `/uploads/rooms/videos/${finalVideoName}`
       };
-      console.log("compressed video" , req.compressedVideo)
     }
 
     next();

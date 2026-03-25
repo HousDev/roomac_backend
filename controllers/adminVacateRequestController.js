@@ -68,12 +68,7 @@ async bulkDeleteVacateRequests(req, res) {
     await db.query('START TRANSACTION');
 
     try {
-      // First, delete any related records (if any)
-      // For example, if you have vacate_request_details table:
-      // await db.query(
-      //   `DELETE FROM vacate_request_details WHERE vacate_request_id IN (?)`,
-      //   [ids]
-      // );
+      
       
       // Then delete the vacate requests
       const [result] = await db.query(
@@ -138,7 +133,6 @@ async bulkDeleteVacateRequests(req, res) {
     }
   }
 
-  // Update vacate request status
 // Update vacate request status
   async updateVacateRequestStatus(req, res) {
     try {

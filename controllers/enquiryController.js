@@ -240,7 +240,7 @@ const getEnquiryStats = async (req, res) => {
 // Schedule a new visit
 const scheduleVisit = async (req, res) => {
   try {
-    const { id } = req.params; // enquiry_id
+    const { id } = req.params; 
     const visitData = req.body;
 
     // Validate required fields
@@ -371,7 +371,7 @@ const getTodayVisits = async (req, res) => {
 const convertToTenant = async (req, res) => {
   try {
     const { id } = req.params;
-    const { action, selectedTenantId } = req.body; // Add action and selectedTenantId to handle conflicts
+    const { action, selectedTenantId } = req.body; 
 
     // Check if enquiry exists
     const existingEnquiry = await EnquiryModel.getEnquiryById(id);
@@ -392,7 +392,7 @@ const convertToTenant = async (req, res) => {
 
     // If we have an action from the frontend, handle accordingly
     if (action === 'create_new') {
-      // Force create new tenant even if matches exist
+      
       const result = await EnquiryModel.convertToTenant(id, { forceNew: true });
       return res.json({
         success: true,

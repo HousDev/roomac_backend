@@ -5,7 +5,6 @@ class NotificationController {
   // Create notification (POST /api/notifications)
   async createNotification(req, res) {
     try {
-      console.log('📝 POST /api/notifications', req.body);
       
       const requiredFields = ['recipient_id', 'recipient_type', 'title', 'message'];
       const missingFields = requiredFields.filter(field => !req.body[field]);
@@ -49,10 +48,7 @@ class NotificationController {
   // Get notifications for recipient (GET /api/notifications/:recipient_type/:recipient_id)
   async getNotifications(req, res) {
     try {
-      console.log('🔍 GET /api/notifications/:recipient_type/:recipient_id', {
-        params: req.params,
-        query: req.query
-      });
+      
 
       const { recipient_type, recipient_id } = req.params;
       const filters = { ...req.query };
@@ -107,7 +103,6 @@ class NotificationController {
   // Get unread count (GET /api/notifications/:recipient_type/:recipient_id/unread-count)
   async getUnreadCount(req, res) {
     try {
-      console.log('🔔 GET /api/notifications/:recipient_type/:recipient_id/unread-count', req.params);
 
       const { recipient_type, recipient_id } = req.params;
       
@@ -145,10 +140,7 @@ class NotificationController {
   // Mark notification as read (PUT /api/notifications/:id/read)
   async markAsRead(req, res) {
     try {
-      console.log('✅ PUT /api/notifications/:id/read', {
-        params: req.params,
-        body: req.body
-      });
+      
 
       const { id } = req.params;
       const success = await NotificationModel.markAsRead(parseInt(id));
@@ -185,7 +177,6 @@ class NotificationController {
   // Mark multiple notifications as read (PUT /api/notifications/mark-read)
   async markMultipleAsRead(req, res) {
     try {
-      console.log('✅ PUT /api/notifications/mark-read', req.body);
 
       const { ids } = req.body;
 
@@ -224,7 +215,6 @@ class NotificationController {
   // Mark all notifications as read (PUT /api/notifications/:recipient_type/:recipient_id/read-all)
   async markAllAsRead(req, res) {
     try {
-      console.log('✅ PUT /api/notifications/:recipient_type/:recipient_id/read-all', req.params);
 
       const { recipient_type, recipient_id } = req.params;
       
@@ -263,7 +253,6 @@ class NotificationController {
   // Delete notification (DELETE /api/notifications/:id)
   async deleteNotification(req, res) {
     try {
-      console.log('🗑️ DELETE /api/notifications/:id', req.params);
 
       const { id } = req.params;
       const success = await NotificationModel.delete(parseInt(id));
@@ -299,7 +288,6 @@ class NotificationController {
   // Get notification statistics (GET /api/notifications/:recipient_type/:recipient_id/stats)
   async getStats(req, res) {
     try {
-      console.log('📊 GET /api/notifications/:recipient_type/:recipient_id/stats', req.params);
 
       const { recipient_type, recipient_id } = req.params;
       
