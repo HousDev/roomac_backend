@@ -117,6 +117,37 @@ const bulkDelete = async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
+const updateDocument = async (req, res) => {
+  try {
+    const doc = await DocumentModel.getById(req.params.id);
+    if (!doc) return res.status(404).json({ success: false, message: "Not found" });
+
+    const updated = await DocumentModel.updateDocument(req.params.id, {
+      tenant_name:            req.body.tenant_name,
+      tenant_phone:           req.body.tenant_phone,
+      tenant_email:           req.body.tenant_email,
+      aadhaar_number:         req.body.aadhaar_number,
+      pan_number:             req.body.pan_number,
+      emergency_contact_name: req.body.emergency_contact_name,
+      emergency_phone:        req.body.emergency_phone,
+      property_name:          req.body.property_name,
+      room_number:            req.body.room_number,
+      bed_number:             req.body.bed_number,
+      move_in_date:           req.body.move_in_date,
+      rent_amount:            req.body.rent_amount,
+      security_deposit:       req.body.security_deposit,
+      payment_mode:           req.body.payment_mode,
+      company_name:           req.body.company_name,
+      company_address:        req.body.company_address,
+      notes:                  req.body.notes,
+      data_json:              req.body.data_json || {},
+    });
+
+    res.json({ success: true, message: "Document updated", data: updated });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
 // GET /api/documents/tenant - Get documents for logged-in tenant
 const getByTenant = async (req, res) => {
   try {
@@ -145,4 +176,5 @@ const getByTenant = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getById, create, updateStatus, generateShareLink, remove, bulkDelete, getByTenant };
+
+module.exports = { getAll, getById, create, updateStatus, generateShareLink, remove, bulkDelete, getByTenant, updateDocument };

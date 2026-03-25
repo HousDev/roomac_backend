@@ -18,5 +18,5 @@ router.get("/:id",           ctrl.getById);
 router.delete("/:id",        ctrl.remove);
 router.patch("/:id/status",  ctrl.updateStatus);
 router.post("/:id/share",    ctrl.generateShareLink);
-
+router.put("/:id", ctrl.updateDocument);  // Add this line before module.exports
 module.exports = router;
