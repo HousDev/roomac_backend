@@ -4,7 +4,6 @@ const pool = require("../config/db");
 const TenantDetailsModel = {
 async getById(tenantId) {
   try {
-    console.log('🔍 Fetching simplified tenant details for ID:', tenantId);
     
     const [rows] = await pool.query(
       `
@@ -83,7 +82,6 @@ t.pan_number,
       [tenantId]
     );
 
-    console.log('✅ Query executed, rows found:', rows.length);
 
     if (!rows || rows.length === 0) {
       return null;
@@ -92,23 +90,7 @@ t.pan_number,
     const tenantData = rows[0];
     
     // CRITICAL: Log exactly what we're returning
-    console.log('\n📦 FINAL DATA BEING RETURNED:');
-    console.log('room_id:', tenantData.room_id);
-    console.log('room_number:', tenantData.room_number);
-    console.log('bed_number:', tenantData.bed_number);
-    console.log('bed_type:', tenantData.bed_type);
-    console.log('tenant_rent:', tenantData.tenant_rent);
-    console.log('is_couple:', tenantData.is_couple);
-    console.log('bed_assigned_at:', tenantData.bed_assigned_at);
-    console.log('property_name:', tenantData.property_name);
-    console.log('property_address:', tenantData.property_address);
-    console.log('property_state:', tenantData.property_state);
-    console.log('property_city_id:', tenantData.property_city_id);
-    console.log('property_area:', tenantData.property_area);
-    console.log('property_manager_name:', tenantData.property_manager_name);
-    console.log('property_manager_phone:', tenantData.property_manager_phone);
-    console.log('rent_per_bed:', tenantData.rent_per_bed);
-    console.log('================================\n');
+    
 
     return tenantData;
   } catch (error) {
@@ -119,7 +101,6 @@ t.pan_number,
 
   async updateProfile(tenantId, updateData) {
     try {
-      console.log('📝 Updating profile for tenant ID:', tenantId);
       
       const allowedFields = [
         'full_name', 'phone', 'country_code', 'date_of_birth', 'gender',

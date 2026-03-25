@@ -5,25 +5,17 @@ const db = require("../config/db");
 function parseRow(row) {
   if (!row) return row;
 
-  console.log("🔍 Raw DB row for parsing:", { 
-    id: row.id, 
-    name: row.name, 
-    rawTags: row.tags,
-    rawTagsType: typeof row.tags,
-    rawTagsLength: row.tags?.length
-  });
+  
 
   // Parse tags FIRST
   try {
     if (row.tags) {
-      // console.log(`🔍 Parsing tags for property ${row.id}:`, row.tags);
       
       if (typeof row.tags === 'string') {
         // Try to parse as JSON
         if (row.tags.trim().startsWith('[') || row.tags.trim().startsWith('{')) {
           try {
             row.tags = JSON.parse(row.tags);
-            // console.log(`✅ JSON parsed tags:`, row.tags);
           } catch (e) {
             console.error(`❌ JSON parse error:`, e);
             // Fallback to comma-separated
@@ -39,17 +31,15 @@ function parseRow(row) {
         // Comma-separated string
         else if (row.tags.includes(',')) {
           row.tags = row.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-          // console.log(`✅ Comma-separated parsed tags:`, row.tags);
+
         }
         // Single tag string
         else if (row.tags.trim() !== '') {
           row.tags = [row.tags.trim()];
-          // console.log(`✅ Single tag parsed:`, row.tags);
         }
         // Empty string
         else {
           row.tags = [];
-          // console.log(`✅ Empty tags array`);
         }
       } 
       // If already array (from previous parse)
@@ -62,7 +52,6 @@ function parseRow(row) {
         try {
           // Convert object to array
           row.tags = Object.values(row.tags).filter(v => typeof v === 'string' && v.trim() !== '');
-          // console.log(`✅ Object converted to array tags:`, row.tags);
         } catch (e) {
           console.error(`❌ Object conversion error:`, e);
           row.tags = [];
@@ -70,11 +59,9 @@ function parseRow(row) {
       }
       else {
         row.tags = [];
-        console.log(`✅ Default empty array`);
       }
     } else {
       row.tags = [];
-      console.log(`✅ No tags field, set to empty array`);
     }
   } catch (error) {
     console.error(`❌ Error parsing tags for property ${row.id}:`, error);
@@ -116,13 +103,6 @@ function parseRow(row) {
   row.lockin_penalty_amount = row.lockin_penalty_amount ? Number(row.lockin_penalty_amount) : 0;
   row.notice_period_days = row.notice_period_days ? Number(row.notice_period_days) : 0;
   row.notice_penalty_amount = row.notice_penalty_amount ? Number(row.notice_penalty_amount) : 0;
-
-  console.log(`✅ Final parsed row for ${row.id}:`, { 
-    id: row.id, 
-    name: row.name, 
-    tags: row.tags,
-    tagsLength: row.tags.length 
-  });
 
   return row;
 }
@@ -193,7 +173,6 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
       LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
- console.log("roowwsssssssssssssss", rows[0])
     // Get count for pagination
     const [countRows] = await db.query(
       `SELECT COUNT(*) AS total FROM properties p ${whereSql}`,
@@ -467,7 +446,6 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
   // GET BY ID
 async findById(id) {
   try {
-    console.log(`🔍 PropertyModel.findById looking for ID: ${id} (type: ${typeof id})`);
     
     // Convert id to number if it's a string
     const propertyId = parseInt(id);
@@ -499,7 +477,6 @@ async findById(id) {
       [propertyId]
     );
     
-    console.log(`🔍 Found ${rows.length} properties`);
     
     if (!rows[0]) return null;
 
@@ -646,16 +623,7 @@ async findById(id) {
       role_name:row.role_name
     };
 
-    console.log('Property with mapped values:', {
-      id: parsedRow.id,
-      name: parsedRow.name,
-      tags: parsedRow.tags, // Original IDs
-      tags_mapped: parsedRow.tags_mapped, // Actual names
-      property_rules: parsedRow.property_rules, // Original IDs
-      property_rules_mapped: parsedRow.property_rules_mapped, // Actual names
-      additional_terms: parsedRow.additional_terms, // Original IDs
-      additional_terms_mapped: parsedRow.additional_terms_mapped // Actual names
-    });
+    
 
     return parsedRow;
     
@@ -770,7 +738,6 @@ async create(property) {
 },
   // UPDATE
   async update(id, property) {
-    console.log("updeted check",property);
     try {
       const fields = [];
       const params = [];
@@ -911,10 +878,7 @@ async bulkUpdateTags(ids, tags, operation = 'add') {
     for (const property of properties) {
       let currentTags = [];
       try {
-        console.log(`🔍 Processing property ${property.id}:`, {
-          rawTags: property.tags,
-          type: typeof property.tags
-        });
+        
         
         if (property.tags) {
           // Handle different formats
@@ -963,14 +927,12 @@ async bulkUpdateTags(ids, tags, operation = 'add') {
           currentTags = [];
         }
         
-        console.log(`✅ Property ${property.id} parsed current tags:`, currentTags);
         
       } catch (error) {
         console.error(`❌ Error parsing tags for property ${property.id}:`, error);
         currentTags = [];
       }
 
-      console.log(`🏷️ Operation: ${operation}, Tags to process:`, tags);
 
       let newTags;
       switch(operation) {
@@ -980,7 +942,6 @@ async bulkUpdateTags(ids, tags, operation = 'add') {
             !currentTags.some(ct => ct.toLowerCase() === tag.toLowerCase())
           );
           newTags = [...currentTags, ...tagsToAdd];
-          console.log(`✅ Adding tags. Before:`, currentTags, `After:`, newTags);
           break;
           
         case 'remove':
@@ -989,13 +950,11 @@ async bulkUpdateTags(ids, tags, operation = 'add') {
           newTags = currentTags.filter(tag => 
             !tagsToRemoveLower.includes(tag.toLowerCase().trim())
           );
-          console.log(`✅ Removing tags. Before:`, currentTags, `After:`, newTags);
           break;
           
         case 'set':
           // Set tags (replace all)
           newTags = [...tags];
-          console.log(`✅ Setting tags. Before:`, currentTags, `After:`, newTags);
           break;
           
         default:
@@ -1004,8 +963,6 @@ async bulkUpdateTags(ids, tags, operation = 'add') {
 
       // Remove duplicates and empty values
       newTags = [...new Set(newTags.filter(tag => tag && tag.trim() !== ''))];
-      
-      console.log(`🏷️ Final tags for property ${property.id}:`, newTags);
 
       await db.query(
         `UPDATE properties SET tags = ?, updated_at = ? WHERE id = ?`,
@@ -1028,7 +985,6 @@ exports.getBulkTagsInfo = async (req, res) => {
   try {
     const { ids } = req.query;
 
-    console.log("🔍 getBulkTagsInfo called with ids:", ids);
 
     if (!ids) {
       return res.status(400).json({

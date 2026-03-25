@@ -184,15 +184,9 @@ const ReportController = {
       
       const [checkoutStats] = await db.query(checkoutQuery, checkoutParams);
 
-      // Get maintenance requests - Using a more generic approach
-      // Since we don't know the exact column name for room status,
-      // we'll use a query that doesn't rely on status
       let maintenanceQuery = `
         SELECT 0 as count
       `;
-      
-      // Alternative: If you have a way to identify maintenance rooms,
-      // you can modify this query accordingly
       
       const [maintenanceStats] = await db.query(maintenanceQuery);
 

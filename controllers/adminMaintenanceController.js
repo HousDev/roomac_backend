@@ -183,15 +183,16 @@ exports.bulkDeleteMaintenanceRequests = async (req, res) => {
   }
 };
 
+// controllers/adminMaintenanceController.js - Updated updateMaintenanceRequest
+
 exports.updateMaintenanceRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
 
-
-    // Get current maintenance request data to check if status changed
+    // Get current maintenance request data
     const [currentRequest] = await db.query(
-      `SELECT tenant_id, status FROM tenant_requests WHERE id = ? AND request_type = 'maintenance'`,
+      `SELECT tenant_id, status, admin_notes FROM tenant_requests WHERE id = ? AND request_type = 'maintenance'`,
       [id]
     );
 
@@ -205,6 +206,7 @@ exports.updateMaintenanceRequest = async (req, res) => {
     const tenantId = currentRequest[0].tenant_id;
     const oldStatus = currentRequest[0].status;
     const newStatus = updateData.status;
+    const currentNotes = currentRequest[0]?.admin_notes || '';
 
     // Build update query for tenant_requests
     const updates = [];
@@ -216,20 +218,24 @@ exports.updateMaintenanceRequest = async (req, res) => {
       params.push(updateData.status);
     }
 
-    // Handle admin notes - append to existing notes or create new
+    // Handle admin notes - append with proper formatting
     if (updateData.admin_notes) {
-      // Get current admin_notes first
-      const [current] = await db.query(
-        `SELECT admin_notes FROM tenant_requests WHERE id = ?`,
-        [id]
-      );
+      const timestamp = new Date().toLocaleString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       
-      const currentNotes = current[0]?.admin_notes || '';
-      const timestamp = new Date().toLocaleString();
-      const newNoteEntry = `\n[${timestamp}] Status changed to ${updateData.status || 'updated'}: ${updateData.admin_notes}`;
+      // Create the new note entry
+      const statusText = updateData.status ? updateData.status.replace('_', ' ') : 'updated';
+      const newNoteEntry = `[${timestamp}] Status changed to ${statusText}: ${updateData.admin_notes}`;
       
+      // Append to existing notes with a newline
       const updatedNotes = currentNotes 
-        ? currentNotes + newNoteEntry
+        ? currentNotes + '\n' + newNoteEntry
         : newNoteEntry;
       
       updates.push('admin_notes = ?');
@@ -304,42 +310,14 @@ exports.updateMaintenanceRequest = async (req, res) => {
     // Send notification to tenant if status changed
     if (newStatus && newStatus !== oldStatus) {
       try {
-        // Include admin notes in notification if provided
         await notificationController.notifyMaintenanceStatusUpdate(
           id,
           tenantId,
           newStatus,
           updateData.admin_notes
         );
-        console.log(`📨 Notification sent to tenant ${tenantId} for maintenance request ${id}`);
       } catch (notifError) {
         console.error('❌ Failed to send notification:', notifError);
-        // Don't fail the main operation if notification fails
-      }
-    }
-
-    // If staff assigned, send assignment notification
-    if (updateData.assigned_to !== undefined && updateData.assigned_to) {
-      try {
-        // Get staff name
-        const [staffResult] = await db.query(
-          'SELECT name FROM staff WHERE id = ?',
-          [updateData.assigned_to]
-        );
-        
-        const staffName = staffResult[0]?.name || 'Staff';
-        
-        await notificationController.createNotification({
-          tenantId,
-          title: 'Maintenance Request Assigned',
-          message: `Your maintenance request #${id} has been assigned to ${staffName}.`,
-          notificationType: 'maintenance',
-          relatedEntityType: 'maintenance',
-          relatedEntityId: id,
-          priority: 'medium'
-        });
-      } catch (notifError) {
-        console.error('❌ Failed to send assignment notification:', notifError);
       }
     }
 
@@ -352,6 +330,69 @@ exports.updateMaintenanceRequest = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: "Failed to update maintenance request"
+    });
+  }
+};
+
+// controllers/adminMaintenanceController.js - Add this function
+
+exports.getMaintenanceRequestById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const sql = `
+      SELECT 
+        tr.*,
+        t.full_name as tenant_name,
+        t.email as tenant_email,
+        t.phone as tenant_phone,
+        p.name as property_name,
+        s.name as staff_name,
+        s.role as staff_role,
+        mrd.issue_category,
+        mrd.location,
+        mrd.preferred_visit_time,
+        mrd.access_permission,
+        mrd.resolved_at as maintenance_resolved_at
+      FROM tenant_requests tr
+      LEFT JOIN tenants t ON tr.tenant_id = t.id
+      LEFT JOIN properties p ON tr.property_id = p.id
+      LEFT JOIN staff s ON tr.assigned_to = s.id
+      LEFT JOIN maintenance_request_details mrd ON tr.id = mrd.request_id
+      WHERE tr.id = ? AND tr.request_type = 'maintenance'
+    `;
+    
+    const [rows] = await db.query(sql, [id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Maintenance request not found"
+      });
+    }
+    
+    const request = rows[0];
+    
+    // Format the data
+    const formattedRequest = {
+      ...request,
+      maintenance_data: request.issue_category ? {
+        issue_category: request.issue_category,
+        location: request.location,
+        preferred_visit_time: request.preferred_visit_time,
+        access_permission: request.access_permission === 1
+      } : undefined
+    };
+    
+    res.json({
+      success: true,
+      data: formattedRequest
+    });
+  } catch (err) {
+    console.error('❌ Error fetching maintenance request by ID:', err.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to fetch maintenance request"
     });
   }
 };

@@ -784,7 +784,7 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
       }
 
       // Create new bed assignment
-      const bedNumber = assignedBedNumber || 1; // Default to bed 1 if not assigned
+      const bedNumber = assignedBedNumber || 1; 
       
       await db.query(
         `INSERT INTO bed_assignments 
@@ -799,7 +799,6 @@ async sendStatusNotification(requestId, tenantId, oldStatus, newStatus, adminNot
         ]
       );
 
-      // Update tenant's room_id
       await db.query(
         `UPDATE tenants SET 
           room_id = ?,

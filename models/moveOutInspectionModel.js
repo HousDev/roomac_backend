@@ -53,7 +53,6 @@ const MoveOutInspectionModel = {
         rows = result.rows || result.data || [];
       }
 
-      console.log("Query returned", rows.length, "rows");
       return rows.map(r => MoveOutInspectionModel._parseRow(r));
 
     } catch (error) {

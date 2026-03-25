@@ -4,12 +4,10 @@ const db = require("../config/db")
 
 class VacateController {
   // Get initial vacate data
-// In vacateController.js, modify getInitialVacateData
 async getInitialVacateData(req, res) {
   try {
     const { bedAssignmentId } = req.params;
     
-    console.log(`[VACATE] Getting initial data for bed assignment: ${bedAssignmentId}`);
     
     if (!bedAssignmentId) {
       return res.status(400).json({
@@ -65,10 +63,7 @@ async getInitialVacateData(req, res) {
       }
     }
     
-    console.log(`[VACATE] Data retrieved:`, {
-      hasBedAssignment: !!data.bedAssignment,
-      hasExistingRequest: !!data.existingVacateRequest
-    });
+    
     
     res.json({
       success: true,

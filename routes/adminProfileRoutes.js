@@ -22,6 +22,5 @@ router.put('/notifications', profileController.updateNotificationSettings);
 // POST /api/profile/avatar - Upload avatar
 router.post('/avatar', profileController.uploadAvatar);
 
-// REMOVE THIS LINE: router.get('/debug', profileController.debugProfile);
 
 module.exports = router;

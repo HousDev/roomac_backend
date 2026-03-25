@@ -112,7 +112,6 @@ const TenantSettingsController = {
 // Update changePassword method - REMOVE tenant status changes
 async changePassword(req, res) {
   try {
-    console.log('🔐 Password change request received');
     
     const tenantId = req.user?.id || req.user?.tenantId;
     const { currentPassword, newPassword } = req.body;
@@ -124,7 +123,6 @@ async changePassword(req, res) {
       });
     }
 
-    console.log('🔐 Password change for tenant:', tenantId);
 
     // Validate inputs
     if (!currentPassword || !newPassword) {
@@ -178,7 +176,6 @@ async changePassword(req, res) {
       [hashedPassword, tenantId]
     );
 
-    console.log('✅ Password updated successfully for tenant:', tenantId);
 
     // Create notification for tenant
     await db.query(
@@ -217,7 +214,6 @@ async requestAccountDeletion(req, res) {
     const tenantId = req.user?.id || req.user?.tenantId;
     const { reason } = req.body;
 
-    console.log('🗑️ Deletion request from tenant:', tenantId);
 
     if (!tenantId) {
       return res.status(401).json({
@@ -331,7 +327,6 @@ async requestAccountDeletion(req, res) {
       ]
     );
 
-    console.log('✅ Deletion request created with ID:', result.insertId);
 
     res.json({
       success: true,
@@ -352,7 +347,6 @@ async cancelDeletionRequest(req, res) {
   try {
     const tenantId = req.user?.id || req.user?.tenantId;
 
-    console.log('❌ Cancelling deletion request for tenant:', tenantId);
 
     if (!tenantId) {
       return res.status(401).json({
@@ -427,7 +421,6 @@ async cancelDeletionRequest(req, res) {
       ]
     );
 
-    console.log('✅ Deletion request cancelled for tenant:', tenantId);
 
     res.json({
       success: true,
@@ -495,7 +488,6 @@ async cancelDeletionRequest(req, res) {
   // Logout
   async logout(req, res) {
     try {
-      console.log('👋 Tenant logging out');
       res.json({
         success: true,
         message: 'Logged out successfully'

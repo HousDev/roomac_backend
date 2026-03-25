@@ -4,6 +4,7 @@ const adminAuth = require("../middleware/adminAuth");
 const controller = require("../controllers/adminMaintenanceController");
 
 router.get("/", adminAuth, controller.getMaintenanceRequests);
+router.get("/:id", adminAuth, controller.getMaintenanceRequestById);
 router.put("/:id", adminAuth, controller.updateMaintenanceRequest);
 // Add bulk delete route
 router.post("/bulk-delete", adminAuth, controller.bulkDeleteMaintenanceRequests);

@@ -5,11 +5,6 @@ class ChangeBedRequestModel {
   // Create change bed request
   static async create(tenantRequestId, data, currentRoomInfo) {
     try {
-      console.log('📝 Creating change bed request:', {
-        tenantRequestId,
-        data,
-        currentRoomInfo
-      });
       
       const {
         preferred_property_id,
@@ -127,7 +122,6 @@ static async executeBedChange(changeBedRequestId) {
   try {
     await connection.beginTransaction();
     
-    console.log(`🔄 Starting bed change execution for request ID: ${changeBedRequestId}`);
     
     // 1. Get the change bed request with all details
     const [requestRows] = await connection.query(
@@ -145,14 +139,7 @@ static async executeBedChange(changeBedRequestId) {
     const request = requestRows[0];
     const tenantId = request.tenant_id;
     
-    console.log('📋 Request details:', {
-      requestId: changeBedRequestId,
-      tenantId,
-      currentRoomId: request.current_room_id,
-      currentBedNumber: request.current_bed_number,
-      newRoomId: request.preferred_room_id,
-      assignedBedNumber: request.assigned_bed_number
-    });
+    
     
     // 2. Get current bed assignment ID
     const [currentBedRows] = await connection.query(
@@ -161,7 +148,6 @@ static async executeBedChange(changeBedRequestId) {
       [request.current_room_id, request.current_bed_number, tenantId]
     );
     
-    console.log('🛏️ Current bed assignment:', currentBedRows);
     
     if (currentBedRows.length === 0) {
       throw new Error('Current bed assignment not found for tenant');
@@ -185,7 +171,6 @@ static async executeBedChange(changeBedRequestId) {
       // Use existing available bed
       newBedId = newBedCheck[0].id;
       
-      console.log(`✅ Found existing bed assignment ID: ${newBedId}`);
       
       await connection.query(
         `UPDATE bed_assignments 
@@ -195,7 +180,6 @@ static async executeBedChange(changeBedRequestId) {
       );
     } else {
       // Create new bed assignment
-      console.log(`📝 Creating new bed assignment for room ${request.preferred_room_id}, bed ${assignedBedNumber}`);
       
       // Get tenant gender for the bed assignment
       const [tenantRows] = await connection.query(
@@ -219,11 +203,9 @@ static async executeBedChange(changeBedRequestId) {
       );
       
       newBedId = newBedResult.insertId;
-      console.log(`✅ Created new bed assignment ID: ${newBedId}`);
     }
     
     // 4. Free the current bed
-    console.log(`🔄 Freeing current bed assignment ID: ${currentBedId}`);
     
     await connection.query(
       `UPDATE bed_assignments 
@@ -233,7 +215,6 @@ static async executeBedChange(changeBedRequestId) {
     );
     
     // 5. Update tenant's room and bed assignment
-    console.log(`👤 Updating tenant ${tenantId} to room ${request.preferred_room_id}, bed ID ${newBedId}`);
     
     await connection.query(
       `UPDATE tenants 
@@ -248,7 +229,6 @@ static async executeBedChange(changeBedRequestId) {
     );
     
     // 6. Update room occupancy counts
-    console.log(`📊 Updating room occupancy...`);
     
     await connection.query(
       `UPDATE rooms 
@@ -267,7 +247,6 @@ static async executeBedChange(changeBedRequestId) {
     );
     
     // 7. Log to bed_change_log
-    console.log(`📝 Logging bed change to bed_change_log`);
     
     await connection.query(
       `INSERT INTO bed_change_log SET ?`,
@@ -286,7 +265,6 @@ static async executeBedChange(changeBedRequestId) {
     );
     
     // 8. Update change bed request status to processed
-    console.log(`✅ Updating request status to 'processed'`);
     
     await connection.query(
       `UPDATE change_bed_requests 
@@ -296,7 +274,6 @@ static async executeBedChange(changeBedRequestId) {
     );
     
     // 9. Update tenant request status to completed
-    console.log(`✅ Updating tenant request to 'completed'`);
     
     await connection.query(
       `UPDATE tenant_requests 
@@ -308,7 +285,6 @@ static async executeBedChange(changeBedRequestId) {
     await connection.commit();
     connection.release();
     
-    console.log(`🎉 Bed change successfully executed for request ${changeBedRequestId}`);
     return true;
     
   } catch (error) {

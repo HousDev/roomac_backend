@@ -69,8 +69,6 @@ function parseTenant(row) {
 
 const TenantModel = {
 
-// In tenantModel.js - Update the findAll method SELECT clause
-// In tenantModel.js - Update findAll method with simplified vacate filter
 
 async findAll({
   search = "",
@@ -86,7 +84,7 @@ async findAll({
   preferred_room_type,
   has_credentials,
   includeDeleted = false,
-  vacate_status, // 'vacated' or 'active' or undefined
+  vacate_status, 
 }) {
   try {
     const offset = (page - 1) * pageSize;
@@ -189,9 +187,6 @@ async findAll({
       LIMIT ? OFFSET ?
     `;
 
-    console.log('SQL query with vacate filter:', sql);
-    console.log('Vacate filter applied:', vacate_status);
-    console.log('Parameters:', [...params, parseInt(pageSize, 10), parseInt(offset, 10)]);
 
     const [rows] = await pool.query(
       sql,
@@ -309,16 +304,7 @@ async findById(id) {
       tenant.check_in_date = date.toISOString().split('T')[0];
     }
     
-    console.log('Tenant fetched with all fields:', {
-      id: tenant.id,
-      work_mode: tenant.work_mode,
-      shift_timing: tenant.shift_timing,
-      occupation_category: tenant.occupation_category,
-      exact_occupation: tenant.exact_occupation,
-      organization: tenant.organization,
-      years_of_experience: tenant.years_of_experience,
-      monthly_income: tenant.monthly_income
-    });
+    
     
     return tenant;
   } catch (err) {
@@ -362,12 +348,8 @@ async findById(id) {
   }
 },
 
-  
-  // In tenantModel.js - Update the create method
-// In tenantModel.js - Update the create method
 async create(payload) {
   try {
-    console.log('TenantModel.create called with payload keys:', Object.keys(payload));
     
     const {
       salutation,
@@ -482,26 +464,7 @@ async create(payload) {
       notice_penalty_type || 'fixed'
     ];
     
-    console.log('Number of values for INSERT:', values.length);
-    console.log('Sample values:', {
-      full_name: values[0],
-      email: values[1],
-      occupation_category: values[7],
-      exact_occupation: values[8],
-      occupation: values[9],
-      organization: values[10],
-      years_of_experience: values[11],
-      monthly_income: values[12],
-      course_duration: values[13],
-      student_id: values[14],
-      employee_id: values[15],
-      portfolio_url: values[16],
-      work_mode: values[17],
-      shift_timing: values[18],
-      property_id: values[31],
-      lockin_months: values[40],
-      notice_days: values[43]
-    });
+    
 
     // UPDATED SQL to include ALL occupation fields
     const sql = `
@@ -556,12 +519,9 @@ VALUES (
   ?, ?, ?, ?, ?, ?,? ,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `;
-
-    console.log('SQL query prepared');
     
     const [result] = await pool.query(sql, values);
     
-    console.log('Tenant created successfully with ID:', result.insertId);
     return result.insertId;
   } catch (err) {
     console.error("TenantModel.create error:", err);
@@ -580,7 +540,6 @@ async createCredential(credentialData) {
   try {
     const { tenant_id, email, password_hash } = credentialData;
     
-    console.log('Creating credential for tenant:', tenant_id);
     
     const sql = `
       INSERT INTO tenant_credentials 
@@ -589,7 +548,7 @@ async createCredential(credentialData) {
     `;
     
     const [result] = await pool.query(sql, [tenant_id, email, password_hash]);
-    console.log('Credential created successfully');
+    
     return result.insertId;
   } catch (err) {
     console.error("TenantModel.createCredential error:", err);
@@ -755,7 +714,6 @@ async update(id, payload) {
             additionalDocsJson = JSON.stringify(payload.additional_documents);
           }
         }
-        console.log('Processed additional_documents:', additionalDocsJson);
       } catch (e) {
         console.error('Error processing additional_documents:', e);
         additionalDocsJson = '[]';
@@ -769,8 +727,6 @@ async update(id, payload) {
     params.push(id);
 
     const sql = `UPDATE tenants SET ${fields.join(", ")}, updated_at = ? WHERE id = ?`;
-    console.log('Update SQL:', sql);
-    console.log('Update params:', params);
     
     const [result] = await pool.query(sql, params);
     return result.affectedRows > 0;
@@ -958,7 +914,6 @@ async getDeletedTenants() {
 
   async getAvailableRooms(gender, propertyId) {
     try {
-      console.log('getAvailableRooms called with:', { gender, propertyId });
       
       // Map gender to room preference
       const genderMap = {
@@ -1033,11 +988,8 @@ async getDeletedTenants() {
       
       query += ` ORDER BY p.name, r.room_number`;
       
-      console.log('SQL Query:', query);
-      console.log('Params:', params);
       
       const [rows] = await pool.query(query, params);
-      console.log('Rows found:', rows.length);
       
       return rows;
     } catch (error) {

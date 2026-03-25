@@ -215,7 +215,6 @@ const NoticePeriodRequestController = {
 
   // Mark a request as seen (when tenant clicks notification)
   async markAsSeen(req, res) {
-    console.log("is seen " )
     try {
       const id = req.params.id;
       const tenantId = req.user.id; // From tenantAuth middleware

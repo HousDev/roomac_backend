@@ -4,15 +4,6 @@ const router = express.Router();
 const offerController = require("../controllers/offerController");
 
 
-// In offerRoutes.js - add debugging middleware
-router.use((req, res, next) => {
-    console.log(`[OFFERS API] ${req.method} ${req.originalUrl}`);
-    console.log(`Query params:`, req.query);
-    console.log(`Route params:`, req.params);
-    next();
-});
-// router.get("/health", offerController.healthCheck);
-
 // GET all offers
 router.get("/", offerController.getOffers);
 

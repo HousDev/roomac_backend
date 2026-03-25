@@ -461,12 +461,7 @@ class VacateModel {
     const parsedTotalPenaltyAmount = parseFloat(totalPenaltyAmount) || 0;
     const parsedRefundableAmount = parseFloat(refundableAmount) || 0;
 
-    console.log('🔢 Database values being inserted:', {
-      totalPenaltyAmount: parsedTotalPenaltyAmount,
-      refundableAmount: parsedRefundableAmount,
-      lockinPenaltyAmount: parsedLockinPenaltyAmount,
-      noticePenaltyAmount: parsedNoticePenaltyAmount
-    });
+    
 
     const query = `
       INSERT INTO vacate_records (
@@ -517,7 +512,6 @@ class VacateModel {
       noticePenaltyApplied ? 1 : 0
     ];
 
-    console.log('📝 SQL values:', values);
 
     const [result] = await db.query(query, values);
     return result.insertId;

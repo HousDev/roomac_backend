@@ -99,16 +99,7 @@ router.get("/all", adminAuth, async (req, res) => {
 
     const total = complaints + maintenance + receipts + vacate + change + deletion + notice;
 
-    console.log('✅ Request counts:', {
-      complaints,
-      maintenance,
-      receipts,
-      vacate,
-      change,
-      deletion,
-      notice,
-      total
-    });
+    
 
     res.json({
       success: true,

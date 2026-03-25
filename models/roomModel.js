@@ -294,9 +294,6 @@ async create(room) {
       is_active = true,
       beds_config
     } = room;
-    console.log(room);
-
-    console.log("RoomModel.create received:", { room_type , beds_config}); // Debug log
 
     let genderPrefArray;
     if (Array.isArray(room_gender_preference)) {
@@ -565,7 +562,6 @@ async debugRoomBeds(roomId) {
 // Add this to fix any inconsistencies
 async repairBedAssignments(roomId) {
   try {
-    console.log(`Repairing bed assignments for room ${roomId}`);
     
     const [room] = await db.query(
       `SELECT id, total_bed FROM rooms WHERE id = ?`,
@@ -587,12 +583,10 @@ async repairBedAssignments(roomId) {
     
     currentBeds.forEach(bed => existingBeds.push(bed.bed_number));
     
-    console.log(`Room should have ${totalBeds} beds, currently has:`, existingBeds);
     
     // Create missing beds
     for (let i = 1; i <= totalBeds; i++) {
       if (!existingBeds.includes(i)) {
-        console.log(`Creating missing bed ${i}`);
         await db.query(
           `INSERT INTO bed_assignments (room_id, bed_number, is_available) 
            VALUES (?, ?, TRUE)`,
@@ -609,13 +603,11 @@ async repairBedAssignments(roomId) {
          WHERE room_id = ? AND bed_number IN (?) AND is_available = TRUE`,
         [roomId, bedsToRemove]
       );
-      console.log(`Removed extra beds:`, bedsToRemove);
     }
     
     // Update occupied count
     await this.updateRoomOccupants(roomId);
     
-    console.log(`Bed assignments repaired for room ${roomId}`);
     return true;
   } catch (err) {
     console.error("repairBedAssignments error:", err);
@@ -655,146 +647,6 @@ async repairBedAssignments(roomId) {
     }
   },
 
-
-
-  // Assign bed to tenant
-// async assignBed(roomId, bedNumber, tenantId, tenantGender) {
-//   let connection;
-//   try {
-//     connection = await db.getConnection();
-//     await connection.beginTransaction();
-    
-//     console.log(`[ASSIGN BED] Room: ${roomId}, Bed: ${bedNumber}, Tenant: ${tenantId}, Gender: ${tenantGender}`);
-    
-//     // 1. Check if tenant is already assigned
-//     const [tenantCheck] = await connection.query(
-//       `SELECT room_id, bed_number FROM bed_assignments 
-//        WHERE tenant_id = ? AND is_available = FALSE`,
-//       [tenantId]
-//     );
-    
-//     if (tenantCheck.length > 0) {
-//       await connection.rollback();
-//       connection.release();
-//       const assign = tenantCheck[0];
-//       throw new Error(`Tenant ${tenantId} is already assigned to bed ${assign.bed_number} in room ${assign.room_id}`);
-//     }
-    
-//     // 2. Check room capacity
-//     const [room] = await connection.query(
-//       `SELECT id, total_bed, occupied_beds FROM rooms WHERE id = ?`,
-//       [roomId]
-//     );
-    
-//     if (room.length === 0) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error(`Room ${roomId} not found`);
-//     }
-    
-//     const roomData = room[0];
-    
-//     if (bedNumber > roomData.total_bed) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error(`Room only has ${roomData.total_bed} beds`);
-//     }
-    
-//     if (roomData.occupied_beds >= roomData.total_bed) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error(`Room ${roomId} is already full (${roomData.occupied_beds}/${roomData.total_bed})`);
-//     }
-    
-//     // 3. Check bed availability
-//     const [bedCheck] = await connection.query(
-//       `SELECT id, is_available, tenant_id FROM bed_assignments 
-//        WHERE room_id = ? AND bed_number = ?`,
-//       [roomId, bedNumber]
-//     );
-    
-//     let bedId;
-    
-//     if (bedCheck.length === 0) {
-//       // Create bed if it doesn't exist
-//       const [result] = await connection.query(
-//         `INSERT INTO bed_assignments (room_id, bed_number, tenant_id, tenant_gender, is_available) 
-//          VALUES (?, ?, ?, ?, FALSE)`,
-//         [roomId, bedNumber, tenantId, tenantGender]
-//       );
-//       bedId = result.insertId;
-//       console.log(`[INFO] Created new bed with ID: ${bedId}`);
-//     } else {
-//       const bed = bedCheck[0];
-      
-//       if (!bed.is_available) {
-//         await connection.rollback();
-//         connection.release();
-//         throw new Error(`Bed ${bedNumber} is already occupied by tenant ${bed.tenant_id}`);
-//       }
-      
-//       bedId = bed.id;
-      
-//       // Update existing bed
-//       const [updateResult] = await connection.query(
-//         `UPDATE bed_assignments 
-//          SET tenant_id = ?, tenant_gender = ?, is_available = FALSE 
-//          WHERE id = ?`,
-//         [tenantId, tenantGender, bedId]
-//       );
-      
-//       if (updateResult.affectedRows === 0) {
-//         await connection.rollback();
-//         connection.release();
-//         throw new Error(`Failed to assign bed ${bedNumber}`);
-//       }
-//     }
-    
-//     // 4. Update room occupancy
-//     await this.updateRoomOccupants(roomId, connection);
-    
-//     // 5. Get tenant name for response
-//     const [tenant] = await connection.query(
-//       `SELECT full_name FROM tenants WHERE id = ?`,
-//       [tenantId]
-//     );
-    
-//     const tenantName = tenant.length > 0 ? tenant[0].full_name : `ID ${tenantId}`;
-    
-//     await connection.commit();
-//     connection.release();
-    
-//     return {
-//       success: true,
-//       message: `Assigned bed ${bedNumber} to ${tenantName}`,
-//       data: {
-//         id: bedId,
-//         bed_assignment_id: bedId,
-//         room_id: roomId,
-//         bed_number: bedNumber,
-//         tenant_id: tenantId,
-//         tenant_name: tenantName
-//       }
-//     };
-    
-//   } catch (error) {
-//     if (connection) {
-//       try {
-//         await connection.rollback();
-//       } catch (rollbackErr) {
-//         console.error("Rollback failed:", rollbackErr);
-//       }
-//       connection.release();
-//     }
-    
-//     console.error("[ERROR] assignBed failed:", error.message);
-//     throw error;
-//   }
-// },
-
-// In roomModel.js - Update the assignBed method
-// models/roomModel.js - Update assignBed with better logging
-
 // Update assignBed to handle bed_type
 async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false) {
   let connection;
@@ -802,16 +654,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     connection = await db.getConnection();
     await connection.beginTransaction();
     
-    console.log(`[ASSIGN BED MODEL] Parameters:`, {
-      roomId,
-      bedNumber,
-      tenantId,
-      tenantGender,
-      tenantRent,
-      isCouple,
-      tenantRentType: typeof tenantRent,
-      isCoupleType: typeof isCouple
-    });
     
     // 1. Check if tenant is already assigned
     const [tenantCheck] = await connection.query(
@@ -840,7 +682,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     }
     
     const roomData = room[0];
-    console.log(`[ASSIGN BED MODEL] Room data:`, roomData);
     
     if (bedNumber > roomData.total_bed) {
       await connection.rollback();
@@ -868,12 +709,7 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     // Ensure isCouple is a boolean
     const finalIsCouple = isCouple === true || isCouple === 1 || isCouple === '1' || isCouple === 'true';
     
-    console.log(`[ASSIGN BED MODEL] Final values:`, {
-      finalRent,
-      finalIsCouple,
-      finalRentType: typeof finalRent,
-      finalIsCoupleType: typeof finalIsCouple
-    });
+    
     
     // 3. Check bed availability and get bed type
     const [bedCheck] = await connection.query(
@@ -887,7 +723,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     
     if (bedCheck.length === 0) {
       // Create bed if it doesn't exist
-      console.log(`[ASSIGN BED MODEL] Creating new bed assignment`);
       const [result] = await connection.query(
         `INSERT INTO bed_assignments 
          (room_id, bed_number, bed_type, tenant_id, tenant_gender, tenant_rent, is_couple, is_available) 
@@ -895,7 +730,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         [roomId, bedNumber, bedType, tenantId, tenantGender, finalRent, finalIsCouple]
       );
       bedId = result.insertId;
-      console.log(`[ASSIGN BED MODEL] Created new bed with ID: ${bedId}`);
     } else {
       const bed = bedCheck[0];
       
@@ -907,7 +741,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       
       bedId = bed.id;
       bedType = bed.bed_type;
-      console.log(`[ASSIGN BED MODEL] Updating existing bed ID: ${bedId} with type: ${bedType}`);
       
       // Update existing bed
       const [updateResult] = await connection.query(
@@ -923,7 +756,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         throw new Error(`Failed to assign bed ${bedNumber}`);
       }
       
-      console.log(`[ASSIGN BED MODEL] Update affected rows:`, updateResult.affectedRows);
     }
     
     // 4. Update room occupancy
@@ -943,7 +775,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       [bedId]
     );
     
-    console.log(`[ASSIGN BED MODEL] Saved bed data:`, savedBed[0]);
     
     await connection.commit();
     connection.release();
@@ -980,10 +811,7 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
   }
 },
 
-// In roomModel.js - Update the updateBedAssignment method
-// models/roomModel.js - Update updateBedAssignment with better logging
 
-// models/roomModel.js - Update the updateBedAssignment method
 
 async updateBedAssignment(bedId, data) {
   let connection;
@@ -991,7 +819,6 @@ async updateBedAssignment(bedId, data) {
     connection = await db.getConnection();
     await connection.beginTransaction();
     
-    console.log(`[UPDATE BED MODEL] Bed ID: ${bedId}, Data:`, data);
     
     // 1. Get current bed info
     const [bed] = await connection.query(
@@ -1074,8 +901,6 @@ async updateBedAssignment(bedId, data) {
     
     const query = `UPDATE bed_assignments SET ${updates.join(', ')} WHERE id = ?`;
     
-    console.log('[UPDATE BED MODEL] Update query:', query);
-    console.log('[UPDATE BED MODEL] Update values:', values);
     
     const [result] = await connection.query(query, values);
     
@@ -1085,7 +910,6 @@ async updateBedAssignment(bedId, data) {
       throw new Error('Failed to update bed assignment');
     }
     
-    console.log(`[UPDATE BED MODEL] Update affected rows:`, result.affectedRows);
     
     // 3. Check if tenant is already assigned elsewhere (if new tenant is being assigned)
     if (tenant_id && tenant_id !== null && tenant_id !== 'null' && !is_available) {
@@ -1104,7 +928,6 @@ async updateBedAssignment(bedId, data) {
       // If tenant is already assigned elsewhere, vacate that bed first
       if (existingAssignments.length > 0) {
         for (const assignment of existingAssignments) {
-          console.log(`[INFO] Vacating existing assignment for tenant ${tenantId} in bed ${assignment.bed_number}`);
           
           const existingReason = assignment.vacate_reason || '';
           const transferReason = `Transferred to Bed ${bedInfo.bed_number} in Room ${roomId}`;
@@ -1141,7 +964,6 @@ async updateBedAssignment(bedId, data) {
       [bedId]
     );
     
-    console.log(`[UPDATE BED MODEL] Updated bed data:`, updatedBed[0]);
     
     await connection.commit();
     connection.release();
@@ -1176,100 +998,7 @@ async updateBedAssignment(bedId, data) {
   }
 },
 
-// Update bed assignment (for changing tenant or vacating)
-// async updateBedAssignment(bedId, data) {
-//   let connection;
-//   try {
-//     connection = await db.getConnection();
-//     await connection.beginTransaction();
-    
-//     console.log(`[UPDATE BED] Bed ID: ${bedId}, Data:`, data);
-    
-//     // 1. Get current bed info
-//     const [bed] = await connection.query(
-//       `SELECT id, room_id, bed_number, tenant_id FROM bed_assignments WHERE id = ?`,
-//       [bedId]
-//     );
-    
-//     if (bed.length === 0) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error(`Bed assignment ${bedId} not found`);
-//     }
-    
-//     const bedInfo = bed[0];
-//     const roomId = bedInfo.room_id;
-    
-//     const { tenant_id, tenant_gender, is_available } = data;
-    
-//     // 2. Build update query
-//     const updates = [];
-//     const values = [];
-    
-//     if (tenant_id !== undefined) {
-//       updates.push('tenant_id = ?');
-//       values.push(tenant_id);
-//     }
-    
-//     if (tenant_gender !== undefined) {
-//       updates.push('tenant_gender = ?');
-//       values.push(tenant_gender);
-//     }
-    
-//     if (is_available !== undefined) {
-//       updates.push('is_available = ?');
-//       values.push(is_available);
-//     }
-    
-//     if (updates.length === 0) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error('No fields to update');
-//     }
-    
-//     values.push(bedId);
-    
-//     const query = `UPDATE bed_assignments SET ${updates.join(', ')} WHERE id = ?`;
-    
-//     const [result] = await connection.query(query, values);
-    
-//     if (result.affectedRows === 0) {
-//       await connection.rollback();
-//       connection.release();
-//       throw new Error('Failed to update bed assignment');
-//     }
-    
-//     // 3. Update room occupancy
-//     await this.updateRoomOccupants(roomId, connection);
-    
-//     await connection.commit();
-//     connection.release();
-    
-//     return {
-//       success: true,
-//       message: 'Bed assignment updated successfully',
-//       data: {
-//         id: bedId,
-//         room_id: roomId,
-//         bed_number: bedInfo.bed_number,
-//         tenant_id: tenant_id
-//       }
-//     };
-    
-//   } catch (error) {
-//     if (connection) {
-//       try {
-//         await connection.rollback();
-//       } catch (rollbackErr) {
-//         console.error("Rollback failed:", rollbackErr);
-//       }
-//       connection.release();
-//     }
-    
-//     console.error("[ERROR] updateBedAssignment failed:", error.message);
-//     throw error;
-//   }
-// },
+
 
 // Update room occupants count (helper function)
 async updateRoomOccupants(roomId, connection = null) {
@@ -1314,244 +1043,7 @@ async updateRoomOccupants(roomId, connection = null) {
   }
 },
 
- // Update bed assignment (for changing tenant or vacating)
-  // async updateBedAssignment(bedId, data) {
-  //   let connection;
-  //   try {
-  //     connection = await db.getConnection();
-  //     await connection.beginTransaction();
-      
-  //     console.log(`[UPDATE BED] Bed ID: ${bedId}, Data:`, data);
-      
-  //     // 1. Get current bed info
-  //     const [bed] = await connection.query(
-  //       `SELECT id, room_id, bed_number, tenant_id, vacate_reason FROM bed_assignments WHERE id = ?`,
-  //       [bedId]
-  //     );
-      
-  //     if (bed.length === 0) {
-  //       await connection.rollback();
-  //       connection.release();
-  //       throw new Error(`Bed assignment ${bedId} not found`);
-  //     }
-      
-  //     const bedInfo = bed[0];
-  //     const roomId = bedInfo.room_id;
-      
-  //     const { tenant_id, tenant_gender, is_available, vacate_reason } = data;
-      
-  //     // 2. Build update query
-  //     const updates = [];
-  //     const values = [];
-      
-  //     if (tenant_id !== undefined) {
-  //       updates.push('tenant_id = ?');
-  //       values.push(tenant_id);
-  //     }
-      
-  //     if (tenant_gender !== undefined) {
-  //       updates.push('tenant_gender = ?');
-  //       values.push(tenant_gender);
-  //     }
-      
-  //     if (is_available !== undefined) {
-  //       updates.push('is_available = ?');
-  //       values.push(is_available);
-  //     }
-      
-  //     if (vacate_reason !== undefined) {
-  //       // Append to existing reason or set new one
-  //       const existingReason = bedInfo.vacate_reason || '';
-  //       const newReason = existingReason 
-  //         ? `${existingReason} | ${vacate_reason}`
-  //         : vacate_reason;
-        
-  //       updates.push('vacate_reason = ?');
-  //       values.push(newReason);
-  //     }
-      
-  //     if (updates.length === 0) {
-  //       await connection.rollback();
-  //       connection.release();
-  //       throw new Error('No fields to update');
-  //     }
-      
-  //     // Always update the timestamp
-  //     updates.push('updated_at = CURRENT_TIMESTAMP');
-      
-  //     values.push(bedId);
-      
-  //     const query = `UPDATE bed_assignments SET ${updates.join(', ')} WHERE id = ?`;
-      
-  //     console.log('Update query:', query, values);
-      
-  //     const [result] = await connection.query(query, values);
-      
-  //     if (result.affectedRows === 0) {
-  //       await connection.rollback();
-  //       connection.release();
-  //       throw new Error('Failed to update bed assignment');
-  //     }
-      
-  //     // 3. Check if tenant is already assigned elsewhere (if new tenant is being assigned)
-  //     if (tenant_id && tenant_id !== null && tenant_id !== 'null' && !is_available) {
-  //       const tenantId = parseInt(tenant_id);
-        
-  //       // Find if tenant has other active assignments
-  //       const [existingAssignments] = await connection.query(
-  //         `SELECT id, room_id, bed_number, vacate_reason
-  //          FROM bed_assignments 
-  //          WHERE tenant_id = ? 
-  //          AND is_available = FALSE 
-  //          AND id != ?`,
-  //         [tenantId, bedId]
-  //       );
-        
-  //       // If tenant is already assigned elsewhere, vacate that bed first
-  //       if (existingAssignments.length > 0) {
-  //         for (const assignment of existingAssignments) {
-  //           console.log(`[INFO] Vacating existing assignment for tenant ${tenantId} in bed ${assignment.bed_number}`);
-            
-  //           const existingReason = assignment.vacate_reason || '';
-  //           const transferReason = `Transferred to Bed ${bedInfo.bed_number} in Room ${roomId}`;
-  //           const newReason = existingReason 
-  //             ? `${existingReason} | ${transferReason}`
-  //             : transferReason;
-            
-  //           // Update the existing assignment with vacate reason
-  //           await connection.query(
-  //             `UPDATE bed_assignments 
-  //              SET tenant_id = NULL, 
-  //                  tenant_gender = NULL, 
-  //                  is_available = TRUE,
-  //                  vacate_reason = ?,
-  //                  updated_at = CURRENT_TIMESTAMP
-  //              WHERE id = ?`,
-  //             [newReason, assignment.id]
-  //           );
-            
-  //           // Update room occupancy for the room being vacated
-  //           await this.updateRoomOccupants(assignment.room_id, connection);
-  //         }
-  //       }
-  //     }
-      
-  //     // 4. Update room occupancy for current room
-  //     await this.updateRoomOccupants(roomId, connection);
-      
-  //     await connection.commit();
-  //     connection.release();
-      
-  //     return {
-  //       success: true,
-  //       message: 'Bed assignment updated successfully',
-  //       data: {
-  //         id: bedId,
-  //         room_id: roomId,
-  //         bed_number: bedInfo.bed_number,
-  //         tenant_id: tenant_id,
-  //         vacate_reason: vacate_reason
-  //       }
-  //     };
-      
-  //   } catch (error) {
-  //     if (connection) {
-  //       try {
-  //         await connection.rollback();
-  //       } catch (rollbackErr) {
-  //         console.error("Rollback failed:", rollbackErr);
-  //       }
-  //       connection.release();
-  //     }
-      
-  //     console.error("[ERROR] updateBedAssignment failed:", error.message);
-  //     throw error;
-  //   }
-  // },
-
-  // Vacate bed
-  // async vacateBed(bedId, reason = null) {
-  //   let connection;
-  //   try {
-  //     connection = await db.getConnection();
-  //     await connection.beginTransaction();
-      
-  //     console.log(`[DEBUG] vacateBed called for bedId=${bedId}, reason=${reason}`);
-      
-  //     // 1. Get bed info
-  //     const [bed] = await connection.query(
-  //       `SELECT id, room_id, bed_number, tenant_id 
-  //        FROM bed_assignments 
-  //        WHERE id = ? FOR UPDATE`,
-  //       [bedId]
-  //     );
-      
-  //     if (bed.length === 0) {
-  //       throw new Error(`Bed assignment ${bedId} not found`);
-  //     }
-      
-  //     const bedInfo = bed[0];
-  //     console.log(`[DEBUG] Vacating bed ${bedInfo.bed_number} in room ${bedInfo.room_id}, tenant ${bedInfo.tenant_id}`);
-      
-  //     // 2. Update the bed to be available with reason
-  //     const [result] = await connection.query(
-  //       `UPDATE bed_assignments 
-  //        SET tenant_id = NULL, 
-  //            tenant_gender = NULL, 
-  //            is_available = TRUE,
-  //            vacate_reason = ?,
-  //            updated_at = CURRENT_TIMESTAMP
-  //        WHERE id = ?`,
-  //       [reason, bedId]
-  //     );
-      
-  //     if (result.affectedRows === 0) {
-  //       throw new Error('Failed to vacate bed');
-  //     }
-      
-  //     // 3. Update room occupancy
-  //     await this.updateRoomOccupants(bedInfo.room_id, connection);
-      
-  //     // 4. Get the tenant name for response
-  //     let tenantName = `ID ${bedInfo.tenant_id}`;
-  //     if (bedInfo.tenant_id) {
-  //       const [tenant] = await connection.query(
-  //         `SELECT full_name FROM tenants WHERE id = ?`,
-  //         [bedInfo.tenant_id]
-  //       );
-  //       if (tenant.length > 0) {
-  //         tenantName = tenant[0].full_name;
-  //       }
-  //     }
-      
-  //     await connection.commit();
-  //     connection.release();
-      
-  //     return {
-  //       success: true,
-  //       message: `Vacated bed ${bedInfo.bed_number} (was occupied by ${tenantName})`,
-  //       data: {
-  //         bed_number: bedInfo.bed_number,
-  //         room_id: bedInfo.room_id,
-  //         previous_tenant: bedInfo.tenant_id,
-  //         vacate_reason: reason
-  //       }
-  //     };
-      
-  //   } catch (error) {
-  //     if (connection) {
-  //       try {
-  //         await connection.rollback();
-  //       } catch (rollbackErr) {
-  //         console.error("[ERROR] Rollback failed:", rollbackErr);
-  //       }
-  //       connection.release();
-  //     }
-      
-  //     console.error("[ERROR] vacateBed failed:", error);
-  //     throw error;
-  //   }
-  // },
+ 
 
 // In roomModel.js - Update the vacateBed method
 async vacateBed(bedId, reason = null) {
@@ -1560,7 +1052,6 @@ async vacateBed(bedId, reason = null) {
     connection = await db.getConnection();
     await connection.beginTransaction();
     
-    console.log(`[DEBUG] vacateBed called for bedId=${bedId}, reason=${reason}`);
     
     // 1. Get bed info
     const [bed] = await connection.query(
@@ -1575,7 +1066,6 @@ async vacateBed(bedId, reason = null) {
     }
     
     const bedInfo = bed[0];
-    console.log(`[DEBUG] Vacating bed ${bedInfo.bed_number} in room ${bedInfo.room_id}, tenant ${bedInfo.tenant_id}`);
     
     // 2. Update the bed to be available with reason
     const [result] = await connection.query(
@@ -2036,8 +1526,6 @@ async getFilteredRooms(filters) {
       ${whereClause}
     `;
 
-    console.log('Count Query:', countQuery);
-    console.log('Count Params:', params);
     
     const [countResult] = await db.query(countQuery, params);
     const total = countResult[0].total;
@@ -2073,8 +1561,6 @@ async getFilteredRooms(filters) {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const mainParams = [...params, parseInt(limit), offset];
 
-    console.log('Main Query:', mainQuery);
-    console.log('Main Params:', mainParams);
     
     const [rows] = await db.query(mainQuery, mainParams);
 

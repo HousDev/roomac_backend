@@ -10,7 +10,6 @@ router.get("/", staffController.getStaff);
 router.get("/:id", staffController.getStaffById);
 router.put("/:id", uploadFields, staffController.updateStaff);
 router.delete("/:id", staffController.deleteStaff);
-// In routes/staffRoutes.js - update the deleteDocument route
 
 router.delete("/:id/document", async (req, res) => {
   try {

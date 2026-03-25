@@ -5,8 +5,6 @@ class NotificationModel {
   // Create a new notification
   static async create(data) {
     try {
-      console.log('📝 Creating notification:', data);
-      console.log('Data type:', typeof data);
     
       const {
         recipient_id,
@@ -44,7 +42,6 @@ class NotificationModel {
         priority
       ]);
 
-      console.log(`✅ Notification created with ID: ${result.insertId}`);
       return result.insertId;
     } catch (error) {
       console.error('❌ Error creating notification:', error);
@@ -55,7 +52,6 @@ class NotificationModel {
   // Get notifications for recipient
   static async getByRecipient(recipient_type, recipient_id, filters = {}) {
     try {
-      console.log(`🔍 Getting notifications for ${recipient_type} ID: ${recipient_id}`, filters);
       
       let sql = `
         SELECT 
@@ -103,7 +99,6 @@ class NotificationModel {
       }
 
       const [rows] = await db.query(sql, params);
-      console.log(`✅ Found ${rows.length} notifications`);
       return rows;
     } catch (error) {
       console.error('❌ Error getting notifications:', error);
@@ -114,7 +109,6 @@ class NotificationModel {
   // Get unread count
   static async getUnreadCount(recipient_type, recipient_id) {
     try {
-      console.log(`🔔 Getting unread count for ${recipient_type} ID: ${recipient_id}`);
       
       const sql = `
         SELECT COUNT(*) as count 
@@ -127,7 +121,6 @@ class NotificationModel {
       const [rows] = await db.query(sql, [recipient_type, recipient_id]);
       const count = rows[0]?.count || 0;
       
-      console.log(`✅ Unread count: ${count}`);
       return count;
     } catch (error) {
       console.error('❌ Error getting unread count:', error);
@@ -138,13 +131,11 @@ class NotificationModel {
   // Mark notification as read
   static async markAsRead(id) {
     try {
-      console.log(`✅ Marking notification ${id} as read`);
       
       const sql = 'UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ?';
       const [result] = await db.query(sql, [id]);
       
       const success = result.affectedRows > 0;
-      console.log(`✅ Notification ${id} marked as read: ${success}`);
       return success;
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);
@@ -155,7 +146,6 @@ class NotificationModel {
   // Mark multiple notifications as read
   static async markMultipleAsRead(ids) {
     try {
-      console.log(`✅ Marking ${ids.length} notifications as read`);
       
       if (!ids.length) return 0;
       
@@ -167,7 +157,6 @@ class NotificationModel {
       `;
       
       const [result] = await db.query(sql, ids);
-      console.log(`✅ Marked ${result.affectedRows} notifications as read`);
       return result.affectedRows;
     } catch (error) {
       console.error('❌ Error marking notifications as read:', error);
@@ -178,7 +167,6 @@ class NotificationModel {
   // Mark all as read for recipient
   static async markAllAsRead(recipient_type, recipient_id) {
     try {
-      console.log(`✅ Marking all notifications as read for ${recipient_type} ID: ${recipient_id}`);
       
       const sql = `
         UPDATE notifications 
@@ -189,7 +177,6 @@ class NotificationModel {
       `;
       
       const [result] = await db.query(sql, [recipient_type, recipient_id]);
-      console.log(`✅ Marked ${result.affectedRows} notifications as read`);
       return result.affectedRows;
     } catch (error) {
       console.error('❌ Error marking all as read:', error);
@@ -200,13 +187,11 @@ class NotificationModel {
   // Delete notification
   static async delete(id) {
     try {
-      console.log(`🗑️ Deleting notification ${id}`);
       
       const sql = 'DELETE FROM notifications WHERE id = ?';
       const [result] = await db.query(sql, [id]);
       
       const success = result.affectedRows > 0;
-      console.log(`✅ Notification ${id} deleted: ${success}`);
       return success;
     } catch (error) {
       console.error('❌ Error deleting notification:', error);
@@ -217,7 +202,6 @@ class NotificationModel {
   // Get statistics
   static async getStats(recipient_type, recipient_id) {
     try {
-      console.log(`📊 Getting stats for ${recipient_type} ID: ${recipient_id}`);
       
       const sql = `
         SELECT 
@@ -242,8 +226,6 @@ class NotificationModel {
       Object.keys(stats).forEach(key => {
         if (stats[key] === null) stats[key] = 0;
       });
-      
-      console.log('✅ Stats retrieved:', stats);
       return stats;
     } catch (error) {
       console.error('❌ Error getting stats:', error);

@@ -45,9 +45,9 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 2 * 1024 * 1024, // 2MB limit
+    fileSize: 2 * 1024 * 1024, 
   },
-}).single('logo'); // 'logo' is the field name from frontend
+}).single('logo');
 
 // Safe delete helper
 const safeDelete = (filePath) => {
@@ -329,5 +329,5 @@ module.exports = {
   bulkDelete,
   bulkStatus,
   restoreVersion,
-  upload // Export upload for routes
+  upload 
 };

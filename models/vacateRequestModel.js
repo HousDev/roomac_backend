@@ -5,7 +5,6 @@ class VacateRequestModel {
   // Get all vacate requests for admin - SIMPLIFIED
   static async getAllVacateRequests(filters = {}) {
     try {
-      console.log('🔍 Getting vacate requests with filters:', filters);
       
       // First, let's see what we can safely query without errors
       let sql = `
@@ -97,28 +96,18 @@ class VacateRequestModel {
 
       sql += ` ORDER BY vbr.created_at DESC`;
 
-      console.log('📝 SQL Query:', sql.substring(0, 300) + '...');
-      console.log('🔢 Parameters:', params);
 
       const [rows] = await db.query(sql, params);
       
-      console.log(`✅ Found ${rows.length} vacate requests`);
-
-      console.log(`✅ Found ${rows.length} vacate requests`);
 
 // Log the first row to see what's being returned
 if (rows.length > 0) {
-  console.log('📊 First row data:');
-  console.log('  - primary_reason_id:', rows[0].primary_reason_id);
-  console.log('  - primary_reason:', rows[0].primary_reason);
-  console.log('  - Raw primary_reason value type:', typeof rows[0].primary_reason);
   
   // Check if master_item_values has the data
   const [masterCheck] = await db.query(
     'SELECT id, name FROM master_item_values WHERE id IN (?, ?, ?, ?, ?, ?, ?)',
     [57, 58, 59, 60, 61, 62, 63]
   );
-  console.log('📋 Master item values check:', masterCheck);
 }
 
       
@@ -157,7 +146,6 @@ if (rows.length > 0) {
   // Get single vacate request by ID - SIMPLIFIED
   static async getVacateRequestById(id) {
     try {
-      console.log(`🔍 Getting vacate request by ID: ${id}`);
       
       const sql = `
         SELECT 
@@ -242,7 +230,6 @@ if (rows.length > 0) {
         row.secondary_reasons = [];
       }
       
-      console.log(`✅ Found vacate request ID: ${id}`);
       return row;
     } catch (error) {
       console.error('❌ Error in getVacateRequestById:', error);
@@ -253,7 +240,6 @@ if (rows.length > 0) {
   // Update vacate request status - SIMPLIFIED
   static async updateVacateRequestStatus(id, data, adminId) {
     try {
-      console.log(`🔄 Updating vacate request ${id} with data:`, data);
       
       const updates = [];
       const params = [];
@@ -283,8 +269,6 @@ if (rows.length > 0) {
         WHERE id = ?
       `;
       
-      console.log('📝 Update SQL:', sql);
-      console.log('🔢 Parameters:', params);
       
       const [result] = await db.query(sql, params);
       
@@ -308,10 +292,7 @@ if (rows.length > 0) {
           [requestStatus, id]
         );
         
-        console.log(`✅ Updated tenant_request status to: ${requestStatus}`);
       }
-      
-      console.log(`✅ Vacate request ${id} updated successfully`);
       return result;
     } catch (error) {
       console.error('❌ Error in updateVacateRequestStatus:', error);
@@ -341,7 +322,6 @@ if (rows.length > 0) {
         stats[key] = stats[key] || 0;
       });
       
-      console.log('📊 Vacate request stats:', stats);
       return stats;
     } catch (error) {
       console.error('❌ Error in getVacateRequestStats:', error);
@@ -363,7 +343,6 @@ if (rows.length > 0) {
       `;
       
       const [rows] = await db.query(sql);
-      console.log(`✅ Found ${rows.length} properties for filter`);
       return rows;
     } catch (error) {
       console.error('❌ Error in getPropertiesForFilter:', error);
@@ -374,19 +353,15 @@ if (rows.length > 0) {
   // Get database info for debugging
   static async debugDatabase() {
     try {
-      console.log('🔍 Debugging database structure...');
       
       // Check tenants table columns
       const [tenantColumns] = await db.query(`SHOW COLUMNS FROM tenants`);
-      console.log('📋 Tenants table columns:', tenantColumns.map(c => c.Field));
       
       // Check rooms table columns
       const [roomColumns] = await db.query(`SHOW COLUMNS FROM rooms`);
-      console.log('📋 Rooms table columns:', roomColumns.map(c => c.Field));
       
       // Check vacate_bed_requests table
       const [vacateCount] = await db.query(`SELECT COUNT(*) as count FROM vacate_bed_requests`);
-      console.log(`📊 vacate_bed_requests has ${vacateCount[0].count} records`);
       
       return {
         tenants: tenantColumns.map(c => c.Field),

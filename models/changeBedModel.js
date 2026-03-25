@@ -137,9 +137,6 @@ class ChangeBedModel {
         ORDER BY ba.room_id, ba.bed_number ASC
       `, roomIds);
       
-      console.log('\n🔍 [BATCH OCCUPANTS QUERY RESULT]:');
-      console.log('Room IDs:', roomIds);
-      console.log('Found occupants:', occupants.length);
       
       if (occupants.length > 0) {
         occupants.forEach(occ => {
@@ -177,7 +174,6 @@ class ChangeBedModel {
       return 'empty';
     }
     
-    console.log('\n🔍 [DERIVE GENDER] Processing occupants:', occupants.length);
     
     // FIXED LOGIC: A bed is occupied if:
     // 1. Has tenant_id AND 
@@ -189,18 +185,11 @@ class ChangeBedModel {
       
       const isOccupied = hasTenant && (isNotAvailable || isNotVacant);
       
-      console.log(`  Bed ${o.bed_number}:`, {
-        tenant_id: o.tenant_id,
-        is_available: o.is_available,
-        is_vacant: o.is_vacant,
-        is_occupied: isOccupied,
-        name: o.full_name
-      });
+      
       
       return isOccupied;
     });
     
-    console.log(`[DERIVE GENDER] Found ${occupied.length} occupied beds`);
     
     if (occupied.length === 0) {
       return 'empty';
@@ -213,7 +202,6 @@ class ChangeBedModel {
     )];
     
     const result = genders.length === 1 ? genders[0] : 'mixed';
-    console.log(`[DERIVE GENDER] Result: ${result} (genders: ${genders.join(', ')})`);
     
     return result;
   }
@@ -223,12 +211,9 @@ class ChangeBedModel {
    */
   static calculateOccupantsCount(occupants) {
     if (!occupants || occupants.length === 0) {
-      console.log('[CALC COUNT] No occupants array');
       return 0;
     }
     
-    console.log('\n🔍 [CALCULATE OCCUPANTS COUNT]:');
-    console.log('Total beds found:', occupants.length);
     
     // FIXED LOGIC: Count occupied beds
     const occupiedCount = occupants.filter(o => {
@@ -239,11 +224,9 @@ class ChangeBedModel {
       return hasTenant && (isNotAvailable || isNotVacant);
     }).length;
     
-    console.log(`[CALC COUNT] Occupied beds: ${occupiedCount}`);
     
     // Log details for debugging
     if (occupiedCount === 0 && occupants.length > 0) {
-      console.log('[CALC COUNT] DEBUG - Why 0? Checking each bed:');
       occupants.forEach((o, i) => {
         console.log(`  Bed ${i + 1} (${o.bed_number}):`, {
           tenant_id: o.tenant_id,
@@ -383,7 +366,6 @@ class ChangeBedModel {
       }
       
       const tenantGender = tenant[0].gender;
-      console.log(`\n🎯 [COMPATIBLE ROOMS] Tenant ${tenantId} (${tenantGender})`);
 
       // Get current assignment to exclude current room
       let currentAssignment;
@@ -393,7 +375,6 @@ class ChangeBedModel {
         throw new Error(`Cannot get current assignment: ${error.message}`);
       }
       
-      console.log(`[COMPATIBLE ROOMS] Current room: ${currentAssignment.room_number} (ID: ${currentAssignment.room_id})`);
       
       // Build query to fetch all available rooms
       let query = `
@@ -434,15 +415,12 @@ class ChangeBedModel {
 
       query += ` ORDER BY r.property_id, r.floor, r.room_number ASC`;
 
-      console.log(`[COMPATIBLE ROOMS] Querying available rooms...`);
       const [rooms] = await db.query(query, params);
-      console.log(`[COMPATIBLE ROOMS] Found ${rooms.length} available rooms in DB`);
 
       // Process rooms for gender compatibility
       const compatibleRooms = [];
       const roomsToCheck = [];
 
-      console.log(`\n🔍 [GENDER COMPATIBILITY CHECK]:`);
       for (const room of rooms) {
         const roomPreferences = this.parseGenderPreferences(room.room_gender_preference);
         const isCompatible = this.isGenderCompatible(tenantGender, roomPreferences);
@@ -461,14 +439,12 @@ class ChangeBedModel {
         }
       }
 
-      console.log(`\n[COMPATIBLE ROOMS] ${roomsToCheck.length} rooms passed gender check`);
 
       // Get occupants for all compatible rooms
       const roomIds = roomsToCheck.map(r => r.id);
       const allOccupants = await this.getRoomOccupantsBatch(roomIds);
 
       // Build final compatible rooms array
-      console.log(`\n🏗️ [BUILDING FINAL ROOM OBJECTS]:`);
       for (const room of roomsToCheck) {
         const roomId = room.id;
         const occupants = allOccupants[roomId] || [];
@@ -487,21 +463,12 @@ class ChangeBedModel {
         
         const availableBeds = occupants.filter(o => !occupiedBeds.includes(o));
         
-        console.log(`\n  Room ${room.room_number} (ID: ${roomId}):`);
-        console.log(`    DB occupied_beds: ${room.occupied_beds}`);
-        console.log(`    Calculated count: ${occupantsCount}`);
-        console.log(`    Occupied beds found: ${occupiedBeds.length}`);
-        console.log(`    Available beds: ${availableBeds.length}`);
-        console.log(`    Gender: ${occupantsGender}`);
         
         // If there's a discrepancy, log it
         if (room.occupied_beds > 0 && occupantsCount === 0) {
-          console.log(`    ⚠️ WARNING: DB says ${room.occupied_beds} occupied, but calculation shows 0!`);
-          console.log(`    Checking data mismatch...`);
           
           // Try alternative calculation
           const altCount = occupants.filter(o => o.tenant_id !== null).length;
-          console.log(`    Alternative count (any tenant_id): ${altCount}`);
         }
         
         const roomObj = {
@@ -534,11 +501,8 @@ class ChangeBedModel {
         
         compatibleRooms.push(roomObj);
         
-        console.log(`    ✅ Final: ${roomObj.occupants_count} occupants`);
       }
 
-      console.log(`\n✅ [COMPATIBLE ROOMS COMPLETE]`);
-      console.log(`Returning ${compatibleRooms.length} rooms`);
       
       return compatibleRooms;
     } catch (error) {
@@ -552,7 +516,6 @@ class ChangeBedModel {
    */
   static async getAvailableBedsInRoom(roomId) {
     try {
-      console.log(`[MODEL] Getting all beds for room ${roomId}`);
       
       // Get room details first
       const [room] = await db.query(`
@@ -590,11 +553,9 @@ class ChangeBedModel {
         ORDER BY ba.bed_number ASC
       `, [roomId]);
 
-      console.log(`[MODEL] Found ${beds.length} bed assignments in room ${roomId}`);
 
       // If no bed assignments exist but room has capacity
       if (beds.length === 0 && roomData.total_bed > 0) {
-        console.log(`[MODEL] Creating virtual beds for room ${roomId}`);
         const virtualBeds = [];
         
         for (let i = 1; i <= roomData.total_bed; i++) {
@@ -668,7 +629,6 @@ class ChangeBedModel {
    */
   static async calculateRentDifference(oldRoomId, newRoomId) {
     try {
-      console.log(`[MODEL] Calculating rent difference: old=${oldRoomId}, new=${newRoomId}`);
       
       const [rooms] = await db.query(`
         SELECT 
@@ -725,7 +685,6 @@ class ChangeBedModel {
     
     try {
       await connection.beginTransaction();
-      console.log(`[MODEL] Starting bed change transaction for tenant ${tenantId}`);
 
       // 1. Get current assignment details
       const [currentAssignment] = await connection.query(`
@@ -757,7 +716,6 @@ class ChangeBedModel {
 
       if (newBedCheck.length === 0) {
         // Create new bed assignment
-        console.log(`[MODEL] Creating new bed assignment for room ${newRoomId}, bed ${newBedNumber}`);
         
         const [insertResult] = await connection.query(`
           INSERT INTO bed_assignments 
@@ -804,13 +762,11 @@ class ChangeBedModel {
           tenantId, oldRoomId, oldBedNumber, newRoomId, newBedNumber,
           changeReasonId, shiftingDate, notes
         ]);
-        console.log(`[MODEL] Change log created with ID: ${logResult.insertId}`);
       } catch (logError) {
         console.log('[MODEL] Bed change log creation skipped:', logError.message);
       }
 
       await connection.commit();
-      console.log(`[MODEL] Bed change transaction completed successfully`);
 
       return {
         success: true,
@@ -868,7 +824,6 @@ class ChangeBedModel {
         WHERE id = ?
       `, [JSON.stringify(genders), occupiedBeds, roomId]);
       
-      console.log(`[MODEL] Room ${roomId} updated: ${occupiedBeds} occupied beds, genders:`, genders);
     } catch (error) {
       console.error(`[MODEL] Error updating occupancy for room ${roomId}:`, error);
       throw error;

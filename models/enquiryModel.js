@@ -429,7 +429,6 @@ convertToTenant: async (enquiryId, options = {}) => {
     }
     
     const enquiry = enquiryRows[0];
-    console.log("Converting enquiry to tenant:", enquiry);
 
     let tenantId;
 
