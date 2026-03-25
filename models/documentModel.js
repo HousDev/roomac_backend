@@ -226,4 +226,49 @@ const DocumentModel = {
   },
 };
 
+// Add to DocumentModel in both documentModel.js and documentListModel.js
+updateDocument: async (id, data) => {
+  const existing = await DocumentModel.getById(id);
+  if (!existing) return null;
+
+  // Merge new data_json with existing
+  const existingJson = existing.data_json || {};
+  const newDataJson = { ...existingJson, ...data.data_json };
+
+  // Re-render html_content: replace all {{variable}} placeholders
+  let newHtml = existing.html_content;
+  Object.entries(newDataJson).forEach(([key, val]) => {
+    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+    newHtml = newHtml.replace(regex, val || '');
+  });
+
+  const [result] = await db.query(
+    `UPDATE documents SET
+      tenant_name = ?, tenant_phone = ?, tenant_email = ?,
+      aadhaar_number = ?, pan_number = ?,
+      emergency_contact_name = ?, emergency_phone = ?,
+      property_name = ?, property_address = ?,
+      room_number = ?, bed_number = ?,
+      move_in_date = ?, rent_amount = ?, security_deposit = ?,
+      payment_mode = ?, company_name = ?, company_address = ?,
+      notes = ?, data_json = ?, html_content = ?,
+      updated_at = NOW()
+     WHERE id = ?`,
+    [
+      data.tenant_name, data.tenant_phone, data.tenant_email || null,
+      data.aadhaar_number || null, data.pan_number || null,
+      data.emergency_contact_name || null, data.emergency_phone || null,
+      data.property_name || null, data.property_address || null,
+      data.room_number || null, data.bed_number || null,
+      data.move_in_date || null,
+      data.rent_amount ? parseFloat(data.rent_amount) : null,
+      data.security_deposit ? parseFloat(data.security_deposit) : null,
+      data.payment_mode || null, data.company_name || null,
+      data.company_address || null, data.notes || null,
+      JSON.stringify(newDataJson), newHtml,
+      id
+    ]
+  );
+  return DocumentModel.getById(id);
+},
 module.exports = { DocumentModel };

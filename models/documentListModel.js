@@ -143,6 +143,85 @@ const DocumentModel = {
     const [r] = await db.query(`DELETE FROM documents WHERE id = ?`, [id]);
     return r;
   },
+ updateDocument: async (id, data) => {
+    const existing = await DocumentModel.getById(id);
+    if (!existing) return null;
+
+    const existingJson = existing.data_json || {};
+    const newDataJson = { ...existingJson, ...data.data_json };
+
+    // Get the original template html to re-render from scratch
+    const [templateRows] = await db.query(
+      `SELECT html_content, logo_url FROM document_templates WHERE id = ?`,
+      [existing.template_id]
+    );
+
+    let newHtml = existing.html_content;
+
+    if (templateRows && templateRows[0] && templateRows[0].html_content) {
+      // Re-render from original template with new values
+      newHtml = templateRows[0].html_content;
+      
+      // Handle logo
+      const logoUrl = templateRows[0].logo_url || "";
+      const API_BASE = process.env.API_BASE_URL || "http://localhost:3001";
+      if (logoUrl) {
+        const fullLogoUrl = logoUrl.startsWith("http") ? logoUrl : `${API_BASE}${logoUrl}`;
+        newHtml = newHtml.replace(
+          /\{\{logo_url\}\}/g,
+          `<img src="${fullLogoUrl}" style="max-height:60px;max-width:160px;object-fit:contain;" />`
+        );
+      } else {
+        newHtml = newHtml.replace(/\{\{logo_url\}\}/g, "");
+      }
+
+      // Replace all variables from newDataJson
+      Object.entries(newDataJson).forEach(([key, val]) => {
+        const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        newHtml = newHtml.replace(regex, val || '');
+      });
+
+      // Replace any remaining placeholders with empty
+      newHtml = newHtml.replace(/\{\{[\w_]+\}\}/g, '');
+    } else {
+      // Fallback: try replacing in existing html using old→new value swap
+      const oldJson = existingJson;
+      Object.entries(newDataJson).forEach(([key, newVal]) => {
+        const oldVal = String(oldJson[key] || '');
+        const newValStr = String(newVal || '');
+        if (oldVal && oldVal !== newValStr) {
+          const escaped = oldVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          newHtml = newHtml.replace(new RegExp(escaped, 'g'), newValStr);
+        }
+      });
+    }
+
+    await db.query(
+      `UPDATE documents SET
+        tenant_name = ?, tenant_phone = ?, tenant_email = ?,
+        aadhaar_number = ?, pan_number = ?,
+        emergency_contact_name = ?, emergency_phone = ?,
+        property_name = ?, room_number = ?, bed_number = ?,
+        move_in_date = ?, rent_amount = ?, security_deposit = ?,
+        payment_mode = ?, company_name = ?, company_address = ?,
+        notes = ?, data_json = ?, html_content = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [
+        data.tenant_name,            data.tenant_phone,
+        data.tenant_email || null,   data.aadhaar_number || null,
+        data.pan_number || null,     data.emergency_contact_name || null,
+        data.emergency_phone || null, data.property_name || null,
+        data.room_number || null,    data.bed_number || null,
+        data.move_in_date || null,
+        data.rent_amount ? parseFloat(data.rent_amount) : null,
+        data.security_deposit ? parseFloat(data.security_deposit) : null,
+        data.payment_mode || null,   data.company_name || null,
+        data.company_address || null, data.notes || null,
+        JSON.stringify(newDataJson), newHtml, id,
+      ]
+    );
+    return DocumentModel.getById(id);
+  },
 
   bulkDelete: async (ids) => {
     if (!ids?.length) return { affectedRows: 0 };
