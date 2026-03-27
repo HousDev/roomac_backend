@@ -719,10 +719,18 @@ async deleteRoom(req, res) {
 
 
  // Assign bed to tenant - POST /api/rooms/assign-bed
+// controllers/roomController.js
 
 async assignBed(req, res) {
   try {
-    const { room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple, // Partner details
+    const { 
+      room_id, 
+      bed_number, 
+      tenant_id, 
+      tenant_gender, 
+      tenant_rent, 
+      is_couple,
+      // Partner details
       partner_full_name,
       partner_phone,
       partner_date_of_birth,
@@ -734,10 +742,10 @@ async assignBed(req, res) {
       partner_email,
       partner_occupation,
       partner_organization,
-      partner_relationship } = req.body;
-    
- 
-    
+      partner_relationship 
+    } = req.body;
+    console.log("adfad",req.body);
+    return;
     // Validate required fields
     if (!room_id || !bed_number || !tenant_id || !tenant_gender) {
       return res.status(400).json({
@@ -772,49 +780,6 @@ async assignBed(req, res) {
       }
     }
     
-     // If it's a couple booking, update the tenant with partner details
-    if (coupleStatus && partner_full_name) {
-      // Generate a unique couple ID
-      const coupleId = `CPL-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-      
-      // Update tenant with partner details
-      await db.execute(
-        `UPDATE tenants SET 
-          partner_full_name = ?,
-          partner_phone = ?,
-          partner_date_of_birth = ?,
-          partner_gender = ?,
-          partner_address = ?,
-          partner_id_proof_url = ?,
-          partner_address_proof_url = ?,
-          partner_photo_url = ?,
-          partner_email = ?,
-          partner_occupation = ?,
-          partner_organization = ?,
-          partner_relationship = ?,
-          is_couple_booking = 1,
-          couple_id = ?
-        WHERE id = ?`,
-        [
-          partner_full_name,
-          partner_phone,
-          partner_date_of_birth,
-          partner_gender,
-          partner_address,
-          partner_id_proof_url,
-          partner_address_proof_url,
-          partner_photo_url,
-          partner_email,
-          partner_occupation,
-          partner_organization,
-          partner_relationship || 'Spouse',
-          coupleId,
-          tenantId
-        ]
-      );
-    }
-   
-    
     if (isNaN(roomId) || isNaN(bedNumber) || isNaN(tenantId)) {
       return res.status(400).json({
         success: false,
@@ -831,8 +796,29 @@ async assignBed(req, res) {
       });
     }
     
-    // Call model function with new parameters
-    const result = await RoomModel.assignBed(roomId, bedNumber, tenantId, tenant_gender, customRent, coupleStatus);
+    // Call model function with partner details
+    const result = await RoomModel.assignBed(
+      roomId, 
+      bedNumber, 
+      tenantId, 
+      tenant_gender, 
+      customRent, 
+      coupleStatus,
+      {  // Pass partner details as an object
+        partner_full_name,
+        partner_phone,
+        partner_date_of_birth,
+        partner_gender,
+        partner_address,
+        partner_id_proof_url,
+        partner_address_proof_url,
+        partner_photo_url,
+        partner_email,
+        partner_occupation,
+        partner_organization,
+        partner_relationship
+      }
+    );
     
     res.json({
       success: true,
@@ -841,8 +827,6 @@ async assignBed(req, res) {
     });
     
   } catch (err) {
-   
-    
     // Handle specific errors
     let status = 400;
     let message = err.message;
@@ -860,13 +844,34 @@ async assignBed(req, res) {
 },
 
 
-
 // controllers/roomController.js - Fix the updateBedAssignment method
+// controllers/roomController.js
 
 async updateBedAssignment(req, res) {
+  console.log("upadate bed assignment", req.body);
   try {
     const { id } = req.params; // bed assignment ID
-    const { tenant_id, tenant_gender, is_available, vacate_reason, tenant_rent, is_couple } = req.body;
+    const { 
+      tenant_id, 
+      tenant_gender, 
+      is_available, 
+      vacate_reason, 
+      tenant_rent, 
+      is_couple,
+      // Partner details
+      partner_full_name,
+      partner_phone,
+      partner_date_of_birth,
+      partner_gender,
+      partner_address,
+      partner_id_proof_url,
+      partner_address_proof_url,
+      partner_photo_url,
+      partner_email,
+      partner_occupation,
+      partner_organization,
+      partner_relationship 
+    } = req.body;
     
     
     if (!id) {
@@ -902,21 +907,16 @@ async updateBedAssignment(req, res) {
       processedData.vacate_reason = vacate_reason;
     }
     
-    // FIX: Add tenant_rent to processedData
     if (tenant_rent !== undefined) {
-      // Handle null/empty values
       if (tenant_rent === null || tenant_rent === '' || tenant_rent === 'null') {
         processedData.tenant_rent = null;
       } else {
-        // Convert to number
         const rentValue = parseFloat(tenant_rent);
         processedData.tenant_rent = isNaN(rentValue) ? null : rentValue;
       }
     }
     
-    // FIX: Add is_couple to processedData
     if (is_couple !== undefined) {
-      // Convert various formats to boolean
       if (is_couple === true || is_couple === 'true' || is_couple === 1 || is_couple === '1') {
         processedData.is_couple = true;
       } else if (is_couple === false || is_couple === 'false' || is_couple === 0 || is_couple === '0') {
@@ -926,6 +926,43 @@ async updateBedAssignment(req, res) {
       }
     }
     
+    // Add partner details to processedData
+    if (partner_full_name !== undefined) {
+      processedData.partner_full_name = partner_full_name;
+    }
+    if (partner_phone !== undefined) {
+      processedData.partner_phone = partner_phone;
+    }
+    if (partner_date_of_birth !== undefined) {
+      processedData.partner_date_of_birth = partner_date_of_birth;
+    }
+    if (partner_gender !== undefined) {
+      processedData.partner_gender = partner_gender;
+    }
+    if (partner_address !== undefined) {
+      processedData.partner_address = partner_address;
+    }
+    if (partner_id_proof_url !== undefined) {
+      processedData.partner_id_proof_url = partner_id_proof_url;
+    }
+    if (partner_address_proof_url !== undefined) {
+      processedData.partner_address_proof_url = partner_address_proof_url;
+    }
+    if (partner_photo_url !== undefined) {
+      processedData.partner_photo_url = partner_photo_url;
+    }
+    if (partner_email !== undefined) {
+      processedData.partner_email = partner_email;
+    }
+    if (partner_occupation !== undefined) {
+      processedData.partner_occupation = partner_occupation;
+    }
+    if (partner_organization !== undefined) {
+      processedData.partner_organization = partner_organization;
+    }
+    if (partner_relationship !== undefined) {
+      processedData.partner_relationship = partner_relationship;
+    }
     
     // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
