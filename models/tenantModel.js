@@ -388,6 +388,7 @@ const TenantModel = {
         photo_url,
         aadhar_number, // NEW
         pan_number,
+        
         address,
         city,
         state,
@@ -478,6 +479,8 @@ const TenantModel = {
         pan_number || null,
         payload.address_proof_type || null,
         payload.id_proof_type || null,
+         id_proof_number || null,      
+  address_proof_number || null, 
         address || null,
         city || null,
         state || null,
@@ -551,6 +554,8 @@ const TenantModel = {
          pan_number,
          address_proof_type, 
          id_proof_type,
+         id_proof_number,     
+  address_proof_number,
         address, 
         city, 
         state, 
@@ -586,7 +591,7 @@ const TenantModel = {
            partner_relationship,
         is_couple_booking, 
         couple_id
-      ) VALUES (?,?, ?, ?, ?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?,?, ?, ?,?,?, ?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
       console.log("values lenght ", values.length);
@@ -736,7 +741,9 @@ const TenantModel = {
       setIf("pan_number", payload.pan_number);
       setIf("id_proof_type", payload.id_proof_type);
       setIf("address_proof_type", payload.address_proof_type);
-
+// In the update method, add these with other document fields
+setIf("id_proof_number", payload.id_proof_number);
+setIf("address_proof_number", payload.address_proof_number);
       // Address fields
       setIf("address", payload.address);
       setIf("city", payload.city);
