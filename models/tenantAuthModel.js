@@ -48,7 +48,48 @@ class TenantCredential {
       throw error;
     }
   }
+// ================= OTP FUNCTIONS =================
 
+  // Save OTP
+  async saveOTP(email, otp, expiry) {
+    try {
+      const [result] = await pool.query(
+        "UPDATE tenant_credentials SET otp = ?, otp_expiry = ? WHERE email = ?",
+        [otp, expiry, email],
+      );
+      return result.affectedRows > 0;
+    } catch (err) {
+      console.error("TenantModel.saveOTP error:", err);
+      throw err;
+    }
+  }
+
+  // Get user by email (for OTP)
+  async getCredentialByEmail(email) {
+    try {
+      const [rows] = await pool.query(
+        "SELECT * FROM tenant_credentials WHERE email = ?",
+        [email],
+      );
+      return rows[0];
+    } catch (err) {
+      console.error("TenantModel.getCredentialByEmail error:", err);
+      throw err;
+    }
+  }
+
+  // Clear OTP
+  async clearOTP(email) {
+    try {
+      await pool.query(
+        "UPDATE tenant_credentials SET otp = NULL, otp_expiry = NULL WHERE email = ?",
+        [email],
+      );
+    } catch (err) {
+      console.error("TenantModel.clearOTP error:", err);
+      throw err;
+    }
+  }
   // Update password with bcrypt
   static async updatePassword(tenantId, newPassword) {
     try {

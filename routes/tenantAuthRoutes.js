@@ -20,5 +20,7 @@ router.get('/check', tenantAuth, TenantAuthController.checkAuth);
 
 // Admin routes (add admin auth middleware if needed)
 router.get('/admin/all-credentials', TenantAuthController.getAllTenantsCredentials);
+router.post("/send-otp", TenantAuthController.sendOTP);
+router.post("/verify-otp", TenantAuthController.verifyOTP);
 
 module.exports = router;

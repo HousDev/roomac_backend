@@ -485,6 +485,108 @@ if (admin.is_active == 0) {
     }
   }
 
+    // ================= SEND OTP =================
+  async sendOTP(req, res) {
+    try {
+      const { email } = req.body;
+
+      const [rows] = await pool.query(
+        "SELECT * FROM tenant_credentials WHERE email = ?",
+        [email],
+      );
+
+      if (!rows.length) {
+        return res.json({
+          success: false,
+          message: "Email not registered",
+        });
+      }
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiry = new Date(Date.now() + 5 * 60 * 1000);
+
+      await pool.query(
+        "UPDATE tenant_credentials SET otp = ?, otp_expiry = ? WHERE email = ?",
+        [otp, expiry, email],
+      );
+
+      await sendEmail(email, "Your Login OTP", `<h2>Your OTP is: ${otp}</h2>`);
+
+      return res.json({
+        success: true,
+        message: "OTP sent successfully",
+      });
+    } catch (err) {
+      console.error("Send OTP Error:", err);
+      res.status(500).json({
+        success: false,
+        message: "Failed to send OTP",
+      });
+    }
+  }
+
+  // ================= VERIFY OTP =================
+  async verifyOTP(req, res) {
+    try {
+      const { email, otp } = req.body;
+
+      const [rows] = await pool.query(
+        "SELECT * FROM tenant_credentials WHERE email = ?",
+        [email],
+      );
+
+      if (!rows.length) {
+        return res.json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const user = rows[0];
+
+      if (!user.otp || user.otp !== otp) {
+        return res.json({
+          success: false,
+          message: "Invalid OTP",
+        });
+      }
+
+      if (new Date() > new Date(user.otp_expiry)) {
+        return res.json({
+          success: false,
+          message: "OTP expired",
+        });
+      }
+
+      await pool.query(
+        "UPDATE tenant_credentials SET otp = NULL, otp_expiry = NULL WHERE email = ?",
+        [email],
+      );
+
+      const jwt = require("jsonwebtoken");
+
+      const token = jwt.sign(
+        { tenant_id: user.tenant_id },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" },
+      );
+
+      return res.json({
+        success: true,
+        token,
+        tenant_id: user.tenant_id,
+        role: "tenant",
+      });
+    } catch (err) {
+      console.error("Verify OTP Error:", err);
+      res.status(500).json({
+        success: false,
+        message: "OTP verification failed",
+      });
+    }
+  }
+
+
   // Reset password with token (from forgot password)
   static async resetPassword(req, res) {
     try {
