@@ -648,12 +648,13 @@ async repairBedAssignments(roomId) {
   },
 
 // Update assignBed to handle bed_type
-async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false) {
+// models/roomModel.js
+
+async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false, partnerDetails = null) {
   let connection;
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
-    
     
     // 1. Check if tenant is already assigned
     const [tenantCheck] = await connection.query(
@@ -709,8 +710,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     // Ensure isCouple is a boolean
     const finalIsCouple = isCouple === true || isCouple === 1 || isCouple === '1' || isCouple === 'true';
     
-    
-    
     // 3. Check bed availability and get bed type
     const [bedCheck] = await connection.query(
       `SELECT id, is_available, tenant_id, bed_type FROM bed_assignments 
@@ -755,13 +754,47 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         connection.release();
         throw new Error(`Failed to assign bed ${bedNumber}`);
       }
-      
     }
     
-    // 4. Update room occupancy
+    // 4. UPDATE TENANT WITH PARTNER DETAILS (INSIDE THE SAME TRANSACTION)
+    if (finalIsCouple && partnerDetails && partnerDetails.partner_full_name) {
+      // Generate a unique couple ID
+      const coupleId = `CPL-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      
+      await connection.query(
+        `UPDATE tenants SET 
+          partner_full_name = ?,
+          partner_phone = ?,
+          partner_email = ?,
+          partner_gender = ?,
+          partner_date_of_birth = ?,
+          partner_address = ?,
+          partner_occupation = ?,
+          partner_organization = ?,
+          partner_relationship = ?,
+          is_couple_booking = 1,
+          couple_id = ?
+        WHERE id = ?`,
+        [
+          partnerDetails.partner_full_name,
+          partnerDetails.partner_phone,
+          partnerDetails.partner_email,
+          partnerDetails.partner_gender,
+          partnerDetails.partner_date_of_birth,
+          partnerDetails.partner_address,
+          partnerDetails.partner_occupation,
+          partnerDetails.partner_organization,
+          partnerDetails.partner_relationship || 'Spouse',
+          coupleId,
+          tenantId
+        ]
+      );
+    }
+    
+    // 5. Update room occupancy
     await this.updateRoomOccupants(roomId, connection);
     
-    // 5. Get tenant name for response
+    // 6. Get tenant name for response
     const [tenant] = await connection.query(
       `SELECT full_name FROM tenants WHERE id = ?`,
       [tenantId]
@@ -769,12 +802,11 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     
     const tenantName = tenant.length > 0 ? tenant[0].full_name : `ID ${tenantId}`;
     
-    // 6. Verify the data was saved correctly
+    // 7. Verify the data was saved correctly
     const [savedBed] = await connection.query(
       `SELECT id, bed_type, tenant_rent, is_couple FROM bed_assignments WHERE id = ?`,
       [bedId]
     );
-    
     
     await connection.commit();
     connection.release();
@@ -813,12 +845,13 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
 
 
 
+// models/roomModel.js
+
 async updateBedAssignment(bedId, data) {
   let connection;
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
-    
     
     // 1. Get current bed info
     const [bed] = await connection.query(
@@ -835,9 +868,26 @@ async updateBedAssignment(bedId, data) {
     const bedInfo = bed[0];
     const roomId = bedInfo.room_id;
     
-    const { tenant_id, tenant_gender, is_available, vacate_reason, tenant_rent, is_couple } = data;
+    const { 
+      tenant_id, 
+      tenant_gender, 
+      is_available, 
+      vacate_reason, 
+      tenant_rent, 
+      is_couple,
+      // Partner details
+      partner_full_name,
+      partner_phone,
+      partner_email,
+      partner_gender,
+      partner_date_of_birth,
+      partner_address,
+      partner_occupation,
+      partner_organization,
+      partner_relationship
+    } = data;
     
-    // 2. Build update query
+    // 2. Build update query for bed_assignments
     const updates = [];
     const values = [];
     
@@ -857,7 +907,6 @@ async updateBedAssignment(bedId, data) {
     }
     
     if (vacate_reason !== undefined) {
-      // Append to existing reason or set new one
       const existingReason = bedInfo.vacate_reason || '';
       const newReason = existingReason 
         ? `${existingReason} | ${vacate_reason}`
@@ -867,23 +916,18 @@ async updateBedAssignment(bedId, data) {
       values.push(newReason);
     }
     
-    // FIX: Always include tenant_rent in the update if it's in the data
     if (tenant_rent !== undefined) {
       updates.push('tenant_rent = ?');
-      // Handle null values
       if (tenant_rent === null) {
         values.push(null);
       } else {
-        // Ensure it's a number
         const rentValue = parseFloat(tenant_rent);
         values.push(isNaN(rentValue) ? null : rentValue);
       }
     }
     
-    // FIX: Always include is_couple in the update if it's in the data
     if (is_couple !== undefined) {
       updates.push('is_couple = ?');
-      // Convert to boolean and then to 0/1 for MySQL
       const coupleValue = is_couple === true || is_couple === 1 || is_couple === '1' || is_couple === 'true' ? 1 : 0;
       values.push(coupleValue);
     }
@@ -894,14 +938,10 @@ async updateBedAssignment(bedId, data) {
       throw new Error('No fields to update');
     }
     
-    // Always update the timestamp
     updates.push('updated_at = CURRENT_TIMESTAMP');
-    
     values.push(bedId);
     
     const query = `UPDATE bed_assignments SET ${updates.join(', ')} WHERE id = ?`;
-    
-    
     const [result] = await connection.query(query, values);
     
     if (result.affectedRows === 0) {
@@ -910,12 +950,55 @@ async updateBedAssignment(bedId, data) {
       throw new Error('Failed to update bed assignment');
     }
     
+    // 3. UPDATE TENANT WITH PARTNER DETAILS if is_couple is true and we have partner details
+    if (is_couple === true && partner_full_name && tenant_id) {
+      // Generate a unique couple ID if not already present
+      let coupleId = `CPL-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      
+      // First check if tenant already has a couple_id
+      const [tenantCheck] = await connection.query(
+        `SELECT couple_id FROM tenants WHERE id = ?`,
+        [tenant_id]
+      );
+      
+      if (tenantCheck.length > 0 && tenantCheck[0].couple_id) {
+        coupleId = tenantCheck[0].couple_id;
+      }
+      
+      await connection.query(
+        `UPDATE tenants SET 
+          partner_full_name = ?,
+          partner_phone = ?,
+          partner_email = ?,
+          partner_gender = ?,
+          partner_date_of_birth = ?,
+          partner_address = ?,
+          partner_occupation = ?,
+          partner_organization = ?,
+          partner_relationship = ?,
+          is_couple_booking = 1,
+          couple_id = COALESCE(couple_id, ?)
+        WHERE id = ?`,
+        [
+          partner_full_name,
+          partner_phone,
+          partner_email,
+          partner_gender,
+          partner_date_of_birth,
+          partner_address,
+          partner_occupation,
+          partner_organization,
+          partner_relationship || 'Spouse',
+          coupleId,
+          tenant_id
+        ]
+      );
+    }
     
-    // 3. Check if tenant is already assigned elsewhere (if new tenant is being assigned)
+    // 4. Check if tenant is already assigned elsewhere (if new tenant is being assigned)
     if (tenant_id && tenant_id !== null && tenant_id !== 'null' && !is_available) {
       const tenantId = parseInt(tenant_id);
       
-      // Find if tenant has other active assignments
       const [existingAssignments] = await connection.query(
         `SELECT id, room_id, bed_number, vacate_reason
          FROM bed_assignments 
@@ -925,17 +1008,14 @@ async updateBedAssignment(bedId, data) {
         [tenantId, bedId]
       );
       
-      // If tenant is already assigned elsewhere, vacate that bed first
       if (existingAssignments.length > 0) {
         for (const assignment of existingAssignments) {
-          
           const existingReason = assignment.vacate_reason || '';
           const transferReason = `Transferred to Bed ${bedInfo.bed_number} in Room ${roomId}`;
           const newReason = existingReason 
             ? `${existingReason} | ${transferReason}`
             : transferReason;
           
-          // Update the existing assignment with vacate reason
           await connection.query(
             `UPDATE bed_assignments 
              SET tenant_id = NULL, 
@@ -949,21 +1029,13 @@ async updateBedAssignment(bedId, data) {
             [newReason, assignment.id]
           );
           
-          // Update room occupancy for the room being vacated
           await this.updateRoomOccupants(assignment.room_id, connection);
         }
       }
     }
     
-    // 4. Update room occupancy for current room
+    // 5. Update room occupancy for current room
     await this.updateRoomOccupants(roomId, connection);
-    
-    // 5. Verify the update
-    const [updatedBed] = await connection.query(
-      `SELECT id, tenant_rent, is_couple FROM bed_assignments WHERE id = ?`,
-      [bedId]
-    );
-    
     
     await connection.commit();
     connection.release();
