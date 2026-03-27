@@ -368,6 +368,8 @@ async create(req, res) {
       // NEW: Aadhar and PAN fields
       aadhar_number: body.aadhar_number || null,
       pan_number: body.pan_number || null,
+      id_proof_type: body.id_proof_type || null,
+address_proof_type: body.address_proof_type || null,
 
       // Files
       ...uploadedFiles,
@@ -921,7 +923,7 @@ async update(req, res) {
       'address', 'city', 'state', 'pincode', 'preferred_sharing', 'preferred_room_type',
       'preferred_property_id', 'check_in_date',
       'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
-      'aadhar_number', 'pan_number' // ADD THESE FIELDS
+      'aadhar_number', 'pan_number','id_proof_type', 'address_proof_type'   
     ];
 
     fields.forEach(field => {

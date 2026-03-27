@@ -91,7 +91,8 @@ router.get('/stats', async (req, res) => {
         SUM(CASE WHEN priority = 'medium' THEN 1 ELSE 0 END) as medium,
         SUM(CASE WHEN priority = 'low' THEN 1 ELSE 0 END) as low,
         SUM(CASE WHEN notification_type = 'tenant_request' THEN 1 ELSE 0 END) as tenant_requests,
-        SUM(CASE WHEN notification_type = 'vacate_request' THEN 1 ELSE 0 END) as vacate_requests
+        SUM(CASE WHEN notification_type = 'vacate_request' THEN 1 ELSE 0 END) as vacate_requests,
+        SUM(CASE WHEN notification_type = 'support_ticket' THEN 1 ELSE 0 END) as support_tickets
       FROM notifications 
       WHERE recipient_type = 'admin' AND recipient_id = 1
     `);
