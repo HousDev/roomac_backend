@@ -24,7 +24,6 @@ const tenantAuth = (req, res, next) => {
     
     // Check token structure
     if (decoded.type && decoded.type !== 'tenant') {
-      console.warn('⚠️ Token type is not tenant:', decoded.type);
       return res.status(401).json({
         success: false,
         message: 'Invalid token type - tenant access required'

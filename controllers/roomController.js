@@ -554,36 +554,71 @@ if (req.compressedPhotos?.length) {
 
 
   // Delete room - DELETE /api/rooms/:id
-  async deleteRoom(req, res) {
-    try {
-      const { id } = req.params;
-      const deleted = await RoomModel.delete(id);
+// controllers/roomController.js
 
-      if (!deleted) {
-        return res.status(404).json({
-          success: false,
-          message: "Room not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        message: "Room deleted successfully"
-      });
-    } catch (err) {
-      console.error("deleteRoom error:", err);
-      if (err.code === "ER_ROW_IS_REFERENCED_2") {
-    return res.status(400).json({
-      success: false,
-      message: "This room cannot be deleted because it is linked with other data."
-    });
-  }
-      res.status(500).json({
+// Delete room - DELETE /api/rooms/:id
+async deleteRoom(req, res) {
+  try {
+    const { id } = req.params;
+    
+    // Check if room has any occupied beds (tenants assigned)
+    const [occupiedBeds] = await db.query(
+      `SELECT COUNT(*) as occupied_count 
+       FROM bed_assignments 
+       WHERE room_id = ? AND is_available = FALSE`,
+      [id]
+    );
+    
+    if (occupiedBeds[0].occupied_count > 0) {
+      return res.status(400).json({
         success: false,
-        message: "Failed to delete room"
+        message: `Cannot delete room because it has ${occupiedBeds[0].occupied_count} occupied bed(s). Please vacate all tenants first.`
       });
     }
-  },
+    
+    // Also check if room has any pending bookings (optional)
+    const [activeBookings] = await db.query(
+      `SELECT COUNT(*) as booking_count 
+       FROM bookings 
+       WHERE room_id = ? AND status NOT IN ('cancelled', 'completed')`,
+      [id]
+    );
+    
+    if (activeBookings[0].booking_count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete room because it has ${activeBookings[0].booking_count} active booking(s). Please cancel bookings first.`
+      });
+    }
+    
+    // If no tenants assigned, proceed with deletion
+    const deleted = await RoomModel.delete(id);
+    
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: "Room deleted successfully"
+    });
+  } catch (err) {
+    console.error("deleteRoom error:", err);
+    if (err.code === "ER_ROW_IS_REFERENCED_2") {
+      return res.status(400).json({
+        success: false,
+        message: "This room cannot be deleted because it is linked with other data."
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete room"
+    });
+  }
+},
 
 
   
@@ -687,7 +722,19 @@ if (req.compressedPhotos?.length) {
 
 async assignBed(req, res) {
   try {
-    const { room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple } = req.body;
+    const { room_id, bed_number, tenant_id, tenant_gender, tenant_rent, is_couple, // Partner details
+      partner_full_name,
+      partner_phone,
+      partner_date_of_birth,
+      partner_gender,
+      partner_address,
+      partner_id_proof_url,
+      partner_address_proof_url,
+      partner_photo_url,
+      partner_email,
+      partner_occupation,
+      partner_organization,
+      partner_relationship } = req.body;
     
  
     
@@ -725,6 +772,47 @@ async assignBed(req, res) {
       }
     }
     
+     // If it's a couple booking, update the tenant with partner details
+    if (coupleStatus && partner_full_name) {
+      // Generate a unique couple ID
+      const coupleId = `CPL-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      
+      // Update tenant with partner details
+      await db.execute(
+        `UPDATE tenants SET 
+          partner_full_name = ?,
+          partner_phone = ?,
+          partner_date_of_birth = ?,
+          partner_gender = ?,
+          partner_address = ?,
+          partner_id_proof_url = ?,
+          partner_address_proof_url = ?,
+          partner_photo_url = ?,
+          partner_email = ?,
+          partner_occupation = ?,
+          partner_organization = ?,
+          partner_relationship = ?,
+          is_couple_booking = 1,
+          couple_id = ?
+        WHERE id = ?`,
+        [
+          partner_full_name,
+          partner_phone,
+          partner_date_of_birth,
+          partner_gender,
+          partner_address,
+          partner_id_proof_url,
+          partner_address_proof_url,
+          partner_photo_url,
+          partner_email,
+          partner_occupation,
+          partner_organization,
+          partner_relationship || 'Spouse',
+          coupleId,
+          tenantId
+        ]
+      );
+    }
    
     
     if (isNaN(roomId) || isNaN(bedNumber) || isNaN(tenantId)) {

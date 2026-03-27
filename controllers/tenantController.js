@@ -1752,7 +1752,7 @@ async listWithAssignments(req, res) {
 },
 
 
- async import(req, res) {
+async import(req, res) {
     try {
       
       if (!req.file) {
@@ -1768,7 +1768,6 @@ async listWithAssignments(req, res) {
       const worksheet = workbook.Sheets[sheetName];
       const data = xlsx.utils.sheet_to_json(worksheet);
 
-
       const created = [];
       const errors = [];
 
@@ -1776,7 +1775,6 @@ async listWithAssignments(req, res) {
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
         const rowNum = i + 2; // +2 for header row
-
 
         try {
           // Validate required fields
@@ -1798,16 +1796,23 @@ async listWithAssignments(req, res) {
             continue;
           }
 
-          // Validate phone number (Indian format)
-          const phoneStr = phone.toString().replace(/\D/g, '');
+          // Validate phone number
+          let phoneStr = phone.toString().replace(/\D/g, '');
+          const countryCode = row['Country Code'] || row['country_code'] || '+91';
+          
+          // Remove country code from phone if present
+          if (phoneStr.startsWith(countryCode.replace('+', ''))) {
+            phoneStr = phoneStr.slice(countryCode.replace('+', '').length);
+          }
+          
           if (!/^[6-9]\d{9}$/.test(phoneStr)) {
             errors.push(`Row ${rowNum}: Invalid Indian mobile number (must be 10 digits starting with 6-9)`);
             continue;
           }
 
           const gender = row['Gender'] || row['gender'] || row['GENDER'];
-          if (!gender || !['Male', 'Female', 'Other'].includes(gender)) {
-            errors.push(`Row ${rowNum}: Gender is required (Male/Female/Other)`);
+          if (!gender || !['Male', 'Female', 'Other', 'Prefer not to say'].includes(gender)) {
+            errors.push(`Row ${rowNum}: Gender is required (Male/Female/Other/Prefer not to say)`);
             continue;
           }
 
@@ -1853,42 +1858,159 @@ async listWithAssignments(req, res) {
             preferredPropertyId = parseInt(propId);
           }
 
+          // Parse numeric fields
+          const yearsOfExperience = row['Years of Experience'] ? parseInt(row['Years of Experience']) : null;
+          const monthlyIncome = row['Monthly Income'] ? parseFloat(row['Monthly Income']) : null;
+          
+          // Parse partner information
+          const isCoupleBooking = (row['Is Couple Booking'] || row['is_couple_booking'] || 'No').toString().toLowerCase();
+          const isCouple = isCoupleBooking === 'yes' || isCoupleBooking === 'true' || isCoupleBooking === '1';
+          
+          let partnerData = null;
+          if (isCouple) {
+            const partnerPhone = row['Partner Phone'] || row['partner_phone'];
+            let partnerPhoneStr = partnerPhone ? partnerPhone.toString().replace(/\D/g, '') : null;
+            
+            if (partnerPhoneStr) {
+              const partnerCountryCode = row['Partner Country Code'] || row['partner_country_code'] || '+91';
+              if (partnerPhoneStr.startsWith(partnerCountryCode.replace('+', ''))) {
+                partnerPhoneStr = partnerPhoneStr.slice(partnerCountryCode.replace('+', '').length);
+              }
+            }
+            
+            partnerData = {
+              full_name: row['Partner Full Name'] || row['partner_full_name'] || null,
+              phone: partnerPhoneStr,
+              country_code: row['Partner Country Code'] || row['partner_country_code'] || '+91',
+              email: row['Partner Email'] || row['partner_email'] || null,
+              gender: row['Partner Gender'] || row['partner_gender'] || null,
+              date_of_birth: row['Partner Date of Birth'] || row['partner_date_of_birth'] || null,
+              occupation: row['Partner Occupation'] || row['partner_occupation'] || null,
+              organization: row['Partner Organization'] || row['partner_organization'] || null,
+              relationship: row['Partner Relationship'] || row['partner_relationship'] || null,
+              address: row['Partner Address'] || row['partner_address'] || null,
+              city: row['Partner City'] || row['partner_city'] || null,
+              state: row['Partner State'] || row['partner_state'] || null,
+              pincode: row['Partner Pincode'] || row['partner_pincode'] || null,
+              id_proof_url: row['Partner ID Proof URL'] || row['partner_id_proof_url'] || null,
+              id_proof_type: row['Partner ID Proof Type'] || row['partner_id_proof_type'] || null,
+              address_proof_url: row['Partner Address Proof URL'] || row['partner_address_proof_url'] || null,
+              address_proof_type: row['Partner Address Proof Type'] || row['partner_address_proof_type'] || null,
+              photo_url: row['Partner Photo URL'] || row['partner_photo_url'] || null
+            };
+          }
+
+          // Parse additional documents
+          let additionalDocs = [];
+          const additionalDocsStr = row['Additional Documents'] || row['additional_documents'];
+          if (additionalDocsStr) {
+            try {
+              additionalDocs = typeof additionalDocsStr === 'string' 
+                ? JSON.parse(additionalDocsStr) 
+                : additionalDocsStr;
+            } catch (e) {
+              console.warn(`Row ${rowNum}: Invalid JSON in Additional Documents`);
+            }
+          }
+
           // Prepare tenant data
           const tenantData = {
+            // Personal Information
             salutation: row['Salutation'] || row['salutation'] || null,
             full_name: fullName.toString().trim(),
             email: email.toString().toLowerCase().trim(),
-            country_code: row['Country Code'] || row['country_code'] || '+91',
+            country_code: countryCode,
             phone: phoneStr,
             gender: gender,
             date_of_birth: row['Date of Birth'] || row['date_of_birth'] || null,
+            
+            // Occupation Details
             occupation_category: row['Occupation Category'] || row['occupation_category'] || null,
             exact_occupation: row['Exact Occupation'] || row['exact_occupation'] || null,
+            occupation: row['Occupation'] || row['occupation'] || null,
+            organization: row['Organization'] || row['organization'] || null,
+            years_of_experience: yearsOfExperience,
+            monthly_income: monthlyIncome,
+            course_duration: row['Course Duration'] || row['course_duration'] || null,
+            student_id: row['Student ID'] || row['student_id'] || null,
+            employee_id: row['Employee ID'] || row['employee_id'] || null,
+            portfolio_url: row['Portfolio URL'] || row['portfolio_url'] || null,
+            work_mode: row['Work Mode'] || row['work_mode'] || null,
+            shift_timing: row['Shift Timing'] || row['shift_timing'] || null,
+            
+            // Address Information
             address: address.toString().trim(),
             city: city.toString().trim(),
             state: state.toString().trim(),
             pincode: row['Pincode'] || row['pincode'] || null,
+            
+            // Emergency Contact
             emergency_contact_name: row['Emergency Contact Name'] || row['emergency_contact_name'] || null,
             emergency_contact_phone: row['Emergency Contact Phone'] || row['emergency_contact_phone'] || null,
             emergency_contact_relation: row['Emergency Contact Relation'] || row['emergency_contact_relation'] || null,
+            
+            // Room Preferences
             preferred_sharing: row['Preferred Sharing'] || row['preferred_sharing'] || null,
             preferred_room_type: row['Preferred Room Type'] || row['preferred_room_type'] || null,
             preferred_property_id: preferredPropertyId,
+            
+            // Booking Details
             check_in_date: row['Check-in Date'] || row['check_in_date'] || null,
+            
+            // Account Settings
             portal_access_enabled: portalAccessEnabled,
             is_active: isActive,
+            
+            // Document URLs
+            id_proof_url: row['ID Proof URL'] || row['id_proof_url'] || null,
+            address_proof_url: row['Address Proof URL'] || row['address_proof_url'] || null,
+            photo_url: row['Photo URL'] || row['photo_url'] || null,
+            aadhar_number: row['Aadhar Number'] || row['aadhar_number'] || null,
+            pan_number: row['PAN Number'] || row['pan_number'] || null,
+            id_proof_type: row['ID Proof Type'] || row['id_proof_type'] || null,
+            address_proof_type: row['Address Proof Type'] || row['address_proof_type'] || null,
+            
+            // Lock-in Period Details
             lockin_period_months: lockinPeriodMonths,
             lockin_penalty_amount: lockinPenaltyAmount,
             lockin_penalty_type: lockinPenaltyType,
+            
+            // Notice Period Details
             notice_period_days: noticePeriodDays,
             notice_penalty_amount: noticePenaltyAmount,
             notice_penalty_type: noticePenaltyType,
-            additional_documents: []
+            
+            // Additional Data
+            additional_documents: additionalDocs,
+            
+            // Partner Information
+            is_couple_booking: isCouple,
+            partner_data: partnerData
           };
-
 
           // Create tenant
           const tenantId = await TenantModel.create(tenantData);
+
+          // Create partner tenant if couple booking
+          let partnerTenantId = null;
+          if (isCouple && partnerData && partnerData.full_name) {
+            try {
+              const partnerTenantData = {
+                ...partnerData,
+                is_partner: true,
+                couple_id: tenantId,
+                portal_access_enabled: false, // Partners don't get separate portal access
+                is_active: true
+              };
+              partnerTenantId = await TenantModel.create(partnerTenantData);
+              
+              // Update the original tenant with couple_id
+              await TenantModel.update(tenantId, { couple_id: partnerTenantId });
+            } catch (partnerErr) {
+              console.error(`Failed to create partner for tenant ${tenantId}:`, partnerErr);
+              errors.push(`Row ${rowNum}: Failed to create partner record - ${partnerErr.message}`);
+            }
+          }
 
           // Create default password for portal access
           if (portalAccessEnabled) {
@@ -1911,7 +2033,9 @@ async listWithAssignments(req, res) {
           created.push({
             id: tenantId,
             name: tenantData.full_name,
-            email: tenantData.email
+            email: tenantData.email,
+            is_couple: isCouple,
+            partner_id: partnerTenantId
           });
 
         } catch (err) {
@@ -1927,12 +2051,12 @@ async listWithAssignments(req, res) {
         console.error("Error deleting temp file:", err);
       }
 
-
       return res.json({
         success: true,
         message: `Successfully imported ${created.length} tenants`,
         count: created.length,
-        errors: errors.length > 0 ? errors : undefined
+        errors: errors.length > 0 ? errors : undefined,
+        created: created
       });
 
     } catch (error) {
