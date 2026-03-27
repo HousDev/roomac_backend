@@ -4,8 +4,8 @@ const pool = require("../config/db");
 function parseTenant(row) {
   if (!row) return row;
   
-  // Convert boolean values
-  row.is_active = !!row.is_active;
+  // Convert boolean valuesid_proof_type: body.id_proof_type || null,
+   row.is_active = !!row.is_active;
   row.portal_access_enabled = !!row.portal_access_enabled;
   row.bed_is_available = row.bed_is_available !== null ? !!row.bed_is_available : null;
 
@@ -443,6 +443,8 @@ async create(payload) {
       photo_url || null,
       aadhar_number || null,
       pan_number || null,
+      payload.id_proof_type || null,    
+payload.address_proof_type || null, 
       address || null,
       city || null,
       state || null,
@@ -495,6 +497,8 @@ INSERT INTO tenants (
   photo_url,
    aadhar_number,
   pan_number,
+  id_proof_type,      
+address_proof_type,
   address,
   city,
   state,
@@ -666,7 +670,8 @@ async update(id, payload) {
     setIf("photo_url", payload.photo_url);
     setIf("aadhar_number", payload.aadhar_number);
     setIf("pan_number", payload.pan_number);
-    
+    setIf("id_proof_type", payload.id_proof_type);      
+setIf("address_proof_type", payload.address_proof_type); 
     
     // Address fields
     setIf("address", payload.address);

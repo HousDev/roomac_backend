@@ -51,6 +51,9 @@ const templateRoutes = require('./routes/documentTemplateRoutes');
 const documentRoutes = require("./routes/documentRoutes");  // ← ADD THIS
 const documentListRoutes = require("./routes/documentListRoutes");  // ← ADD
 const noticePeriodRequestRoutes = require("./routes/noticePeriodRequestRoutes")
+const supportTicketsRouter = require('./routes/supportTicketsRoute');
+   const pricingPlanRoutes = require("./routes/pricingPlanRoutes");
+
 
 dotenv.config();
 
@@ -156,6 +159,10 @@ app.use("/api/documents", documentRoutes);                   // ← ADD THIS
 app.use("/api/documents-list", documentListRoutes); 
 app.use("/api/admin/request-counts", require("./routes/adminRequestCountsRoutes"));
 app.use("/api/expenses", expenseRoutes);
+app.use('/api/support-tickets', supportTicketsRouter);
+   app.use("/api/pricing-plans", pricingPlanRoutes);
+
+
 /* =========================
    SERVER START
 ========================= */

@@ -1410,8 +1410,8 @@ async getMyRequests(req, res) {
         crd.category_master_type_id,
         crd.reason_master_value_id,
         crd.custom_reason,
-        mt2.name as complaint_category_name,
-        miv3.name as complaint_reason_name,
+miv_cat.name as complaint_category_name,
+miv3.name as complaint_reason_name,
 
         -- ADD THIS: Receipt data
         rr.id as receipt_request_id,
@@ -1443,8 +1443,8 @@ async getMyRequests(req, res) {
 
        -- Left join for complaint requests
        LEFT JOIN complaint_request_details crd ON tr.id = crd.request_id AND tr.request_type = 'complaint'
-       LEFT JOIN master_types mt2 ON crd.category_master_type_id = mt2.id
-       LEFT JOIN master_item_values miv3 ON crd.reason_master_value_id = miv3.id
+       LEFT JOIN master_item_values miv_cat ON crd.category_master_type_id = miv_cat.id
+LEFT JOIN master_item_values miv3 ON crd.reason_master_value_id = miv3.id
        
        -- ADD THIS: Left join for receipt requests
        LEFT JOIN receipt_requests rr ON tr.id = rr.request_id AND tr.request_type = 'receipt'
