@@ -153,12 +153,12 @@ const RoomController = {
   },
 
   
+// controllers/roomController.js
+
 async getRoomsByPropertyId(req, res) {
   try {
     const { propertyId } = req.params;
     
-    
-    // Validate propertyId
     if (!propertyId || isNaN(propertyId)) {
       return res.status(400).json({
         success: false,
@@ -168,14 +168,18 @@ async getRoomsByPropertyId(req, res) {
     
     const rooms = await RoomModel.findByPropertyId(parseInt(propertyId));
     
-    
-    // Filter to only show active rooms
-    const activeRooms = rooms.filter(room => room.is_active);
+    // Add available beds calculation
+    const roomsWithAvailability = rooms.map(room => ({
+      ...room,
+      available_beds: room.total_bed - room.occupied_beds,
+      // bed_assignments already comes from the model
+    }));
+
     
     res.status(200).json({
       success: true,
-      data: activeRooms,
-      count: activeRooms.length
+      data: roomsWithAvailability,
+      count: roomsWithAvailability.length
     });
     
   } catch (error) {
