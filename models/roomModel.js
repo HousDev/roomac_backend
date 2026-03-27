@@ -1268,17 +1268,45 @@ async syncBedAssignments(roomId, newTotalBeds, bedsConfig = []) {
   }
 },
 
-  async delete(id) {
-    try {
-      await db.query('DELETE FROM bed_assignments WHERE room_id = ?', [id]);
-      
-      const [result] = await db.query('DELETE FROM rooms WHERE id = ?', [id]);
-      return result.affectedRows > 0;
-    } catch (err) {
-      console.error("RoomModel.delete error:", err);
-      throw err;
+// models/roomModel.js
+
+async delete(id) {
+  try {
+    // First, check if room has any occupied beds
+    const [occupiedCheck] = await db.query(
+      `SELECT COUNT(*) as occupied_count 
+       FROM bed_assignments 
+       WHERE room_id = ? AND is_available = FALSE`,
+      [id]
+    );
+    
+    if (occupiedCheck[0].occupied_count > 0) {
+      throw new Error(`Room has ${occupiedCheck[0].occupied_count} occupied bed(s). Cannot delete.`);
     }
-  },
+    
+    // Check for active bookings
+    const [bookingCheck] = await db.query(
+      `SELECT COUNT(*) as booking_count 
+       FROM bookings 
+       WHERE room_id = ? AND status NOT IN ('cancelled', 'completed')`,
+      [id]
+    );
+    
+    if (bookingCheck[0].booking_count > 0) {
+      throw new Error(`Room has ${bookingCheck[0].booking_count} active booking(s). Cannot delete.`);
+    }
+    
+    // Delete bed assignments first (only available ones)
+    await db.query('DELETE FROM bed_assignments WHERE room_id = ? AND is_available = TRUE', [id]);
+    
+    // Then delete the room
+    const [result] = await db.query('DELETE FROM rooms WHERE id = ?', [id]);
+    return result.affectedRows > 0;
+  } catch (err) {
+    console.error("RoomModel.delete error:", err);
+    throw err;
+  }
+},
 
   async addPhotos(id, newPhotos) {
     try {
