@@ -53,6 +53,7 @@ const documentListRoutes = require("./routes/documentListRoutes");  // ← ADD
 const noticePeriodRequestRoutes = require("./routes/noticePeriodRequestRoutes")
 const supportTicketsRouter = require('./routes/supportTicketsRoute');
    const pricingPlanRoutes = require("./routes/pricingPlanRoutes");
+const partnershipEnquiryRoutes = require("./routes/partnershipEnquiryRoutes");
 
 
 dotenv.config();
@@ -161,6 +162,7 @@ app.use("/api/admin/request-counts", require("./routes/adminRequestCountsRoutes"
 app.use("/api/expenses", expenseRoutes);
 app.use('/api/support-tickets', supportTicketsRouter);
    app.use("/api/pricing-plans", pricingPlanRoutes);
+app.use("/api/partnership-enquiries", partnershipEnquiryRoutes);
 
 
 /* =========================
