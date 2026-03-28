@@ -184,6 +184,112 @@ const getPartnershipStats = async (req, res) => {
     }
 };
 
+const addPartnershipFollowup = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { note, created_by } = req.body;
+
+        if (!note) {
+            return res.status(400).json({
+                success: false,
+                message: "Followup note is required"
+            });
+        }
+
+        // Check if enquiry exists
+        const existingEnquiry = await PartnershipEnquiryModel.getPartnershipEnquiryById(id);
+        if (!existingEnquiry) {
+            return res.status(404).json({
+                success: false,
+                message: "Partnership enquiry not found"
+            });
+        }
+
+        const result = await PartnershipEnquiryModel.addFollowup(id, {
+            note,
+            created_by: created_by || "Admin"
+        });
+
+        res.json({
+            success: true,
+            message: "Followup added successfully",
+            data: {
+                followup: result.followup,
+                followupHistory: result.followupHistory
+            }
+        });
+    } catch (err) {
+        console.error("Error in addPartnershipFollowup:", err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+};
+
+// Get followup history for a partnership enquiry
+const getPartnershipFollowupHistory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const history = await PartnershipEnquiryModel.getFollowupHistory(id);
+
+        res.json({
+            success: true,
+            data: history
+        });
+    } catch (err) {
+        console.error("Error in getPartnershipFollowupHistory:", err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+};
+
+// Update status with optional followup
+const updatePartnershipStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, followup_note } = req.body;
+
+        const existingEnquiry = await PartnershipEnquiryModel.getPartnershipEnquiryById(id);
+        if (!existingEnquiry) {
+            return res.status(404).json({
+                success: false,
+                message: "Partnership enquiry not found"
+            });
+        }
+
+        // Update status
+        await PartnershipEnquiryModel.updatePartnershipEnquiry(id, { status });
+
+        // Add followup if provided
+        if (followup_note) {
+            await PartnershipEnquiryModel.addFollowup(id, {
+                note: `Status changed to ${status}: ${followup_note}`,
+                created_by: "Admin"
+            });
+        } else {
+            await PartnershipEnquiryModel.addFollowup(id, {
+                note: `Status changed to ${status}`,
+                created_by: "Admin"
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Status updated successfully"
+        });
+    } catch (err) {
+        console.error("Error in updatePartnershipStatus:", err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+};
+
 module.exports = {
     getPartnershipEnquiries,
     getPartnershipEnquiryById,
@@ -192,4 +298,7 @@ module.exports = {
     deletePartnershipEnquiry,
     bulkDeletePartnershipEnquiries,
     getPartnershipStats,
+    addPartnershipFollowup,
+    getPartnershipFollowupHistory,
+    updatePartnershipStatus
 };

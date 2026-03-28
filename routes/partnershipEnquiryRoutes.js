@@ -1,27 +1,19 @@
-// routes/partnershipEnquiryRoutes.js
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const partnershipEnquiryController = require("../controllers/partnershipEnquiryController");
+const partnershipEnquiryController = require('../controllers/partnershipEnquiryController');
 
-// Get all partnership enquiries (with filters)
-router.get("/", partnershipEnquiryController.getPartnershipEnquiries);
+// Existing routes
+router.get('/', partnershipEnquiryController.getPartnershipEnquiries);
+router.get('/stats', partnershipEnquiryController.getPartnershipStats);
+router.get('/:id', partnershipEnquiryController.getPartnershipEnquiryById);
+router.post('/', partnershipEnquiryController.createPartnershipEnquiry);
+router.put('/:id', partnershipEnquiryController.updatePartnershipEnquiry);
+router.delete('/:id', partnershipEnquiryController.deletePartnershipEnquiry);
+router.post('/bulk-delete', partnershipEnquiryController.bulkDeletePartnershipEnquiries);
 
-// Get partnership stats
-router.get("/stats", partnershipEnquiryController.getPartnershipStats);
-
-// Get single partnership enquiry by ID
-router.get("/:id", partnershipEnquiryController.getPartnershipEnquiryById);
-
-// Create new partnership enquiry
-router.post("/", partnershipEnquiryController.createPartnershipEnquiry);
-
-// Update partnership enquiry
-router.put("/:id", partnershipEnquiryController.updatePartnershipEnquiry);
-
-// Delete partnership enquiry
-router.delete("/:id", partnershipEnquiryController.deletePartnershipEnquiry);
-
-// Bulk delete partnership enquiries
-router.post("/bulk-delete", partnershipEnquiryController.bulkDeletePartnershipEnquiries);
+// New routes for followups
+router.post('/:id/followup', partnershipEnquiryController.addPartnershipFollowup);
+router.get('/:id/followups', partnershipEnquiryController.getPartnershipFollowupHistory);
+router.patch('/:id/status', partnershipEnquiryController.updatePartnershipStatus);
 
 module.exports = router;
