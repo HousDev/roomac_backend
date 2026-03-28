@@ -467,6 +467,7 @@ async findById(id) {
         s.salutation AS manager_salutation,
         s.name AS staff_name,
         s.phone AS staff_phone,
+         s.phone_country_code AS staff_phone_country_code,
         s.email AS staff_email,
         s.role AS staff_role,
         mi.name as role_name
@@ -604,7 +605,8 @@ async findById(id) {
       tags_mapped: tagsResult.values,
       property_rules_mapped: propertyRulesResult.values,
       additional_terms_mapped: additionalTermsResult.values,
-      
+            staff_phone_country_code: row.staff_phone_country_code || '+91', // ADD THIS
+
       // Parsed arrays
       amenities,
       services,

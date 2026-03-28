@@ -1,4 +1,3 @@
-// models/partnershipEnquiryModel.js
 const db = require("../config/db");
 
 const PartnershipEnquiryModel = {
@@ -26,20 +25,51 @@ const PartnershipEnquiryModel = {
 
             query += ` ORDER BY pe.created_at DESC`;
             const [rows] = await db.query(query, params);
-            return rows;
+            
+            // Parse followup_history JSON for each row
+            return rows.map(row => {
+                if (row.followup_history) {
+                    try {
+                        row.followup_history = typeof row.followup_history === 'string' 
+                            ? JSON.parse(row.followup_history) 
+                            : row.followup_history;
+                    } catch(e) {
+                        row.followup_history = [];
+                    }
+                } else {
+                    row.followup_history = [];
+                }
+                return row;
+            });
         } catch (err) {
             console.error("PartnershipEnquiryModel.getAllPartnershipEnquiries Error:", err);
             throw err;
         }
     },
 
-    // Get single partnership enquiry by ID
+    // Get single partnership enquiry by ID with followups
     getPartnershipEnquiryById: async (id) => {
         try {
             const [rows] = await db.query(
                 `SELECT * FROM partnership_enquiries WHERE id = ? AND deleted_at IS NULL`,
                 [id]
             );
+            
+            if (rows[0]) {
+                // Parse followup_history JSON
+                if (rows[0].followup_history) {
+                    try {
+                        rows[0].followup_history = typeof rows[0].followup_history === 'string' 
+                            ? JSON.parse(rows[0].followup_history) 
+                            : rows[0].followup_history;
+                    } catch(e) {
+                        rows[0].followup_history = [];
+                    }
+                } else {
+                    rows[0].followup_history = [];
+                }
+            }
+            
             return rows[0] || null;
         } catch (err) {
             console.error("PartnershipEnquiryModel.getPartnershipEnquiryById Error:", err);
@@ -59,14 +89,15 @@ const PartnershipEnquiryModel = {
                 property_count,
                 location,
                 message,
-                status = 'new'
+                status = 'new',
+                remark
             } = enquiryData;
 
             const [result] = await db.query(
                 `INSERT INTO partnership_enquiries 
                  (company_name, contact_person, email, phone, property_type, 
-                  property_count, location, message, status) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  property_count, location, message, status, remark) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     company_name,
                     contact_person,
@@ -76,7 +107,8 @@ const PartnershipEnquiryModel = {
                     property_count || 1,
                     location,
                     message,
-                    status
+                    status,
+                    remark || null
                 ]
             );
 
@@ -113,6 +145,96 @@ const PartnershipEnquiryModel = {
             return result;
         } catch (err) {
             console.error("PartnershipEnquiryModel.updatePartnershipEnquiry Error:", err);
+            throw err;
+        }
+    },
+
+    // Add followup to partnership enquiry
+    addFollowup: async (id, followupData) => {
+        try {
+            // Get current enquiry to fetch existing followups
+            const [rows] = await db.query(
+                `SELECT followup_history FROM partnership_enquiries WHERE id = ? AND deleted_at IS NULL`,
+                [id]
+            );
+            
+            if (!rows[0]) {
+                throw new Error("Partnership enquiry not found");
+            }
+            
+            let followupHistory = [];
+            if (rows[0].followup_history) {
+                try {
+                    followupHistory = typeof rows[0].followup_history === 'string' 
+                        ? JSON.parse(rows[0].followup_history) 
+                        : rows[0].followup_history;
+                } catch(e) {
+                    followupHistory = [];
+                }
+            }
+            
+            // Add new followup
+            const newFollowup = {
+                id: Date.now(),
+                note: followupData.note,
+                created_by: followupData.created_by || "Admin",
+                timestamp: new Date().toISOString()
+            };
+            
+            followupHistory.push(newFollowup);
+            
+            // Update the enquiry with new followup history and latest followup data
+            const [result] = await db.query(
+                `UPDATE partnership_enquiries 
+                 SET followup_history = ?, 
+                     followup_text = ?,
+                     followup_date = ?,
+                     followup_by = ?
+                 WHERE id = ?`,
+                [
+                    JSON.stringify(followupHistory),
+                    followupData.note,
+                    new Date(),
+                    followupData.created_by || "Admin",
+                    id
+                ]
+            );
+            
+            return { 
+                affectedRows: result.affectedRows,
+                followup: newFollowup,
+                followupHistory: followupHistory
+            };
+        } catch (err) {
+            console.error("PartnershipEnquiryModel.addFollowup Error:", err);
+            throw err;
+        }
+    },
+
+    // Get followup history for a partnership enquiry
+    getFollowupHistory: async (id) => {
+        try {
+            const [rows] = await db.query(
+                `SELECT followup_history FROM partnership_enquiries WHERE id = ? AND deleted_at IS NULL`,
+                [id]
+            );
+            
+            if (!rows[0]) return [];
+            
+            let followupHistory = [];
+            if (rows[0].followup_history) {
+                try {
+                    followupHistory = typeof rows[0].followup_history === 'string' 
+                        ? JSON.parse(rows[0].followup_history) 
+                        : rows[0].followup_history;
+                } catch(e) {
+                    followupHistory = [];
+                }
+            }
+            
+            return followupHistory;
+        } catch (err) {
+            console.error("PartnershipEnquiryModel.getFollowupHistory Error:", err);
             throw err;
         }
     },

@@ -54,6 +54,7 @@ const noticePeriodRequestRoutes = require("./routes/noticePeriodRequestRoutes")
 const supportTicketsRouter = require('./routes/supportTicketsRoute');
    const pricingPlanRoutes = require("./routes/pricingPlanRoutes");
 const partnershipEnquiryRoutes = require("./routes/partnershipEnquiryRoutes");
+const newsletterRoutes = require("./routes/newsletterRoutes");
 
 
 dotenv.config();
@@ -163,6 +164,7 @@ app.use("/api/expenses", expenseRoutes);
 app.use('/api/support-tickets', supportTicketsRouter);
    app.use("/api/pricing-plans", pricingPlanRoutes);
 app.use("/api/partnership-enquiries", partnershipEnquiryRoutes);
+app.use("/api/newsletter", newsletterRoutes);
 
 
 /* =========================
