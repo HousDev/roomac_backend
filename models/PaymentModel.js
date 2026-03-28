@@ -822,18 +822,25 @@ async approvePayment(id, approvedBy) {
 },
 
 // Reject payment
-async rejectPayment(id, rejectionReason, rejectedBy) {
+
+async rejectPayment(id, rejectionReason, rejectionReasonCategoryId, rejectedBy) {
   const query = `
     UPDATE payments 
     SET status = 'rejected', 
         rejected_at = NOW(), 
         rejected_by = ?,
         rejection_reason = ?,
+        rejection_reason_category_id = ?,
         updated_at = NOW()
     WHERE id = ?
   `;
   try {
-    const [result] = await db.execute(query, [rejectedBy || null, rejectionReason, id]);
+    const [result] = await db.execute(query, [
+      rejectedBy || null, 
+      rejectionReason, 
+      rejectionReasonCategoryId || null, 
+      id
+    ]);
     return result.affectedRows > 0;
   } catch (error) {
     console.error("Error rejecting payment:", error);

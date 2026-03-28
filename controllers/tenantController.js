@@ -9,6 +9,32 @@ const { sendEmail } = require("../utils/emailService");
 
 const SALT_ROUNDS = 10;
 
+// controllers/tenantController.js - Add this helper function
+
+// Function to generate next couple ID
+const generateNextCoupleId = async () => {
+  // Query to find the highest couple_id number
+  const [result] = await pool.query(
+    `SELECT couple_id FROM tenants 
+     WHERE couple_id IS NOT NULL 
+     AND couple_id REGEXP '^C[0-9]+$'
+     ORDER BY CAST(SUBSTRING(couple_id, 2) AS UNSIGNED) DESC 
+     LIMIT 1`
+  );
+  
+  let nextNumber = 1;
+  
+  if (result.length > 0 && result[0].couple_id) {
+    const currentNumber = parseInt(result[0].couple_id.substring(1));
+    if (!isNaN(currentNumber)) {
+      nextNumber = currentNumber + 1;
+    }
+  }
+  
+  // Format as C001, C002, C003, etc. (3 digits with leading zeros)
+  return `C${nextNumber.toString().padStart(3, '0')}`;
+};
+
 const TenantController = {
   async list(req, res) {
     try {
@@ -269,6 +295,30 @@ async create(req, res) {
       }
     });
 
+    // Process partner documents
+    const partnerUploadedFiles = {};
+    const processPartnerDocument = (fieldName, folder) => {
+      if (files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        partnerUploadedFiles[fieldName] = `/uploads/${folder}/${file.filename}`;
+        return true;
+      }
+      return false;
+    };
+
+    processPartnerDocument("partner_id_proof_url", "partner_id_proofs");
+    processPartnerDocument("partner_address_proof_url", "partner_address_proofs");
+    processPartnerDocument("partner_photo_url", "partner_photos");
+
+// Generate couple_id if partner details exist
+let coupleId = null;
+let isCoupleBooking = false;
+
+if (body.partner_full_name) {
+  isCoupleBooking = true;
+  // Generate simple auto-increment couple ID
+  coupleId = await generateNextCoupleId();
+}
 
     // Parse numeric fields
     const parseNumber = (value, defaultValue = 0) => {
@@ -373,7 +423,28 @@ address_proof_type: body.address_proof_type || null,
   id_proof_number: body.id_proof_number || null,        
     address_proof_number: body.address_proof_number || null,
 
-
+// NEW: Partner Details
+      partner_full_name: body.partner_full_name || null,
+      partner_phone: body.partner_phone || null,
+      partner_email: body.partner_email || null,
+      partner_gender: body.partner_gender || null,
+      partner_date_of_birth: body.partner_date_of_birth || null,
+      partner_address: body.partner_address || null,
+      partner_occupation: body.partner_occupation || null,
+      partner_organization: body.partner_organization || null,
+      partner_relationship: body.partner_relationship || null,
+      partner_id_proof_type: body.partner_id_proof_type || null,
+      partner_id_proof_number: body.partner_id_proof_number || null,
+      partner_address_proof_type: body.partner_address_proof_type || null,
+      partner_address_proof_number: body.partner_address_proof_number || null,
+      
+      // Partner documents URLs
+      partner_id_proof_url: partnerUploadedFiles.partner_id_proof_url || null,
+      partner_address_proof_url: partnerUploadedFiles.partner_address_proof_url || null,
+      partner_photo_url: partnerUploadedFiles.partner_photo_url || null,
+      
+      is_couple_booking: body.partner_full_name ? true : false,
+      couple_id:  coupleId,
 
       // Files
       ...uploadedFiles,
@@ -801,6 +872,30 @@ async update(req, res) {
     processMainDocument('id_proof_url', 'id_proofs', existingTenant.id_proof_url);
     processMainDocument('address_proof_url', 'address_proofs', existingTenant.address_proof_url);
     processMainDocument('photo_url', 'photos', existingTenant.photo_url);
+
+     const processPartnerDocument = (fieldName, folder, existingUrl) => {
+      if (files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
+        if (existingUrl) {
+          const oldPath = existingUrl.replace('/uploads/', 'uploads/');
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch (unlinkErr) {
+              console.error(`Failed to delete old ${fieldName}:`, unlinkErr);
+            }
+          }
+        }
+        return true;
+      }
+      return false;
+    };
+
+    // Process partner documents
+    processPartnerDocument('partner_id_proof_url', 'partner_id_proofs', existingTenant.partner_id_proof_url);
+    processPartnerDocument('partner_address_proof_url', 'partner_address_proofs', existingTenant.partner_address_proof_url);
+    processPartnerDocument('partner_photo_url', 'partner_photos', existingTenant.partner_photo_url);
     
     // Process additional documents - FIXED TO PREVENT DUPLICATES
     let additionalDocs = existingTenant.additional_documents || [];
@@ -964,6 +1059,28 @@ async update(req, res) {
       }
     }
 
+    // Add partner fields to updateData
+    const partnerFields = [
+      'partner_full_name', 'partner_phone', 'partner_email', 'partner_gender',
+      'partner_date_of_birth', 'partner_address', 'partner_occupation',
+      'partner_organization', 'partner_relationship', 'partner_id_proof_type',
+      'partner_id_proof_number', 'partner_address_proof_type', 'partner_address_proof_number'
+    ];
+
+    partnerFields.forEach(field => {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field] === '' ? null : body[field];
+      }
+    });
+
+    // Update is_couple_booking flag
+    if (body.partner_full_name !== undefined) {
+      updateData.is_couple_booking = body.partner_full_name ? true : false;
+      if (body.partner_full_name && !existingTenant.couple_id) {
+        updateData.couple_id = await generateNextCoupleId();
+      }
+    }
+
     
 
     // Update tenant
@@ -978,17 +1095,27 @@ async update(req, res) {
                                  body.update_credentials === "true";
 
 
-
-    if (shouldHaveCredentials && body.password) {
+console.log("is tenant have crediential", shouldHaveCredentials, body.password)
+    if (shouldHaveCredentials ) {
       try {
-        const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
-        
+        const [[userCred]] = await pool.query(`select * from tenant_credentials where tenant_id = ?`, [id]);
+        console.log("user credential ",userCred)
+        let password_hash = '';
+        if(body.password){
+          password_hash = await bcrypt.hash(body.password , SALT_ROUNDS)
+        }else{
+          password_hash = userCred.password_hash
+        }
+
+
+        const email = updateData.email ? updateData.email : userCred.email;
+        console.log("emaillll", email)
         // Check if credentials exist
         const credentials = await TenantModel.getCredentialsByTenantIds([id]);
-        
         if (credentials && credentials.length > 0) {
+          console.log("credential adfas", updateData.email)
           // Update existing credentials
-          await TenantModel.updateCredential(id, { password_hash });
+          await TenantModel.updateCredential(id , { password_hash , email  });
           
         } else {
           // Create new credentials
@@ -1291,8 +1418,9 @@ async bulkDelete(req, res) {
       }
 
       const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+       const [[userCred]] = await pool.query(`select * from tenant_credentials where tenant_id = ?`, [tenant_id]);
       const ok = await TenantModel.updateCredential(tenant_id, {
-        password_hash,
+        password_hash, email:userCred.email
       });
       if (!ok)
         return res
