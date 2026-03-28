@@ -1,7 +1,7 @@
 
 
 
-
+// middleware/uploadDocument.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -19,7 +19,11 @@ const createUploadDirs = () => {
     "uploads/address_proofs",
     "uploads/photos",
     "uploads/additional_docs",
-    "uploads/temp"
+    "uploads/temp",
+     // Partner document directories   
+      "uploads/partner_id_proofs",
+    "uploads/partner_address_proofs",
+    "uploads/partner_photos"
   ];
 
   dirs.forEach(dir => {
@@ -51,6 +55,16 @@ const storage = multer.diskStorage({
     else if (file.fieldname === "photo_url" || file.fieldname === "photo_file") {
       uploadPath = "uploads/photos/";
     } 
+     // Partner documents
+    else if (file.fieldname === "partner_id_proof_url") {
+      uploadPath = "uploads/partner_id_proofs/";
+    }
+    else if (file.fieldname === "partner_address_proof_url") {
+      uploadPath = "uploads/partner_address_proofs/";
+    }
+    else if (file.fieldname === "partner_photo_url") {
+      uploadPath = "uploads/partner_photos/";
+    }
     else if (
       file.fieldname.includes("additional") ||
       file.fieldname.startsWith("additional_documents")
@@ -107,6 +121,30 @@ const upload = multer({
   fileFilter
 });
 
+
+// ================================
+// HELPER: GET DESTINATION FOLDER
+// ================================
+
+const getDestinationFolder = (fieldname) => {
+  const folderMap = {
+    'id_proof_url': 'id_proofs',
+    'id_proof_file': 'id_proofs',
+    'address_proof_url': 'address_proofs',
+    'address_proof_file': 'address_proofs',
+    'photo_url': 'photos',
+    'photo_file': 'photos',
+    'partner_id_proof_url': 'partner_id_proofs',
+    'partner_address_proof_url': 'partner_address_proofs',
+    'partner_photo_url': 'partner_photos'
+  };
+  
+  if (fieldname.includes('additional') || fieldname.startsWith('additional_documents')) {
+    return 'additional_docs';
+  }
+  
+  return folderMap[fieldname] || 'temp';
+};
 
 // ================================
 // MAIN UPLOAD + COMPRESSION

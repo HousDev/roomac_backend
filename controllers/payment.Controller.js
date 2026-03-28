@@ -986,10 +986,11 @@ async approvePayment(req, res) {
 },
 
 // Reject payment
+
 async rejectPayment(req, res) {
   try {
     const { id } = req.params;
-    const { rejection_reason, rejected_by } = req.body;
+    const { rejection_reason, rejection_reason_category_id, rejected_by } = req.body;
     
     if (!rejection_reason) {
       return res.status(400).json({
@@ -1021,7 +1022,12 @@ async rejectPayment(req, res) {
       });
     }
     
-    const rejected = await Payment.rejectPayment(id, rejection_reason, rejected_by);
+    const rejected = await Payment.rejectPayment(
+      id, 
+      rejection_reason, 
+      rejection_reason_category_id, 
+      rejected_by
+    );
     
     if (rejected) {
       res.status(200).json({

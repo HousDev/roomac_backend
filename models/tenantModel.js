@@ -21,6 +21,12 @@ function parseTenant(row) {
     row.check_in_date = date.toISOString().split("T")[0];
   }
 
+   // Parse partner date of birth
+  if (row.partner_date_of_birth) {
+    const date = new Date(row.partner_date_of_birth);
+    row.partner_date_of_birth = date.toISOString().split("T")[0];
+  }
+
   // Parse additional_documents JSON
   if (row.additional_documents) {
     try {
@@ -262,353 +268,356 @@ const TenantModel = {
 
   // In TenantModel.findById() - ensure it includes:
   // In tenantModel.js - Update the findById method
-  async findById(id) {
-    try {
-      const sql = `
+// models/tenantModel.js - Update findById method
+
+async findById(id) {
+  try {
+    const sql = `
       SELECT 
         t.*,
         p.name as property_name,
         p.address as property_address,
-        p.city as property_city,
+        p.city_id as property_city,
         p.state as property_state,
         p.lockin_period_months as property_lockin_period_months,
         p.lockin_penalty_amount as property_lockin_penalty_amount,
         p.lockin_penalty_type as property_lockin_penalty_type,
         p.notice_period_days as property_notice_period_days,
         p.notice_penalty_amount as property_notice_penalty_amount,
-        p.notice_penalty_type as property_notice_penalty_type.
+        p.notice_penalty_type as property_notice_penalty_type,
         t.aadhar_number,
         t.pan_number,
+        t.id_proof_type,
+        t.id_proof_number,
+        t.address_proof_type,
+        t.address_proof_number,
+        -- Partner fields
+        t.partner_full_name,
+        t.partner_phone,
+        t.partner_email,
+        t.partner_gender,
+        t.partner_date_of_birth,
+        t.partner_address,
+        t.partner_occupation,
+        t.partner_organization,
+        t.partner_relationship,
+        t.partner_id_proof_type,
+        t.partner_id_proof_number,
+        t.partner_id_proof_url,
+        t.partner_address_proof_type,
+        t.partner_address_proof_number,
+        t.partner_address_proof_url,
+        t.partner_photo_url,
+        t.is_couple_booking,
+        t.couple_id
       FROM tenants t
       LEFT JOIN properties p ON t.property_id = p.id
       WHERE t.id = ?
     `;
 
-      const [rows] = await pool.query(sql, [id]);
+    const [rows] = await pool.query(sql, [id]);
+    if (!rows[0]) return null;
 
-      if (!rows[0]) return null;
+    const tenant = rows[0];
 
-      const tenant = rows[0];
-
-      // Parse additional_documents if it exists
-      if (tenant.additional_documents) {
-        try {
-          if (typeof tenant.additional_documents === "string") {
-            tenant.additional_documents = JSON.parse(
-              tenant.additional_documents,
-            );
-          }
-        } catch (e) {
-          console.error("Error parsing additional_documents:", e);
-          tenant.additional_documents = [];
-        }
-      } else {
-        tenant.additional_documents = [];
-      }
-
-      // Format dates
-      if (tenant.date_of_birth) {
-        const date = new Date(tenant.date_of_birth);
-        tenant.date_of_birth = date.toISOString().split("T")[0];
-      }
-
-      if (tenant.check_in_date) {
-        const date = new Date(tenant.check_in_date);
-        tenant.check_in_date = date.toISOString().split("T")[0];
-      }
-
-      return tenant;
-    } catch (err) {
-      console.error("TenantModel.findById error:", err);
-      throw err;
-    }
-  },
-
-  async findById(id) {
-    try {
-      const [rows] = await pool.query(
-        "SELECT * FROM tenants WHERE id = ? LIMIT 1",
-        [id],
-      );
-
-      if (!rows[0]) return null;
-
-      const tenant = rows[0];
-
-      // Parse additional_documents if it exists
-      if (tenant.additional_documents) {
-        try {
-          if (typeof tenant.additional_documents === "string") {
-            tenant.additional_documents = JSON.parse(
-              tenant.additional_documents,
-            );
-          }
-          // If already parsed or null, keep as is
-        } catch (e) {
-          console.error("Error parsing additional_documents:", e);
-          tenant.additional_documents = [];
-        }
-      } else {
-        tenant.additional_documents = [];
-      }
-
-      return tenant;
-    } catch (err) {
-      console.error("TenantModel.findById error:", err);
-      throw err;
-    }
-  },
-
-  async create(payload) {
-    try {
-      const {
-        salutation,
-        full_name,
-        email,
-        phone,
-        country_code = "+91",
-        gender,
-        date_of_birth,
-        occupation_category,
-        exact_occupation,
-        occupation,
-        organization,
-        years_of_experience,
-        monthly_income,
-        course_duration,
-        student_id,
-        employee_id,
-        portfolio_url,
-        work_mode,
-        shift_timing,
-        portal_access_enabled = false,
-        is_active = true,
-        id_proof_url,
-        address_proof_url,
-        photo_url,
-        aadhar_number, // NEW
-        pan_number,
-        
-        address,
-        city,
-        state,
-        pincode,
-        preferred_sharing,
-        preferred_room_type,
-        preferred_property_id,
-        check_in_date,
-        property_id,
-        emergency_contact_name,
-        emergency_contact_phone,
-        emergency_contact_relation,
-        additional_documents = "[]",
-        // Lock-in and notice period fields
-        lockin_period_months,
-        lockin_penalty_amount,
-        lockin_penalty_type,
-        notice_period_days,
-        notice_penalty_amount,
-        notice_penalty_type,
-
-        // Partner fields (for couple bookings)
-        partner_full_name = "",
-        partner_phone = "",
-        partner_date_of_birth = "",
-        partner_gender = "",
-        partner_address = "",
-        partner_id_proof_url = "",
-        partner_id_proof_type = "",
-        partner_address_proof_url = "",
-        partner_address_proof_type = "",
-        partner_photo_url = "",
-        partner_email = "",
-        partner_occupation = "",
-        partner_organization = "",
-        partner_relationship = "",
-        is_couple_booking = false,
-        couple_id,
-      } = payload;
-
-      console.log("Adfads", payload);
-
-      // Prepare additional_documents JSON
-      let additionalDocsJson = "[]";
+    // Parse additional_documents if it exists
+    if (tenant.additional_documents) {
       try {
-        if (typeof additional_documents === "string") {
-          // Already JSON string
-          additionalDocsJson = additional_documents;
-        } else if (Array.isArray(additional_documents)) {
-          additionalDocsJson = JSON.stringify(additional_documents);
-        } else if (
-          additional_documents &&
-          typeof additional_documents === "object"
-        ) {
-          additionalDocsJson = JSON.stringify(additional_documents);
+        if (typeof tenant.additional_documents === "string") {
+          tenant.additional_documents = JSON.parse(tenant.additional_documents);
         }
       } catch (e) {
-        console.error("Error processing additional_documents:", e);
-        additionalDocsJson = "[]";
+        console.error("Error parsing additional_documents:", e);
+        tenant.additional_documents = [];
       }
+    } else {
+      tenant.additional_documents = [];
+    }
 
-      const values = [
-        salutation || null,
-        full_name,
-        email || null,
-        phone || null,
-        country_code,
-        gender || null,
-        date_of_birth?.split("/").reverse().join("-") || null,
-        occupation_category || null,
-        exact_occupation || null,
-        occupation || null,
-        organization || null,
-        years_of_experience || null,
-        monthly_income || null,
-        course_duration || null,
-        student_id || null,
-        employee_id || null,
-        portfolio_url || null,
-        work_mode || null,
-        shift_timing || null,
-        portal_access_enabled ? 1 : 0,
-        is_active ? 1 : 0,
-        id_proof_url || null,
-        address_proof_url || null,
-        photo_url || null,
-        aadhar_number || null,
-        pan_number || null,
-        payload.address_proof_type || null,
-        payload.id_proof_type || null,
-         id_proof_number || null,      
-  address_proof_number || null, 
-        address || null,
-        city || null,
-        state || null,
-        pincode || null,
-        preferred_sharing || null,
-        preferred_room_type || null,
-        preferred_property_id ? parseInt(preferred_property_id) : null,
-        property_id ? parseInt(property_id) : null,
-        check_in_date
-          ? typeof check_in_date === "string" && check_in_date.includes("T")
-            ? check_in_date.split("T")[0]?.split("/").reverse().join("-")
-            : check_in_date?.split("/").reverse().join("-")
-          : null,
-        emergency_contact_name || null,
-        emergency_contact_phone || null,
-        emergency_contact_relation || null,
-      (additionalDocsJson),
-        lockin_period_months || 0,
-        lockin_penalty_amount || 0,
-        lockin_penalty_type || "fixed",
-        notice_period_days || 0,
-        notice_penalty_amount || 0,
-        notice_penalty_type || "fixed",
-        partner_full_name || null,
-        partner_phone || null,
-        partner_date_of_birth || null,
-        partner_gender || null,
-        partner_address || null,
-        partner_id_proof_url || null,
-        partner_id_proof_type || null,
-        partner_address_proof_url || null,
-        partner_address_proof_type || null,
-        partner_photo_url || null,
-        partner_email || null,
-        partner_occupation || null,
-        partner_organization || null,
-        partner_relationship || null,
-        is_couple_booking ? 1 : 0,
-        couple_id || null,
-      ];
+    // Format dates
+    if (tenant.date_of_birth) {
+      const date = new Date(tenant.date_of_birth);
+      tenant.date_of_birth = date.toISOString().split("T")[0];
+    }
 
-      
-      // UPDATED SQL to include ALL occupation fields
-      const sql = `
+    if (tenant.check_in_date) {
+      const date = new Date(tenant.check_in_date);
+      tenant.check_in_date = date.toISOString().split("T")[0];
+    }
+    
+    // Format partner date of birth
+    if (tenant.partner_date_of_birth) {
+      const date = new Date(tenant.partner_date_of_birth);
+      tenant.partner_date_of_birth = date.toISOString().split("T")[0];
+    }
+
+    return tenant;
+  } catch (err) {
+    console.error("TenantModel.findById error:", err);
+    throw err;
+  }
+},
+
+  // async findById(id) {
+  //   try {
+  //     const [rows] = await pool.query(
+  //       "SELECT * FROM tenants WHERE id = ? LIMIT 1",
+  //       [id],
+  //     );
+
+  //     if (!rows[0]) return null;
+
+  //     const tenant = rows[0];
+
+  //     // Parse additional_documents if it exists
+  //     if (tenant.additional_documents) {
+  //       try {
+  //         if (typeof tenant.additional_documents === "string") {
+  //           tenant.additional_documents = JSON.parse(
+  //             tenant.additional_documents,
+  //           );
+  //         }
+  //         // If already parsed or null, keep as is
+  //       } catch (e) {
+  //         console.error("Error parsing additional_documents:", e);
+  //         tenant.additional_documents = [];
+  //       }
+  //     } else {
+  //       tenant.additional_documents = [];
+  //     }
+
+  //     return tenant;
+  //   } catch (err) {
+  //     console.error("TenantModel.findById error:", err);
+  //     throw err;
+  //   }
+  // },
+
+// models/tenantModel.js - Fix the create method
+
+async create(payload) {
+  try {
+    const {
+      salutation,
+      full_name,
+      email,
+      phone,
+      country_code = "+91",
+      gender,
+      date_of_birth,
+      occupation_category,
+      exact_occupation,
+      occupation,
+      organization,
+      years_of_experience,
+      monthly_income,
+      course_duration,
+      student_id,
+      employee_id,
+      portfolio_url,
+      work_mode,
+      shift_timing,
+      portal_access_enabled = false,
+      is_active = true,
+      id_proof_url,
+      address_proof_url,
+      photo_url,
+      aadhar_number,
+      pan_number,
+      id_proof_type,
+      address_proof_type,
+      id_proof_number,      // <-- ADD THIS LINE
+      address_proof_number,  // <-- ADD THIS LINE
+      address,
+      city,
+      state,
+      pincode,
+      preferred_sharing,
+      preferred_room_type,
+      preferred_property_id,
+      check_in_date,
+      property_id,
+      emergency_contact_name,
+      emergency_contact_phone,
+      emergency_contact_relation,
+      additional_documents = "[]",
+      lockin_period_months,
+      lockin_penalty_amount,
+      lockin_penalty_type,
+      notice_period_days,
+      notice_penalty_amount,
+      notice_penalty_type,
+      partner_full_name,
+      partner_phone,
+      partner_email,
+      partner_gender,
+      partner_date_of_birth,
+      partner_address,
+      partner_occupation,
+      partner_organization,
+      partner_relationship,
+      partner_id_proof_type,
+      partner_id_proof_number,
+      partner_id_proof_url,
+      partner_address_proof_type,
+      partner_address_proof_number,
+      partner_address_proof_url,
+      partner_photo_url,
+      is_couple_booking,
+      couple_id
+    } = payload;
+
+    console.log("tenant payload",payload);
+    // Prepare additional_documents JSON
+    let additionalDocsJson = "[]";
+    try {
+      if (typeof additional_documents === "string") {
+        additionalDocsJson = additional_documents;
+      } else if (Array.isArray(additional_documents)) {
+        additionalDocsJson = JSON.stringify(additional_documents);
+      } else if (additional_documents && typeof additional_documents === "object") {
+        additionalDocsJson = JSON.stringify(additional_documents);
+      }
+    } catch (e) {
+      console.error("Error processing additional_documents:", e);
+      additionalDocsJson = "[]";
+    }
+
+    // Format dates properly
+    const formatDate = (dateValue) => {
+      if (!dateValue) return null;
+      try {
+        // If it's already in YYYY-MM-DD format
+        if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return dateValue;
+        }
+        // If it's in DD/MM/YYYY format (from frontend)
+        if (typeof dateValue === 'string' && dateValue.includes('/')) {
+          const parts = dateValue.split('/');
+          if (parts.length === 3) {
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+        const date = new Date(dateValue);
+        if (!isNaN(date.getTime())) {
+          return date.toISOString().split('T')[0];
+        }
+      } catch (e) {
+        console.error("Error formatting date:", e);
+      }
+      return null;
+    };
+
+    const values = [
+      salutation || null,
+      full_name,
+      email || null,
+      phone || null,
+      country_code,
+      gender || null,
+      formatDate(date_of_birth),
+      occupation_category || null,
+      exact_occupation || null,
+      occupation || null,
+      organization || null,
+      years_of_experience || null,
+      monthly_income || null,
+      course_duration || null,
+      student_id || null,
+      employee_id || null,
+      portfolio_url || null,
+      work_mode || null,
+      shift_timing || null,
+      portal_access_enabled ? 1 : 0,
+      is_active ? 1 : 0,
+      id_proof_url || null,
+      address_proof_url || null,
+      photo_url || null,
+      aadhar_number || null,
+      pan_number || null,
+      id_proof_type || null,
+      id_proof_number || null,      // <-- ADD THIS
+      address_proof_type || null,
+      address_proof_number || null,  // <-- ADD THIS
+      address || null,
+      city || null,
+      state || null,
+      pincode || null,
+      preferred_sharing || null,
+      preferred_room_type || null,
+      preferred_property_id ? parseInt(preferred_property_id) : null,
+      property_id ? parseInt(property_id) : null,
+      formatDate(check_in_date),
+      emergency_contact_name || null,
+      emergency_contact_phone || null,
+      emergency_contact_relation || null,
+      additionalDocsJson,
+      lockin_period_months || 0,
+      lockin_penalty_amount || 0,
+      lockin_penalty_type || "fixed",
+      notice_period_days || 0,
+      notice_penalty_amount || 0,
+      notice_penalty_type || "fixed",
+      // Partner fields
+      partner_full_name || null,
+      partner_phone || null,
+      partner_email || null,
+      partner_gender || null,
+      formatDate(partner_date_of_birth),
+      partner_address || null,
+      partner_occupation || null,
+      partner_organization || null,
+      partner_relationship || null,
+      partner_id_proof_type || null,
+      partner_id_proof_number || null,
+      partner_id_proof_url || null,
+      partner_address_proof_type || null,
+      partner_address_proof_number || null,
+      partner_address_proof_url || null,
+      partner_photo_url || null,
+      is_couple_booking ? 1 : 0,
+      couple_id || null
+    ];
+
+    const sql = `
       INSERT INTO tenants (
-        salutation, 
-        full_name,
-         email, 
-         phone, 
-         country_code,
-          gender, 
-          date_of_birth,
-        occupation_category, 
-        exact_occupation, 
-        occupation, 
-        organization,
-        years_of_experience,
-         monthly_income, 
-         course_duration, 
-         student_id,
-        employee_id,
-         portfolio_url,
-          work_mode,
-           shift_timing,
-        portal_access_enabled, 
-        is_active, 
-        id_proof_url, 
-        address_proof_url, 
-        photo_url,
-        aadhar_number,
-         pan_number,
-         address_proof_type, 
-         id_proof_type,
-         id_proof_number,     
-  address_proof_number,
-        address, 
-        city, 
-        state, 
-        pincode,
-        preferred_sharing, 
-        preferred_room_type, 
-        preferred_property_id,
-        property_id, 
-        check_in_date,
-        emergency_contact_name,
-         emergency_contact_phone, 
-         emergency_contact_relation,
+        salutation, full_name, email, phone, country_code, gender, date_of_birth,
+        occupation_category, exact_occupation, occupation, organization,
+        years_of_experience, monthly_income, course_duration, student_id,
+        employee_id, portfolio_url, work_mode, shift_timing,
+        portal_access_enabled, is_active,
+        id_proof_url, address_proof_url, photo_url,
+        aadhar_number, pan_number,
+        id_proof_type, id_proof_number, address_proof_type, address_proof_number,
+        address, city, state, pincode,
+        preferred_sharing, preferred_room_type, preferred_property_id,
+        property_id, check_in_date,
+        emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
         additional_documents,
-        lockin_period_months,
-         lockin_penalty_amount, 
-         lockin_penalty_type,
-        notice_period_days,
-         notice_penalty_amount, 
-         notice_penalty_type,
-        partner_full_name,
-         partner_phone,
-          partner_date_of_birth,
-           partner_gender,
-        partner_address,
-         partner_id_proof_url,
-          partner_id_proof_type,
-        partner_address_proof_url,
-         partner_address_proof_type,
-          partner_photo_url,
-        partner_email,
-         partner_occupation,
-          partner_organization,
-           partner_relationship,
-        is_couple_booking, 
-        couple_id
-      ) VALUES (?,?, ?, ?,?,?, ?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
+        notice_period_days, notice_penalty_amount, notice_penalty_type,
+        partner_full_name, partner_phone, partner_email, partner_gender,
+        partner_date_of_birth, partner_address, partner_occupation, partner_organization,
+        partner_relationship, partner_id_proof_type, partner_id_proof_number,
+        partner_id_proof_url, partner_address_proof_type, partner_address_proof_number,
+        partner_address_proof_url, partner_photo_url, is_couple_booking, couple_id
+      ) VALUES (${values.map(() => '?').join(', ')})
     `;
 
-      console.log("values lenght ", values.length);
-      const [result] = await pool.query(sql, values);
-
-      return result.insertId;
-    } catch (err) {
-      console.error("TenantModel.create error:", err);
-      console.error("SQL Error details:", {
-        code: err.code,
-        errno: err.errno,
-        sqlState: err.sqlState,
-        sqlMessage: err.sqlMessage,
-      });
-      throw err;
-    }
-  },
+    const [result] = await pool.query(sql, values);
+    return result.insertId;
+    
+  } catch (err) {
+    console.error("TenantModel.create error:", err);
+    console.error("SQL Error details:", {
+      code: err.code,
+      errno: err.errno,
+      sqlState: err.sqlState,
+      sqlMessage: err.sqlMessage,
+    });
+    throw err;
+  }
+},
 
   // Add this method to create credentials
   async createCredential(credentialData) {
@@ -633,15 +642,15 @@ const TenantModel = {
   // Also add this method for updating credentials
   async updateCredential(tenantId, updateData) {
     try {
-      const { password_hash } = updateData;
+      const { password_hash , email} = updateData;
 
       const sql = `
       UPDATE tenant_credentials 
-      SET password_hash = ?, updated_at = NOW() 
+      SET email = ? , password_hash = ?, updated_at = NOW() 
       WHERE tenant_id = ?
     `;
 
-      const [result] = await pool.query(sql, [password_hash, tenantId]);
+      const [result] = await pool.query(sql, [email,password_hash, tenantId]);
       return result.affectedRows > 0;
     } catch (err) {
       console.error("TenantModel.updateCredential error:", err);
@@ -769,6 +778,26 @@ setIf("address_proof_number", payload.address_proof_number);
       setIf("emergency_contact_name", payload.emergency_contact_name);
       setIf("emergency_contact_phone", payload.emergency_contact_phone);
       setIf("emergency_contact_relation", payload.emergency_contact_relation);
+
+      // Partner fields
+    setIf("partner_full_name", payload.partner_full_name);
+    setIf("partner_phone", payload.partner_phone);
+    setIf("partner_email", payload.partner_email);
+    setIf("partner_gender", payload.partner_gender);
+    setIf("partner_date_of_birth", payload.partner_date_of_birth);
+    setIf("partner_address", payload.partner_address);
+    setIf("partner_occupation", payload.partner_occupation);
+    setIf("partner_organization", payload.partner_organization);
+    setIf("partner_relationship", payload.partner_relationship);
+    setIf("partner_id_proof_type", payload.partner_id_proof_type);
+    setIf("partner_id_proof_number", payload.partner_id_proof_number);
+    setIf("partner_id_proof_url", payload.partner_id_proof_url);
+    setIf("partner_address_proof_type", payload.partner_address_proof_type);
+    setIf("partner_address_proof_number", payload.partner_address_proof_number);
+    setIf("partner_address_proof_url", payload.partner_address_proof_url);
+    setIf("partner_photo_url", payload.partner_photo_url);
+    setIf("is_couple_booking", payload.is_couple_booking ? 1 : 0);
+    setIf("couple_id", payload.couple_id);
 
       // Additional documents
       if (typeof payload.additional_documents !== "undefined") {
@@ -934,11 +963,13 @@ setIf("address_proof_number", payload.address_proof_number);
     }
   },
 
-  async updateCredential(tenant_id, { password_hash }) {
+  async updateCredential(tenant_id, { password_hash , email}) {
     try {
+      
+      console.log("updated creadetial funcion ", password_hash, email)
       const [result] = await pool.query(
-        `UPDATE tenant_credentials SET password_hash = ?, updated_at = ? WHERE tenant_id = ?`,
-        [password_hash, new Date(), tenant_id],
+        `UPDATE tenant_credentials SET password_hash = ? , email = ? , updated_at = ? WHERE tenant_id = ?`,
+        [password_hash, email, new Date(), tenant_id],
       );
       return result.affectedRows > 0;
     } catch (err) {
