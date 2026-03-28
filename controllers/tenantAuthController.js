@@ -50,7 +50,43 @@ class TenantAuthController {
       );
 
       // send email
-      await sendEmail(email, "Your Login OTP", `<h2>Your OTP is: ${otp}</h2>`);
+      // await sendEmail(email, "Your Login OTP", `<h2>Your OTP is: ${otp}</h2>`);
+
+         await sendEmail(
+           email,
+           "Your Secure Login OTP – Roomac CRM",
+           `
+  <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 20px;">
+    <div style="max-width: 500px; margin: auto; background: #ffffff; border-radius: 10px; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+      
+      <h2 style="color: #2c3e50; text-align: center;">🔐 Secure Login OTP</h2>
+      
+      <p style="font-size: 14px; color: #555;">
+        Hello,
+      </p>
+      
+      <p style="font-size: 14px; color: #555;">
+        Your One-Time Password (OTP) for login is:
+      </p>
+
+      <div style="text-align: center; margin: 25px 0;">
+        <span style="display: inline-block; font-size: 28px; letter-spacing: 4px; font-weight: bold; color: #ffffff; background-color: #007bff; padding: 12px 25px; border-radius: 8px;">
+          ${otp}
+        </span>
+      </div>
+
+      <p style="font-size: 13px; color: #777;">
+        This OTP is valid for <b>5 minutes</b>. Please do not share this code with anyone.
+      </p>
+
+      <p style="font-size: 13px; color: #777;">
+        If you did not request this OTP, you can safely ignore this email.
+      </p>
+    </div>
+  </div>
+  `,
+         );
+
 
       return res.json({
         success: true,
