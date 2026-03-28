@@ -2,327 +2,272 @@ const TenantCredential = require('../models/tenantAuthModel');
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
-
+const { sendEmail } = require("../utils/emailService");
 
 const generateToken = ({ id, email, role, type }) => {
   return jwt.sign(
     {
-      id,          
+      id,
       email,
       role,
-      type
+      type,
     },
-    process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '7d' }
+    process.env.JWT_SECRET || "your-secret-key",
+    { expiresIn: "7d" },
   );
 };
-
 
 // Send OTP (for demo - in production use email service)
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Store OTPs in memory (in production use Redis)
-const otpStore = new Map();
-
 class TenantAuthController {
-  // Login with email and password
- static async login(req, res) {
-  try {
-
-    const { email, password } = req.body;
-
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email and password are required'
-      });
-    }
-
-    // ============================================
-    // 1️⃣ CHECK TENANT LOGIN FIRST
-    // ============================================
-
-    const [credentials] = await db.query(
-      'SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1',
-      [email]
-    );
-
-    if (credentials.length > 0) {
-      const credential = credentials[0];
-
-      let isValid = false;
-
-      // Check bcrypt or plain text
-      if (
-        credential.password_hash.startsWith('$2b$') ||
-        credential.password_hash.startsWith('$2a$') ||
-        credential.password_hash.startsWith('$2y$')
-      ) {
-        isValid = await bcrypt.compare(password, credential.password_hash);
-      } else {
-        isValid = password === credential.password_hash;
-      }
-
-      if (!isValid) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid email or password'
-        });
-      }
-
-      // Check tenant details
-      const [tenant] = await db.query(
-        'SELECT id, full_name, email, phone, portal_access_enabled FROM tenants WHERE id = ?',
-        [credential.tenant_id]
-      );
-
-      if (tenant.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: 'Tenant not found'
-        });
-      }
-
-      if (!tenant[0].portal_access_enabled) {
-        return res.status(403).json({
-          success: false,
-          error: 'Portal access is not enabled for your account.'
-        });
-      }
-
-      const token = generateToken({
-        id: credential.tenant_id,
-        email: credential.email,
-        role: 'tenant',
-        type: 'tenant'
-      });
-
-      return res.json({
-  success: true,
-  token,
-  role: 'tenant',
-  tenant_id: credential.tenant_id,   // ✅ REQUIRED
-  user: tenant[0],
-  message: 'Tenant login successful'
-});
-
-    }
-
-    // ============================================
-    // 2️⃣ IF NOT TENANT → CHECK ADMIN
-    // ============================================
-
-    const [admins] = await db.query(
-      'SELECT * FROM users WHERE email = ? ',
-      [email]
-    );
-    if (admins.length === 0) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid email or password'
-      });
-    }
-
-    const admin = admins[0];
-if (admin.is_active == 0) {
-  return res.status(403).json({
-    success: false,
-    error: 'Your account has been deactivated.',
-    message: 'Your account has been deactivated. '
-  });
-}
-
-    const isAdminValid = await bcrypt.compare(password, admin.password);
-
-    if (!isAdminValid) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid email or password'
-      });
-    }
-
-    const token = generateToken({
-      id: admin.id,
-      email: admin.email,
-      role: admin.role,
-     type: 'admin'
-
-    });
-
-    return res.json({
-      success: true,
-      token,
-      role: admin.role,
-      user: {
-        id: admin.id,
-        full_name: admin.full_name,
-        email: admin.email,
-        role:admin.role
-      },
-      message: 'Admin login successful'
-    });
-
-  } catch (error) {
-    console.error('❌ Login error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-}
-
-
-  // Send OTP to email (alternative login method)
+  // ================= SEND OTP =================
   static async sendOTP(req, res) {
     try {
       const { email } = req.body;
 
-      if (!email) {
-        return res.status(400).json({
+      const [rows] = await db.query(
+        "SELECT * FROM tenant_credentials WHERE email = ?",
+        [email],
+      );
+
+      if (!rows.length) {
+        return res.json({
           success: false,
-          error: 'Email is required'
+          message: "Email not registered",
         });
       }
 
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
-      // Check if tenant has credential and portal access
-      const credential = await TenantCredential.findByEmail(email);
-      
-      if (!credential) {
-        return res.status(404).json({
-          success: false,
-          error: 'No active account found with this email'
-        });
-      }
+      // save in DB
+      await db.query(
+        "UPDATE tenant_credentials SET otp = ?, otp_expiry = ? WHERE email = ?",
+        [otp, expiry, email],
+      );
 
-      // Check portal access
-      const portalAccess = await TenantCredential.checkPortalAccess(credential.tenant_id);
-      if (!portalAccess) {
-        return res.status(403).json({
-          success: false,
-          error: 'Portal access is not enabled for your account'
-        });
-      }
+      // send email
+      await sendEmail(email, "Your Login OTP", `<h2>Your OTP is: ${otp}</h2>`);
 
-      // Check if credential is active
-      if (!credential.is_active) {
-        return res.status(403).json({
-          success: false,
-          error: 'Your account is deactivated'
-        });
-      }
-
-      // Generate OTP
-      const otp = generateOTP();
-      
-      // Store OTP with expiration (10 minutes)
-      otpStore.set(email, {
-        otp,
-        tenantId: credential.tenant_id,
-        expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
-      });
-
-      // In production: Send OTP via email/SMS
-
-      res.json({
+      return res.json({
         success: true,
-        otp, // Remove this in production - for demo only
-        message: 'OTP sent successfully'
+        message: "OTP sent successfully",
       });
-
-    } catch (error) {
-      console.error('❌ Send OTP error:', error);
+    } catch (err) {
+      console.error("Send OTP Error:", err);
       res.status(500).json({
         success: false,
-        error: 'Failed to send OTP'
+        message: "Failed to send OTP",
       });
     }
   }
-
-  // Verify OTP and login
+  // ================= VERIFY OTP =================
   static async verifyOTP(req, res) {
     try {
       const { email, otp } = req.body;
+      const [rows] = await db.query(
+        "SELECT * FROM tenant_credentials WHERE email = ?",
+        [email],
+      );
 
-      if (!email || !otp) {
-        return res.status(400).json({
+      if (!rows.length) {
+        return res.json({
           success: false,
-          error: 'Email and OTP are required'
+          message: "User not found",
         });
       }
 
+      const user = rows[0];
 
-      // Get stored OTP
-      const storedData = otpStore.get(email);
-      
-      if (!storedData) {
-        return res.status(400).json({
+      if (!user.otp || user.otp !== otp) {
+        return res.json({
           success: false,
-          error: 'OTP expired or not requested'
+          message: "Invalid OTP",
         });
       }
 
-      // Check expiration
-      if (Date.now() > storedData.expiresAt) {
-        otpStore.delete(email);
-        return res.status(400).json({
+      if (new Date() > new Date(user.otp_expiry)) {
+        return res.json({
           success: false,
-          error: 'OTP has expired'
+          message: "OTP expired",
         });
       }
 
-      // Verify OTP
-      if (storedData.otp !== otp) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid OTP'
-        });
-      }
+      // clear OTP
+      await db.query(
+        "UPDATE tenant_credentials SET otp = NULL, otp_expiry = NULL WHERE email = ?",
+        [email],
+      );
 
-      const tenantId = storedData.tenantId;
-
-      // Check portal access again (security)
-      const portalAccess = await TenantCredential.checkPortalAccess(tenantId);
-      if (!portalAccess) {
-        otpStore.delete(email);
-        return res.status(403).json({
-          success: false,
-          error: 'Portal access is not enabled for your account'
-        });
-      }
-
-      // Generate token
-      const token = generateToken(tenantId, email);
-
-      // Get tenant details
-      const tenant = await TenantCredential.getTenantWithCredential(tenantId);
-
-      // Clear OTP after successful verification
-      otpStore.delete(email);
-
-
-      res.json({
-        success: true,
-        token,
-        tenant_id: tenantId,
-        tenant_email: email,
-        tenant: tenant || null,
-        message: 'OTP verified successfully'
+      const token = generateToken({
+        id: user.tenant_id,
+        email: email,
+        role: "tenant",
+        type: "tenant",
       });
 
-    } catch (error) {
-      console.error('❌ Verify OTP error:', error);
+      return res.json({
+        success: true,
+        token,
+        tenant_id: user.tenant_id,
+        role: "tenant",
+        loginSource: "tenant",
+        email: email,
+      });
+    } catch (err) {
+      console.error("Verify OTP Error:", err);
       res.status(500).json({
         success: false,
-        error: 'OTP verification failed'
+        message: "OTP verification failed",
+      });
+    }
+  }
+  // Login with email and password
+  static async login(req, res) {
+    try {
+      const { email, password } = req.body;
+
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({
+          success: false,
+          error: "Email and password are required",
+        });
+      }
+
+      // ============================================
+      // 1️⃣ CHECK TENANT LOGIN FIRST
+      // ============================================
+
+      const [credentials] = await db.query(
+        "SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1",
+        [email],
+      );
+
+      if (credentials.length > 0) {
+        const credential = credentials[0];
+
+        let isValid = false;
+
+        // Check bcrypt or plain text
+        if (
+          credential.password_hash.startsWith("$2b$") ||
+          credential.password_hash.startsWith("$2a$") ||
+          credential.password_hash.startsWith("$2y$")
+        ) {
+          isValid = await bcrypt.compare(password, credential.password_hash);
+        } else {
+          isValid = password === credential.password_hash;
+        }
+
+        if (!isValid) {
+          return res.status(401).json({
+            success: false,
+            error: "Invalid email or password",
+          });
+        }
+
+        // Check tenant details
+        const [tenant] = await db.query(
+          "SELECT id, full_name, email, phone, portal_access_enabled FROM tenants WHERE id = ?",
+          [credential.tenant_id],
+        );
+
+        if (tenant.length === 0) {
+          return res.status(404).json({
+            success: false,
+            error: "Tenant not found",
+          });
+        }
+
+        if (!tenant[0].portal_access_enabled) {
+          return res.status(403).json({
+            success: false,
+            error: "Portal access is not enabled for your account.",
+          });
+        }
+
+        const token = generateToken({
+          id: credential.tenant_id,
+          email: credential.email,
+          role: "tenant",
+          type: "tenant",
+        });
+
+        return res.json({
+          success: true,
+          token,
+          role: "tenant",
+          tenant_id: credential.tenant_id, // ✅ REQUIRED
+          user: tenant[0],
+          message: "Tenant login successful",
+        });
+      }
+
+      // ============================================
+      // 2️⃣ IF NOT TENANT → CHECK ADMIN
+      // ============================================
+
+      const [admins] = await db.query("SELECT * FROM users WHERE email = ? ", [
+        email,
+      ]);
+      if (admins.length === 0) {
+        return res.status(401).json({
+          success: false,
+          error: "Invalid email or password",
+        });
+      }
+
+      const admin = admins[0];
+      if (admin.is_active == 0) {
+        return res.status(403).json({
+          success: false,
+          error: "Your account has been deactivated.",
+          message: "Your account has been deactivated. ",
+        });
+      }
+
+      const isAdminValid = await bcrypt.compare(password, admin.password);
+
+      if (!isAdminValid) {
+        return res.status(401).json({
+          success: false,
+          error: "Invalid email or password",
+        });
+      }
+
+      const token = generateToken({
+        id: admin.id,
+        email: admin.email,
+        role: admin.role,
+        type: "admin",
+      });
+
+      return res.json({
+        success: true,
+        token,
+        role: admin.role,
+        user: {
+          id: admin.id,
+          full_name: admin.full_name,
+          email: admin.email,
+          role: admin.role,
+        },
+        message: "Admin login successful",
+      });
+    } catch (error) {
+      console.error("❌ Login error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
       });
     }
   }
 
-// Get current tenant profile
+  // Get current tenant profile
   static async getProfile(req, res) {
     try {
       // const tenantId = req.user?.tenantId;
@@ -331,23 +276,22 @@ if (admin.is_active == 0) {
       if (!tenantId) {
         return res.status(401).json({
           success: false,
-          error: 'Not authenticated'
+          error: "Not authenticated",
         });
       }
-
 
       const [tenant] = await db.query(
         `SELECT t.*, tc.email as credential_email
          FROM tenants t
          LEFT JOIN tenant_credentials tc ON t.id = tc.tenant_id
          WHERE t.id = ?`,
-        [tenantId]
+        [tenantId],
       );
 
       if (tenant.length === 0) {
         return res.status(404).json({
           success: false,
-          error: 'Tenant not found'
+          error: "Tenant not found",
         });
       }
 
@@ -357,18 +301,16 @@ if (admin.is_active == 0) {
 
       res.json({
         success: true,
-        data: safeTenantData
+        data: safeTenantData,
       });
-
     } catch (error) {
-      console.error('❌ Get profile error:', error);
+      console.error("❌ Get profile error:", error);
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch profile'
+        error: "Failed to fetch profile",
       });
     }
   }
-
 
   // Change password (requires current password)
   static async changePassword(req, res) {
@@ -379,56 +321,60 @@ if (admin.is_active == 0) {
       if (!tenantId) {
         return res.status(401).json({
           success: false,
-          error: 'Not authenticated'
+          error: "Not authenticated",
         });
       }
 
       if (!currentPassword || !newPassword) {
         return res.status(400).json({
           success: false,
-          error: 'Current password and new password are required'
+          error: "Current password and new password are required",
         });
       }
-
 
       // Get current credential
       const credential = await TenantCredential.findByTenantId(tenantId);
       if (!credential) {
         return res.status(404).json({
           success: false,
-          error: 'Credential not found'
+          error: "Credential not found",
         });
       }
 
       // Verify current password with bcrypt
-      const isValid = await bcrypt.compare(currentPassword, credential.password_hash);
+      const isValid = await bcrypt.compare(
+        currentPassword,
+        credential.password_hash,
+      );
       if (!isValid) {
         return res.status(400).json({
           success: false,
-          error: 'Current password is incorrect'
+          error: "Current password is incorrect",
         });
       }
 
       // Update password with bcrypt hashing
-      const updated = await TenantCredential.updatePassword(tenantId, newPassword);
+      const updated = await TenantCredential.updatePassword(
+        tenantId,
+        newPassword,
+      );
 
       if (updated) {
         res.json({
           success: true,
-          message: 'Password updated successfully'
+          message: "Password updated successfully",
         });
       } else {
         res.status(500).json({
           success: false,
-          error: 'Failed to update password'
+          error: "Failed to update password",
         });
       }
-
     } catch (error) {
-      console.error('❌ Change password error:', error);
+      console.error("❌ Change password error:", error);
       res.status(500).json({
         success: false,
-        error: 'Failed to change password'
+        error: "Failed to change password",
       });
     }
   }
@@ -441,10 +387,9 @@ if (admin.is_active == 0) {
       if (!email) {
         return res.status(400).json({
           success: false,
-          error: 'Email is required'
+          error: "Email is required",
         });
       }
-
 
       // Check if tenant exists and has active credential
       const credential = await TenantCredential.findByEmail(email);
@@ -452,19 +397,20 @@ if (admin.is_active == 0) {
         // For security, don't reveal if email exists
         return res.json({
           success: true,
-          message: 'If your email is registered, you will receive reset instructions'
+          message:
+            "If your email is registered, you will receive reset instructions",
         });
       }
 
       // Generate reset token (valid for 1 hour)
       const resetToken = jwt.sign(
-        { 
-          tenantId: credential.tenant_id, 
+        {
+          tenantId: credential.tenant_id,
           email: credential.email,
-          type: 'password_reset' 
+          type: "password_reset",
         },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '1h' }
+        process.env.JWT_SECRET || "your-secret-key",
+        { expiresIn: "1h" },
       );
 
       // In production: Send email with reset link
@@ -473,19 +419,18 @@ if (admin.is_active == 0) {
       res.json({
         success: true,
         resetToken, // In production, send via email only
-        message: 'Password reset instructions sent'
+        message: "Password reset instructions sent",
       });
-
     } catch (error) {
-      console.error('❌ Password reset request error:', error);
+      console.error("❌ Password reset request error:", error);
       res.status(500).json({
         success: false,
-        error: 'Failed to process reset request'
+        error: "Failed to process reset request",
       });
     }
   }
 
-    // ================= SEND OTP =================
+  // ================= SEND OTP =================
   async sendOTP(req, res) {
     try {
       const { email } = req.body;
@@ -586,7 +531,6 @@ if (admin.is_active == 0) {
     }
   }
 
-
   // Reset password with token (from forgot password)
   static async resetPassword(req, res) {
     try {
@@ -595,72 +539,75 @@ if (admin.is_active == 0) {
       if (!token || !newPassword) {
         return res.status(400).json({
           success: false,
-          error: 'Token and new password are required'
+          error: "Token and new password are required",
         });
       }
-
 
       // Verify token
       let decoded;
       try {
-        decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || "your-secret-key",
+        );
       } catch (err) {
-        console.error('❌ Invalid reset token:', err.message);
+        console.error("❌ Invalid reset token:", err.message);
         return res.status(400).json({
           success: false,
-          error: 'Invalid or expired reset link'
+          error: "Invalid or expired reset link",
         });
       }
 
-      if (decoded.type !== 'password_reset') {
+      if (decoded.type !== "password_reset") {
         return res.status(400).json({
           success: false,
-          error: 'Invalid token type'
+          error: "Invalid token type",
         });
       }
 
       // Update password with bcrypt
-      const updated = await TenantCredential.updatePassword(decoded.tenantId, newPassword);
+      const updated = await TenantCredential.updatePassword(
+        decoded.tenantId,
+        newPassword,
+      );
 
       if (updated) {
         res.json({
           success: true,
-          message: 'Password reset successfully'
+          message: "Password reset successfully",
         });
       } else {
         res.status(500).json({
           success: false,
-          error: 'Failed to reset password'
+          error: "Failed to reset password",
         });
       }
-
     } catch (error) {
-      console.error('❌ Reset password error:', error);
+      console.error("❌ Reset password error:", error);
       res.status(500).json({
         success: false,
-        error: 'Failed to reset password'
+        error: "Failed to reset password",
       });
     }
   }
 
-// Logout
+  // Logout
   static async logout(req, res) {
     try {
-      
       res.json({
         success: true,
-        message: 'Logged out successfully'
+        message: "Logged out successfully",
       });
     } catch (error) {
-      console.error('❌ Logout error:', error);
+      console.error("❌ Logout error:", error);
       res.status(500).json({
         success: false,
-        error: 'Logout failed'
+        error: "Logout failed",
       });
     }
   }
 
-// Check authentication
+  // Check authentication
   static async checkAuth(req, res) {
     try {
       const tenantId = req.user?.tenantId;
@@ -668,7 +615,7 @@ if (admin.is_active == 0) {
       if (!tenantId) {
         return res.status(401).json({
           success: false,
-          error: 'Not authenticated'
+          error: "Not authenticated",
         });
       }
 
@@ -676,43 +623,41 @@ if (admin.is_active == 0) {
         success: true,
         authenticated: true,
         tenantId,
-        tenant_email: req.user?.email
+        tenant_email: req.user?.email,
       });
-
     } catch (error) {
-      console.error('❌ Check auth error:', error);
+      console.error("❌ Check auth error:", error);
       res.status(500).json({
         success: false,
-        error: 'Authentication check failed'
+        error: "Authentication check failed",
       });
     }
   }
 
-
- static async test(req, res) {
+  static async test(req, res) {
     try {
       res.json({
         success: true,
-        message: 'Tenant Auth API is working!',
+        message: "Tenant Auth API is working!",
         timestamp: new Date().toISOString(),
         endpoints: [
-          'POST /login',
-          'POST /send-otp',
-          'POST /verify-otp',
-          'GET /profile',
-          'POST /logout'
-        ]
+          "POST /login",
+          "POST /send-otp",
+          "POST /verify-otp",
+          "GET /profile",
+          "POST /logout",
+        ],
       });
     } catch (error) {
-      console.error('Test error:', error);
+      console.error("Test error:", error);
       res.status(500).json({
         success: false,
-        error: 'Test failed'
+        error: "Test failed",
       });
     }
   }
 
- // Get all tenants with credentials (admin)
+  // Get all tenants with credentials (admin)
   static async getAllTenantsCredentials(req, res) {
     try {
       const [tenants] = await db.query(
@@ -727,19 +672,19 @@ if (admin.is_active == 0) {
           tc.created_at as credential_created
          FROM tenants t
          LEFT JOIN tenant_credentials tc ON t.id = tc.tenant_id
-         ORDER BY t.full_name`
+         ORDER BY t.full_name`,
       );
-      
+
       res.json({
         success: true,
         data: tenants,
-        count: tenants.length
+        count: tenants.length,
       });
     } catch (error) {
-      console.error('❌ Get all tenants credentials error:', error);
+      console.error("❌ Get all tenants credentials error:", error);
       res.status(500).json({
         success: false,
-        error: 'Failed to fetch tenant credentials'
+        error: "Failed to fetch tenant credentials",
       });
     }
   }
