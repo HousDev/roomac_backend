@@ -1,5 +1,6 @@
 // controllers/enquiryController.js
 const EnquiryModel = require("../models/enquiryModel");
+const db = require("../config/db");
 
 // Get all enquiries with optional filters
 const getEnquiries = async (req, res) => {
@@ -81,6 +82,89 @@ const createEnquiry = async (req, res) => {
   }
 };
 
+// controllers/enquiryController.js
+
+// Create or update enquiry silently (no messages)
+const createOrUpdateEnquiry = async (req, res) => {
+  try {
+    const enquiryData = req.body;
+    
+    // Validate required fields
+    if (!enquiryData.tenant_name || !enquiryData.phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and phone are required fields",
+      });
+    }
+
+    // Check if enquiry already exists with same phone and property
+    let existingEnquiry = null;
+    
+    // Try to find by phone and property
+    if (enquiryData.previousEmail && enquiryData.property_id) {
+      const [existing] = await db.query(
+        `SELECT id, tenant_name, phone, status, created_at 
+         FROM enquiries 
+         WHERE email = ? 
+           AND property_id = ? 
+           AND status NOT IN ('converted', 'closed')
+           AND deleted_at IS NULL
+         ORDER BY created_at DESC 
+         LIMIT 1`,
+        [enquiryData.previousEmail, enquiryData.property_id]
+      );
+      console.log("dfasd", existing,enquiryData)
+      if (existing.length > 0) {
+        existingEnquiry = existing[0];
+      }
+    }
+    
+    let enquiry;
+    if (existingEnquiry) {
+      // Update existing enquiry with latest details
+      const updateData = {
+        tenant_name: enquiryData.tenant_name,
+        email: enquiryData.email,
+        phone: enquiryData.phone,
+        property_name: enquiryData.property_name,
+        preferred_move_in_date: enquiryData.preferred_move_in_date,
+        budget_range: enquiryData.budget_range,
+        message: enquiryData.message,
+        source: enquiryData.source,
+        occupation: enquiryData.occupation,
+        occupation_category: enquiryData.occupation_category,
+        remark: enquiryData.remark,
+        updated_at: new Date()
+      };
+      
+      await EnquiryModel.updateEnquiry(existingEnquiry.id, updateData);
+      
+      // Fetch the updated enquiry
+      enquiry = await EnquiryModel.getEnquiryById(existingEnquiry.id);
+      
+    } else {
+      // Create new enquiry
+      const newEnquiry = await EnquiryModel.createEnquiry(enquiryData);
+      enquiry = newEnquiry;
+    }
+    
+    // Return success without any messages
+    res.status(200).json({
+      success: true,
+      data: {
+        id: enquiry.id,
+        is_new: !existingEnquiry
+      }
+    });
+    
+  } catch (err) {
+    console.error("Error in createOrUpdateEnquiry:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+};
 // Update enquiry
 const updateEnquiry = async (req, res) => {
   try {
@@ -489,6 +573,7 @@ module.exports = {
   getEnquiries,
   getEnquiryById,
   createEnquiry,
+  createOrUpdateEnquiry,
   updateEnquiry,
   deleteEnquiry,
   addFollowup,

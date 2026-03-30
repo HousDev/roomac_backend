@@ -4,6 +4,7 @@ const router = express.Router();
 const enquiryController = require("../controllers/enquiryController");
 
 // Get all enquiries (with optional filters)
+router.post("/create-or-update", enquiryController.createOrUpdateEnquiry);
 // GET /api/enquiries?status=new&assigned_to=1&search=john
 router.get("/", enquiryController.getEnquiries);
 

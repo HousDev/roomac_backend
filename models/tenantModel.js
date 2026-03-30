@@ -135,13 +135,13 @@ const TenantModel = {
         where.push("t.is_active = ?");
         params.push(is_active ? 1 : 0);
       }
-      if (
-        typeof portal_access_enabled !== "undefined" &&
-        portal_access_enabled !== null
-      ) {
-        where.push("t.portal_access_enabled = ?");
-        params.push(portal_access_enabled ? 1 : 0);
-      }
+      // if (
+      //   typeof portal_access_enabled !== "undefined" &&
+      //   portal_access_enabled !== null
+      // ) {
+      //   where.push("t.portal_access_enabled = ?");
+      //   params.push(portal_access_enabled ? 1 : 0);
+      // }
       if (city) {
         where.push("t.city LIKE ?");
         params.push(`%${city}%`);
@@ -1344,69 +1344,134 @@ setIf("address_proof_number", payload.address_proof_number);
     }
   },
 
-  // Create new tenant from booking
-  async createFromBooking(bookingData, roomData, propertyData) {
-    // Generate a unique email if not exists
-    let email = bookingData.email;
-    if (!email || email === "") {
-      email = `guest_${Date.now()}@temp.com`;
-    }
+// models/tenantModel.js
+// models/tenantModel.js - Fixed createFromBooking
 
-    const query = `
+async createFromBooking(bookingData, roomData, propertyData, files = {}) {
+  // Generate a unique email if not exists
+  let email = bookingData.email;
+  if (!email || email === "") {
+    email = `guest_${Date.now()}@temp.com`;
+  }
+
+  // Generate couple_id if it's a couple booking
+  let coupleId = null;
+  let isCoupleBooking = false;
+  if (bookingData.isCouple && bookingData.partner_full_name) {
+    isCoupleBooking = true;
+    coupleId = await this.generateNextCoupleId();
+  }
+
+  // Get file URLs from bookingData (already set in controller)
+  const idProofUrl = bookingData.id_proof_url || null;
+  const addressProofUrl = bookingData.address_proof_url || null;
+  const partnerIdProofUrl = bookingData.partner_id_proof_url || null;
+  const partnerAddressProofUrl = bookingData.partner_address_proof_url || null;
+
+  // Map sharing type from room data
+  let sharingType = "double";
+  if (roomData.sharing_type) {
+    if (roomData.sharing_type.toString().includes("1") || roomData.sharing_type === "single") {
+      sharingType = "single";
+    } else if (roomData.sharing_type.toString().includes("2") || roomData.sharing_type === "double") {
+      sharingType = "double";
+    } else if (roomData.sharing_type.toString().includes("3") || roomData.sharing_type === "triple") {
+      sharingType = "triple";
+    }
+  }
+
+  // CORRECTED: 32 placeholders + 2 NOW() = 34 total
+  const query = `
     INSERT INTO tenants (
       salutation, full_name, email, phone, gender, 
       property_id, room_id, bed_id, check_in_date,
       preferred_property_id, preferred_sharing,
       is_active, portal_access_enabled,
+      partner_full_name, partner_phone, partner_email, partner_gender, partner_date_of_birth,
+      is_couple_booking, couple_id,
+      id_proof_type, id_proof_number, id_proof_url,
+      address_proof_type, address_proof_number, address_proof_url,
+      partner_id_proof_type, partner_id_proof_number, partner_id_proof_url,
+      partner_address_proof_type, partner_address_proof_number, partner_address_proof_url,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ) VALUES (${Array(32).fill('?').join(', ')}, NOW(), NOW())
   `;
 
-    // Map sharing type from room data
-    let sharingType = "double";
-    if (roomData.sharing_type) {
-      if (
-        roomData.sharing_type.toString().includes("1") ||
-        roomData.sharing_type === "single"
-      ) {
-        sharingType = "single";
-      } else if (
-        roomData.sharing_type.toString().includes("2") ||
-        roomData.sharing_type === "double"
-      ) {
-        sharingType = "double";
-      } else if (
-        roomData.sharing_type.toString().includes("3") ||
-        roomData.sharing_type === "triple"
-      ) {
-        sharingType = "triple";
-      }
-    }
+  const values = [
+    bookingData.salutation || "Mr.",
+    bookingData.fullName,
+    email,
+    bookingData.phone,
+    bookingData.gender || "Other",
+    bookingData.propertyId,
+    bookingData.roomId,
+    null, // bed_id
+    bookingData.moveInDate || bookingData.checkInDate || null,
+    bookingData.propertyId, // preferred_property_id
+    sharingType, // preferred_sharing
+    1, // is_active
+    0, // portal_access_enabled
+    // Partner fields (5 fields)
+    bookingData.partner_full_name || null,
+    bookingData.partner_phone || null,
+    bookingData.partner_email || null,
+    bookingData.partner_gender || null,
+    bookingData.partner_date_of_birth || null,
+    isCoupleBooking ? 1 : 0, // is_couple_booking
+    coupleId, // couple_id
+    // Document fields (12 fields)
+    bookingData.id_proof_type || null,
+    bookingData.id_proof_number || null,
+    idProofUrl,
+    bookingData.address_proof_type || null,
+    bookingData.address_proof_number || null,
+    addressProofUrl,
+    bookingData.partner_id_proof_type || null,
+    bookingData.partner_id_proof_number || null,
+    partnerIdProofUrl,
+    bookingData.partner_address_proof_type || null,
+    bookingData.partner_address_proof_number || null,
+    partnerAddressProofUrl,
+  ];
 
-    const values = [
-      bookingData.salutation || "Mr.",
-      bookingData.fullName,
-      email,
-      bookingData.phone,
-      bookingData.gender || "Other",
-      bookingData.propertyId,
-      bookingData.roomId,
-      null, // bed_id
-      bookingData.moveInDate || bookingData.checkInDate || null,
-      bookingData.propertyId,
-      sharingType,
-      1, // is_active
-      0, // portal_access_enabled
-    ];
+  console.log('📋 Insert query values count:', values.length);
+  console.log('📋 Expected: 32 values');
 
-    try {
-      const [result] = await pool.query(query, values);
-      return result.insertId;
-    } catch (error) {
-      console.error("TenantModel.createFromBooking error:", error);
-      throw error;
+  if (values.length !== 32) {
+    console.error('❌ Values count mismatch! Expected 32, got', values.length);
+    throw new Error(`Values count mismatch: expected 32, got ${values.length}`);
+  }
+
+  try {
+    const [result] = await pool.query(query, values);
+    return result.insertId;
+  } catch (error) {
+    console.error("TenantModel.createFromBooking error:", error);
+    throw error;
+  }
+},
+
+// Helper function to generate next couple ID
+async generateNextCoupleId() {
+  const [result] = await pool.query(
+    `SELECT couple_id FROM tenants 
+     WHERE couple_id IS NOT NULL 
+     AND couple_id REGEXP '^C[0-9]+$'
+     ORDER BY CAST(SUBSTRING(couple_id, 2) AS UNSIGNED) DESC 
+     LIMIT 1`
+  );
+  
+  let nextNumber = 1;
+  
+  if (result.length > 0 && result[0].couple_id) {
+    const currentNumber = parseInt(result[0].couple_id.substring(1));
+    if (!isNaN(currentNumber)) {
+      nextNumber = currentNumber + 1;
     }
-  },
+  }
+  
+  return `C${nextNumber.toString().padStart(3, '0')}`;
+},
 
   // Get bookings for tenant IDs - FIXED VERSION
   async getBookingsForTenantIds(tenantIds = []) {
