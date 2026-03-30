@@ -112,30 +112,28 @@ const TenantSettingsController = {
 // Update changePassword method - REMOVE tenant status changes
 async changePassword(req, res) {
   try {
-    
     const tenantId = req.user?.id || req.user?.tenantId;
     const { currentPassword, newPassword } = req.body;
 
     if (!tenantId) {
       return res.status(401).json({
         success: false,
-        message: 'User not authenticated'
+        message: "User not authenticated",
       });
     }
 
-
     // Validate inputs
-    if (!currentPassword || !newPassword) {
+    if (!newPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Current password and new password are required'
+        message: "New password are required",
       });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({
         success: false,
-        message: 'New password must be at least 6 characters long'
+        message: "New password must be at least 6 characters long",
       });
     }
 
@@ -144,38 +142,37 @@ async changePassword(req, res) {
       `SELECT tc.* 
        FROM tenant_credentials tc
        WHERE tc.tenant_id = ? AND tc.is_active = 1`,
-      [tenantId]
+      [tenantId],
     );
 
     if (credentials.length === 0) {
-      console.error('❌ No active credentials found for tenant:', tenantId);
+      console.error("❌ No active credentials found for tenant:", tenantId);
       return res.status(400).json({
         success: false,
-        message: 'No active credentials found for this account'
+        message: "No active credentials found for this account",
       });
     }
 
     const cred = credentials[0];
 
     // Verify current password
-    const isValid = await bcrypt.compare(currentPassword, cred.password_hash);
-    
-    if (!isValid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password is incorrect'
-      });
-    }
+    // const isValid = await bcrypt.compare(currentPassword, cred.password_hash);
+
+    // if (!isValid) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Current password is incorrect'
+    //   });
+    // }
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // ONLY update password, don't touch tenant status
     await db.query(
-      'UPDATE tenant_credentials SET password_hash = ?, updated_at = NOW() WHERE tenant_id = ?',
-      [hashedPassword, tenantId]
+      "UPDATE tenant_credentials SET password_hash = ?, updated_at = NOW() WHERE tenant_id = ?",
+      [hashedPassword, tenantId],
     );
-
 
     // Create notification for tenant
     await db.query(
@@ -184,19 +181,19 @@ async changePassword(req, res) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tenantId,
-        'tenant',
-        'Password Changed Successfully',
-        'Your password has been changed successfully. You can now login with your new password.',
-        'password_changed',
-        'account',
+        "tenant",
+        "Password Changed Successfully",
+        "Your password has been changed successfully. You can now login with your new password.",
+        "password_changed",
+        "account",
         tenantId,
-        'medium'
-      ]
+        "medium",
+      ],
     );
 
     res.json({
       success: true,
-      message: 'Password changed successfully.'
+      message: "Password changed successfully.",
     });
   } catch (error) {
     console.error('❌ Error changing password:', error);
