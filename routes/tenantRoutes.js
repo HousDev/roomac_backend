@@ -38,6 +38,8 @@ router.post("/bulk-portal-access", TenantController.bulkPortalAccess);
 router.post("/credentials", TenantController.createCredential);
 router.put("/credentials/:tenantId", TenantController.resetCredential);
 router.get("/", TenantController.list);
+// In routes/tenantRoutes.js, add this new route
+router.get("/check-existence", TenantController.checkExistence);
 
 router.post("/", tenantDocumentUploadFlexible, handleUploadError, TenantController.create);
 router.put("/:id", tenantDocumentUploadFlexible, handleUploadError, TenantController.update);

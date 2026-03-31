@@ -89,15 +89,15 @@ const bookingController = {
         });
       }
 
-      // Check if bed assignment exists for this room and bed number
-      const [bedCheck] = await conn.execute(
-        `SELECT id, bed_number, is_available, tenant_id 
-         FROM bed_assignments 
-         WHERE room_id = ? AND bed_number = ?`,
-        [data.roomId, data.bedNumber]
-      );
+        // ========== CHECK BED AVAILABILITY ==========
+    const [bedCheck] = await conn.execute(
+      `SELECT id, bed_number, is_available, tenant_id 
+       FROM bed_assignments 
+       WHERE room_id = ? AND bed_number = ?`,
+      [data.roomId, data.bedNumber]
+    );
 
-      console.log('🔍 Bed check result:', bedCheck);
+    console.log('🔍 Bed check result:', bedCheck);
 
       // If bed doesn't exist, we need to create it first
       if (bedCheck.length === 0) {
@@ -267,7 +267,7 @@ const bookingController = {
 
       if (data.paymentMethod === "online") {
         tenant = await TenantModel.findByEmailOrPhone(data.email, data.phone);
-
+         console.log("tenant from existing check", tenant, data.email, data.phone);
         if (!tenant) {
           // Create tenant with all details including partner and documents
           const tenantId = await TenantModel.createFromBooking(
@@ -282,8 +282,48 @@ const bookingController = {
             { sharing_type: data.sharingType },
             { name: data.propertyName }
           );
+          console.log("tenant id from booking", tenantId)
           tenant = { id: tenantId };
         } else {
+          console.log("Existing tenant found:", tenant.id, tenant.full_name);
+
+           // CRITICAL: Check if existing tenant already has an active bed assignment
+    const [existingAssignment] = await conn.execute(
+      `SELECT 
+        ba.id, 
+        ba.room_id, 
+        ba.bed_number, 
+        r.room_number,
+        p.name as property_name
+       FROM bed_assignments ba
+       JOIN rooms r ON ba.room_id = r.id
+       JOIN properties p ON r.property_id = p.id
+       WHERE ba.tenant_id = ? AND ba.is_available = FALSE`,
+      [tenant.id]
+    );
+    
+    if (existingAssignment.length > 0) {
+      const assign = existingAssignment[0];
+      console.log(`⚠️ Tenant ${tenant.id} is already assigned to Room ${assign.room_number}, Bed ${assign.bed_number} at ${assign.property_name}`);
+      
+      await conn.rollback();
+      conn.release();
+      return res.status(409).json({
+        success: false,
+        message: `This tenant (${tenant.full_name}) is already assigned to Room ${assign.room_number}, Bed ${assign.bed_number}. Please vacate the existing assignment first, or use a different contact email/phone.`,
+        existingAssignment: {
+          id: assign.id,
+          room_id: assign.room_id,
+          bed_number: assign.bed_number,
+          room_number: assign.room_number,
+          property_name: assign.property_name
+        }
+      });
+    }
+    
+    // No existing assignment, proceed with update
+    console.log("No existing assignment found, updating tenant details");
+
           // Update existing tenant with partner details if not already set
           if (data.isCouple && (!tenant.partner_full_name || !tenant.partner_phone)) {
             await TenantModel.update(tenant.id, {
@@ -322,6 +362,8 @@ const bookingController = {
           rent: rentValue,
           isCouple: isCoupleValue
         });
+
+        console.log("tenant form booking", tenant.id)
 
         // Call RoomModel.assignBed
         const bedAssignmentResult = await RoomModel.assignBed(
