@@ -150,11 +150,11 @@ async getUserDetails(req, res) {
               u.role as user_role, u.has_custom_permissions
        FROM staff AS s
        LEFT JOIN master_item_values r ON r.id = s.role
-       LEFT JOIN users u ON LOWER(u.email) = LOWER(s.email)
-       WHERE LOWER(s.email) = LOWER(?)`,
+       LEFT JOIN users u ON u.email = s.email
+       WHERE s.email = ?`,
       [email],
     );
-
+    console.log(rows);
     let user;
     let userRoleName = null;
 
@@ -164,9 +164,10 @@ async getUserDetails(req, res) {
     } else {
       const [userRows] = await db.query(
         `SELECT id, email, role, permissions, has_custom_permissions 
-         FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
+         FROM users WHERE email = ? LIMIT 1`,
         [email],
       );
+      console.log(userRows);
 
       if (!userRows.length) {
         return res.status(404).json({ message: "User not found" });
@@ -184,7 +185,7 @@ async getUserDetails(req, res) {
     if (userRoleName) {
       const [roleRows] = await db.query(
         `SELECT permissions FROM role_permissions 
-         WHERE LOWER(role_name) = LOWER(?) LIMIT 1`,
+         WHERE role_name = ? LIMIT 1`,
         [userRoleName],
       );
 
