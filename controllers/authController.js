@@ -134,62 +134,63 @@ const AuthController = {
 // },
 async getUserDetails(req, res) {
   const { email } = req.params;
+
+  const safeParse = (data) => {
+    try {
+      if (typeof data === "string") return JSON.parse(data);
+      return data || {};
+    } catch {
+      return {};
+    }
+  };
+
   try {
     const [rows] = await db.query(
       `SELECT s.*, r.name as role_name, u.permissions, 
               u.role as user_role, u.has_custom_permissions
        FROM staff AS s
        LEFT JOIN master_item_values r ON r.id = s.role
-       LEFT JOIN users u ON u.email = s.email
-       WHERE s.email = ?`,
-      [email]
+       LEFT JOIN users u ON LOWER(u.email) = LOWER(s.email)
+       WHERE LOWER(s.email) = LOWER(?)`,
+      [email],
     );
 
     let user;
     let userRoleName = null;
 
-    if (rows && rows.length > 0) {
+    if (rows.length > 0) {
       user = rows[0];
       userRoleName = user.role_name || user.user_role;
     } else {
       const [userRows] = await db.query(
         `SELECT id, email, role, permissions, has_custom_permissions 
-         FROM users WHERE email = ? LIMIT 1`,
-        [email]
+         FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
+        [email],
       );
-      if (!userRows || userRows.length === 0) {
+
+      if (!userRows.length) {
         return res.status(404).json({ message: "User not found" });
       }
+
       user = userRows[0];
       userRoleName = user.role;
       user.role_name = user.role;
     }
 
-    // Parse user permissions
-    if (user.permissions && typeof user.permissions === "string") {
-      try { user.permissions = JSON.parse(user.permissions); }
-      catch { user.permissions = {}; }
-    } else if (!user.permissions) {
-      user.permissions = {};
-    }
+    // Safe parse
+    user.permissions = safeParse(user.permissions);
 
-    // ── Fetch role permissions from role_permissions table ──
+    // Role permissions
     if (userRoleName) {
       const [roleRows] = await db.query(
         `SELECT permissions FROM role_permissions 
          WHERE LOWER(role_name) = LOWER(?) LIMIT 1`,
-        [userRoleName]
+        [userRoleName],
       );
 
-      if (roleRows && roleRows.length > 0) {
-        let rp = roleRows[0].permissions;
-        if (typeof rp === "string") {
-          try { rp = JSON.parse(rp); } catch { rp = {}; }
-        }
-        user.role_permissions = rp;
-      } else {
-        user.role_permissions = {};
-      }
+      user.role_permissions = roleRows.length
+        ? safeParse(roleRows[0].permissions)
+        : {};
     } else {
       user.role_permissions = {};
     }
@@ -197,7 +198,9 @@ async getUserDetails(req, res) {
     return res.status(200).json({ message: "success", user });
   } catch (error) {
     console.error("getUserDetails error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    return res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
   }
 },
 
