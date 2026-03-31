@@ -1,5 +1,4 @@
 // models/expenseModel.js
-// Single `expenses` table — items stored as JSON column
 const db = require("../config/db");
 
 /* ── tiny helper: safely parse JSON items column ─────────────────────────── */
@@ -28,12 +27,16 @@ const ExpenseModel = {
         query += ` AND category_id = ?`;
         params.push(filters.category_id);
       }
+      if (filters.payment_mode) {
+        query += ` AND payment_mode = ?`;
+        params.push(filters.payment_mode);
+      }
       if (filters.status) {
         query += ` AND status = ?`;
         params.push(filters.status);
       }
       if (filters.search) {
-        query += ` AND (description LIKE ? OR category_name LIKE ? OR paid_by_name LIKE ? OR added_by_name LIKE ?)`;
+        query += ` AND (description LIKE ? OR category_name LIKE ? OR payment_mode LIKE ? OR added_by_name LIKE ?)`;
         const s = `%${filters.search}%`;
         params.push(s, s, s, s);
       }
@@ -75,7 +78,7 @@ const ExpenseModel = {
         property_id, property_name,
         category_id, category_name,
         description, amount,
-        paid_by_staff_id, paid_by_name,
+        payment_mode,
         receipt_url, receipt_name,
         expense_date, status,
         added_by_name, notes,
@@ -87,10 +90,10 @@ const ExpenseModel = {
       const [result] = await db.query(
         `INSERT INTO expenses
            (property_id, property_name, category_id, category_name,
-            description, amount, paid_by_staff_id, paid_by_name,
+            description, amount, payment_mode,
             receipt_url, receipt_name, expense_date, status,
             added_by_name, notes, items)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           parseInt(property_id),
           property_name,
@@ -98,9 +101,8 @@ const ExpenseModel = {
           category_name,
           description,
           parseFloat(amount) || 0,
-          paid_by_staff_id ? parseInt(paid_by_staff_id) : null,
-          paid_by_name,
-          receipt_url  || null,
+          payment_mode || "Cash",
+          receipt_url || null,
           receipt_name || null,
           expense_date,
           status || "Pending",
@@ -124,7 +126,7 @@ const ExpenseModel = {
         "property_id", "property_name",
         "category_id", "category_name",
         "description", "amount",
-        "paid_by_staff_id", "paid_by_name",
+        "payment_mode",
         "receipt_url", "receipt_name",
         "expense_date", "status",
         "added_by_name", "notes",
@@ -134,7 +136,7 @@ const ExpenseModel = {
       const values = [];
 
       allowed.forEach((key) => {
-        if (data[key] !== undefined) {
+        if (data[key] !== undefined && data[key] !== null) {
           fields.push(`${key} = ?`);
           values.push(data[key] === "" ? null : data[key]);
         }
@@ -180,6 +182,10 @@ const ExpenseModel = {
       if (filters.property_id) {
         where += " AND property_id = ?";
         params.push(filters.property_id);
+      }
+      if (filters.payment_mode) {
+        where += " AND payment_mode = ?";
+        params.push(filters.payment_mode);
       }
       if (filters.month) {
         where += " AND DATE_FORMAT(expense_date,'%Y-%m') = ?";

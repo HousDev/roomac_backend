@@ -1,14 +1,14 @@
 // controllers/expenseController.js
 const ExpenseModel = require("../models/expenseModel");
 const path = require("path");
-const fs   = require("fs");
+const fs = require("fs");
 
 /* ── save uploaded receipt to disk ────────────────────────────────────────── */
 const saveReceipt = (file) => {
   if (!file) return { url: null, name: null };
   const uploadDir = path.join(__dirname, "../uploads/receipts");
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-  const ext      = path.extname(file.originalname);
+  const ext = path.extname(file.originalname);
   const filename = `receipt_${Date.now()}${ext}`;
   fs.writeFileSync(path.join(uploadDir, filename), file.buffer);
   return { url: `/uploads/receipts/${filename}`, name: file.originalname };
@@ -20,10 +20,11 @@ const getExpenses = async (req, res) => {
     const filters = {
       property_id: req.query.property_id,
       category_id: req.query.category_id,
-      status:      req.query.status,
-      search:      req.query.search,
-      from_date:   req.query.from_date,
-      to_date:     req.query.to_date,
+      payment_mode: req.query.payment_mode,
+      status: req.query.status,
+      search: req.query.search,
+      from_date: req.query.from_date,
+      to_date: req.query.to_date,
     };
     const data = await ExpenseModel.getAll(filters);
     res.json({ success: true, count: data.length, data });
@@ -38,7 +39,8 @@ const getExpenseStats = async (req, res) => {
   try {
     const data = await ExpenseModel.getStats({
       property_id: req.query.property_id,
-      month:       req.query.month,
+      payment_mode: req.query.payment_mode,
+      month: req.query.month,
     });
     res.json({ success: true, data });
   } catch (err) {
@@ -60,30 +62,42 @@ const getExpenseById = async (req, res) => {
 // POST /api/expenses
 const createExpense = async (req, res) => {
   try {
-    const { property_id, category_id, description, paid_by_name, expense_date } = req.body;
-    if (!property_id || !category_id || !description || !paid_by_name || !expense_date) {
+    const { property_id, category_id, description, payment_mode, expense_date } = req.body;
+    if (!property_id || !category_id || !description || !payment_mode || !expense_date) {
       return res.status(400).json({
         success: false,
-        message: "property_id, category_id, description, paid_by_name and expense_date are required",
+        message: "property_id, category_id, description, payment_mode and expense_date are required",
       });
     }
 
     let receipt = { url: null, name: null };
     if (req.file) receipt = saveReceipt(req.file);
 
-    // items sent as JSON string from multipart
     let items = [];
     if (req.body.items) {
-      try { items = JSON.parse(req.body.items); } catch { /* ignore */ }
+      try {
+        items = JSON.parse(req.body.items);
+      } catch { /* ignore */ }
     }
 
-    const result = await ExpenseModel.create({
-      ...req.body,
-      receipt_url:  receipt.url,
+    const expenseData = {
+      property_id: req.body.property_id,
+      property_name: req.body.property_name,
+      category_id: req.body.category_id,
+      category_name: req.body.category_name,
+      description: req.body.description,
+      amount: req.body.amount,
+      payment_mode: req.body.payment_mode || "Cash",
+      receipt_url: receipt.url,
       receipt_name: receipt.name,
-      items,
-    });
+      expense_date: req.body.expense_date,
+      status: req.body.status || "Pending",
+      added_by_name: req.body.added_by_name,
+      notes: req.body.notes,
+      items: items,
+    };
 
+    const result = await ExpenseModel.create(expenseData);
     res.status(201).json({ success: true, message: "Expense created", data: result });
   } catch (err) {
     console.error(err);
@@ -102,16 +116,29 @@ const updateExpense = async (req, res) => {
 
     let items = existing.items || [];
     if (req.body.items) {
-      try { items = JSON.parse(req.body.items); } catch { /* ignore */ }
+      try {
+        items = JSON.parse(req.body.items);
+      } catch { /* ignore */ }
     }
 
-    await ExpenseModel.update(req.params.id, {
-      ...req.body,
-      receipt_url:  receipt.url,
+    const expenseData = {
+      property_id: req.body.property_id,
+      property_name: req.body.property_name,
+      category_id: req.body.category_id,
+      category_name: req.body.category_name,
+      description: req.body.description,
+      amount: req.body.amount,
+      payment_mode: req.body.payment_mode || "Cash",
+      receipt_url: receipt.url,
       receipt_name: receipt.name,
-      items,
-    });
+      expense_date: req.body.expense_date,
+      status: req.body.status,
+      added_by_name: req.body.added_by_name,
+      notes: req.body.notes,
+      items: items,
+    };
 
+    await ExpenseModel.update(req.params.id, expenseData);
     res.json({ success: true, message: "Expense updated" });
   } catch (err) {
     console.error(err);
