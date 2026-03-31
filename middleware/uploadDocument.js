@@ -268,5 +268,6 @@ const handleUploadError = (err, req, res, next) => {
 
 module.exports = {
   tenantDocumentUploadFlexible,
-  handleUploadError
+  handleUploadError,
+  upload 
 };
