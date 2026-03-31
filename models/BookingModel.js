@@ -3,56 +3,69 @@
 const db = require("../config/db");
 
 const Booking = {
-  async create(data) {
-    const sql = `
-      INSERT INTO bookings (
-        tenant_id,
-        property_id,
-        room_id,
-        is_couple,
-        booking_type,
-        tenant_name,
-        email,
-        phone,
-        status,
-        monthly_rent,
-        daily_rate,
-        security_deposit,
-        total_amount,
-        payment_status,
-        check_in_date,
-        check_out_date,
-        move_in_date,
-        salutation,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-    `;
 
-    const values = [
-      data.tenantId || null,
-      data.propertyId,
-      data.roomId,
-      data.isCouple ? 1 : 0, // Add is_couple field
-      data.bookingType, // daily | monthly
-      data.fullName,
-      data.email,
-      data.phone,
-      "active",
-      data.monthlyRent || 0,
-      data.dailyRate || 0,
-      data.securityDeposit || 0,
-      data.totalAmount,
-      data.paymentStatus || "pending",
-      data.checkInDate || null,
-      data.checkOutDate || null,
-      data.moveInDate || null,
-      data.salutation || null,
-    ];
+async create(data) {
+  const sql = `
+    INSERT INTO bookings (
+      tenant_id,
+      property_id,
+      room_id,
+      is_couple,
+      booking_type,
+      tenant_name,
+      email,
+      phone,
+      status,
+      monthly_rent,
+      daily_rate,
+      security_deposit,
+      total_amount,
+      original_amount,
+      discount_amount,
+      offer_code,
+      offer_id,
+      offer_title,
+      discount_type,
+      payment_status,
+      check_in_date,
+      check_out_date,
+      move_in_date,
+      salutation,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+  `;
 
-    const [result] = await db.execute(sql, values);
-    return { id: result.insertId };
-  },
+  const values = [
+    data.tenantId || null,
+    data.propertyId,
+    data.roomId,
+    data.isCouple ? 1 : 0,
+    data.bookingType,
+    data.fullName,
+    data.email,
+    data.phone,
+    "active",
+    data.monthlyRent || 0,
+    data.dailyRate || 0,
+    data.securityDeposit || 0,
+    data.totalAmount,           // Final amount after discount
+    data.originalAmount,        // Original amount before discount
+    data.discountAmount,        // Discount amount applied
+    data.offerCode || null,     // Offer code used
+    data.offerId || null,       // Offer ID
+    data.offerTitle || null,    // Offer title
+    data.discountType || null,  // Percentage or fixed
+    data.paymentStatus || "pending",
+    data.checkInDate || null,
+    data.checkOutDate || null,
+    data.moveInDate || null,
+    data.salutation || null,
+  ];
+
+  const [result] = await db.execute(sql, values);
+  return { id: result.insertId };
+},
 
   async findById(id) {
     const [rows] = await db.execute("SELECT * FROM bookings WHERE id = ?", [
