@@ -6,7 +6,7 @@ const UserModel = {
   async findByEmail(email) {
     try {
       const [rows] = await db.query(
-"SELECT id, email, password, is_active FROM users WHERE email = ? LIMIT 1",
+        "SELECT id, email, password, role, is_active, permissions FROM users WHERE email = ? LIMIT 1",
         [email]
       );
       return rows[0] || null;
@@ -16,7 +16,7 @@ const UserModel = {
     }
   },
 
-  // Create user (used by seed/import scripts if needed)
+  // Create user
   async createUser({ email, password }) {
     try {
       const [result] = await db.query(
@@ -40,6 +40,41 @@ const UserModel = {
       return true;
     } catch (err) {
       console.error("UserModel.updatePassword Error:", err);
+      throw err;
+    }
+  },
+
+  // Update permissions for a user
+  async updatePermissions(id, permissions) {
+    try {
+      await db.query("UPDATE users SET permissions = ? WHERE id = ?", [
+        JSON.stringify(permissions),
+        id,
+      ]);
+      return true;
+    } catch (err) {
+      console.error("UserModel.updatePermissions Error:", err);
+      throw err;
+    }
+  },
+
+  // Get all users (for permissions page dropdown)
+  async getAllUsers() {
+    try {
+      const [rows] = await db.query(
+        "SELECT id, email, role, permissions FROM users WHERE is_active = 1"
+      );
+      // Parse permissions JSON for each user
+      return rows.map((u) => ({
+        ...u,
+        permissions: u.permissions
+          ? typeof u.permissions === "string"
+            ? JSON.parse(u.permissions)
+            : u.permissions
+          : {},
+      }));
+    } catch (err) {
+      console.error("UserModel.getAllUsers Error:", err);
       throw err;
     }
   },
