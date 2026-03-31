@@ -1444,6 +1444,7 @@ async createFromBooking(bookingData, roomData, propertyData, files = {}) {
 
   try {
     const [result] = await pool.query(query, values);
+    console.log("result" , result)
     return result.insertId;
   } catch (error) {
     console.error("TenantModel.createFromBooking error:", error);

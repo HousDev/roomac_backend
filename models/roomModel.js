@@ -653,6 +653,7 @@ async repairBedAssignments(roomId) {
 async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false, partnerDetails = null) {
   let connection;
   try {
+    console.log("Assigning bed:", { roomId, bedNumber, tenantId, tenantGender, tenantRent, isCouple, partnerDetails });
     connection = await db.getConnection();
     await connection.beginTransaction();
     
@@ -842,7 +843,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     throw error;
   }
 },
-
 
 
 // models/roomModel.js

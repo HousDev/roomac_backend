@@ -221,6 +221,117 @@ async getById(req, res) {
 },
 
 
+async checkExistence(req, res) {
+  try {
+    const { email, phone } = req.query;
+    
+    if (!email && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Either email or phone is required"
+      });
+    }
+    
+    let matchedField = null;
+    let tenant = null;
+    
+    // Check by email first
+    if (email) {
+      const [emailTenants] = await pool.query(
+        `SELECT 
+          t.id, 
+          t.full_name, 
+          t.email, 
+          t.phone, 
+          t.gender,
+          t.is_active,
+          ba.id as assignment_id,
+          ba.room_id,
+          ba.bed_number,
+          r.room_number as assigned_room,
+          p.name as property_name
+         FROM tenants t
+         LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = FALSE
+         LEFT JOIN rooms r ON ba.room_id = r.id
+         LEFT JOIN properties p ON r.property_id = p.id
+         WHERE t.email = ? AND t.deleted_at IS NULL`,
+        [email]
+      );
+      
+      if (emailTenants.length > 0) {
+        tenant = emailTenants[0];
+        matchedField = "email";
+      }
+    }
+    
+    // If not found by email, check by phone
+    if (!tenant && phone) {
+      const [phoneTenants] = await pool.query(
+        `SELECT 
+          t.id, 
+          t.full_name, 
+          t.email, 
+          t.phone, 
+          t.gender,
+          t.is_active,
+          ba.id as assignment_id,
+          ba.room_id,
+          ba.bed_number,
+          r.room_number as assigned_room,
+          p.name as property_name
+         FROM tenants t
+         LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = FALSE
+         LEFT JOIN rooms r ON ba.room_id = r.id
+         LEFT JOIN properties p ON r.property_id = p.id
+         WHERE t.phone = ? AND t.deleted_at IS NULL`,
+        [phone]
+      );
+      
+      if (phoneTenants.length > 0) {
+        tenant = phoneTenants[0];
+        matchedField = "phone";
+      }
+    }
+    
+    if (tenant) {
+      // Check if tenant has active assignment
+      const hasActiveAssignment = tenant.assignment_id !== null;
+      
+      return res.json({
+        success: true,
+        exists: true,
+        matched_field: matchedField,
+        tenant: {
+          id: tenant.id,
+          full_name: tenant.full_name,
+          email: tenant.email,
+          phone: tenant.phone,
+          gender: tenant.gender,
+          is_active: tenant.is_active === 1,
+          has_active_assignment: hasActiveAssignment,
+          assigned_room: tenant.assigned_room || null,
+          assigned_bed: tenant.bed_number || null,
+          property_name: tenant.property_name || null
+        }
+      });
+    }
+    
+    return res.json({
+      success: true,
+      exists: false,
+      tenant: null
+    });
+    
+  } catch (error) {
+    console.error("Error checking tenant existence:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to check tenant existence"
+    });
+  }
+},
+
+
 async create(req, res) {
   try {
     const body = req.body || {};
