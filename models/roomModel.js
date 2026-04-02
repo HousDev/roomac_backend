@@ -1508,6 +1508,7 @@ async getFilteredRooms(filters) {
       min_capacity,
       max_capacity,
       is_active = true,
+      availability_status = 'any',
       page = 1,
       limit = 12
     } = filters;
@@ -1541,10 +1542,10 @@ async getFilteredRooms(filters) {
     }
 
     // Room type filter
-    if (room_types && room_types.length > 0) {
-      whereClause += ` AND r.sharing_type IN (?)`;
-      params.push(room_types);
-    }
+   if (room_types && room_types.length > 0) {
+  whereClause += ` AND r.room_type IN (?)`;  // ✅ correct column
+  params.push(room_types);
+}
 
     // Gender preference filter
     if (gender_preferences && gender_preferences.length > 0) {
@@ -1617,6 +1618,41 @@ async getFilteredRooms(filters) {
         params.push(maxCapacityValue);
       }
     }
+
+if (availability_status && availability_status !== 'any') {
+  if (availability_status === 'available') {
+    whereClause += ` AND (
+      SELECT COUNT(*) FROM bed_assignments ba 
+      WHERE ba.room_id = r.id AND ba.is_available = FALSE
+    ) = 0`;
+  } else if (availability_status === 'partial') {
+    whereClause += ` AND (
+      SELECT COUNT(*) FROM bed_assignments ba 
+      WHERE ba.room_id = r.id AND ba.is_available = FALSE
+    ) > 0
+    AND (
+      SELECT COUNT(*) FROM bed_assignments ba2 
+      WHERE ba2.room_id = r.id AND ba2.is_available = FALSE
+    ) < (
+      SELECT COUNT(*) FROM bed_assignments ba3 
+      WHERE ba3.room_id = r.id
+    )`;
+  } else if (availability_status === 'full') {
+    whereClause += ` AND (
+      SELECT COUNT(*) FROM bed_assignments ba 
+      WHERE ba.room_id = r.id AND ba.is_available = FALSE
+    ) = (
+      SELECT COUNT(*) FROM bed_assignments ba2 
+      WHERE ba2.room_id = r.id
+    )
+    AND (
+      SELECT COUNT(*) FROM bed_assignments ba3 
+      WHERE ba3.room_id = r.id
+    ) > 0`;
+  }
+}
+
+
 
     // COUNT QUERY - FIXED: Use SELECT COUNT(*) instead of SELECT *
     const countQuery = `
@@ -1698,14 +1734,15 @@ async getRoomFiltersData() {
   try {
     // Get all unique room types
     const [roomTypes] = await db.query(`
-      SELECT DISTINCT 
-        sharing_type as type,
-        COUNT(*) as count
-      FROM rooms 
-      WHERE is_active = TRUE
-      GROUP BY sharing_type
-      ORDER BY sharing_type
-    `);
+  SELECT 
+    r.sharing_type as type,
+    COUNT(DISTINCT r.id) as room_count,
+    SUM(r.total_bed) as total_beds
+  FROM rooms r
+  WHERE r.is_active = TRUE
+  GROUP BY r.sharing_type
+  ORDER BY r.sharing_type
+`);
 
     // Get all unique gender preferences
     const [genderPrefs] = await db.query(`
@@ -1750,7 +1787,8 @@ async getRoomFiltersData() {
       roomTypes: roomTypes.map(type => ({
         value: type.type,
         label: type.type.charAt(0).toUpperCase() + type.type.slice(1),
-        count: type.count
+        count: type.count,
+        totalBeds: type.total_beds || 0 
       })),
       genderPreferences: genderPrefs.map(gender => ({
         value: gender.gender,

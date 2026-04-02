@@ -27,7 +27,7 @@ const DocumentModel = {
              property_name, room_number, bed_number, rent_amount, security_deposit,
              company_name, status, created_by, signature_required, priority,
              expiry_date, tags, notes, signed_at, signed_by, share_token,
-             html_content, data_json,
+             html_content, data_json,  history_log,
              created_at, updated_at
       FROM documents WHERE 1=1`;
     const p = [];
@@ -115,6 +115,7 @@ const DocumentModel = {
       status, event_type: status,
       event_description: `Status changed to ${status}`,
       performed_by: performedBy,
+      notes: extra.notes || null,
       metadata: extra.metadata || null,
       created_at: new Date().toISOString(),
     });
