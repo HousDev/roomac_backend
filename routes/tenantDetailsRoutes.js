@@ -5,7 +5,10 @@ const tenantAuth = require("../middleware/tenantAuth");
 // Import controller correctly
 const TenantDetailsController = require("../controllers/tenantDetailsController");
 const { uploadDocument } = require("../controllers/tenantController");
-
+const { 
+  tenantDocumentUploadFlexible,  // ← Add this
+  handleUploadError 
+} = require("../middleware/uploadDocument");
 // Profile routes (authenticated)
 router.get("/profile", tenantAuth, (req, res) => {
   TenantDetailsController.getProfileByToken(req, res);
@@ -35,5 +38,13 @@ router.get('/additional-documents', tenantAuth, TenantDetailsController.getAddit
 router.get('/additional-documents/:tenantId', TenantDetailsController.getAdditionalDocuments);
 router.get("/debug/:tenantId", TenantDetailsController.debugProfile);
 router.get("/debug", tenantAuth, TenantDetailsController.debugProfile);
+router.patch(
+  "/upload-documents",
+  tenantAuth,
+  tenantDocumentUploadFlexible,  // ← CHANGE: Use this instead of upload.fields()
+  handleUploadError,              // ← ADD THIS
+  TenantDetailsController.uploadDocuments
 
+);
+router.get('/additional-documents', tenantAuth, TenantDetailsController.getAdditionalDocuments);
 module.exports = router;

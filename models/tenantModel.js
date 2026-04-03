@@ -102,17 +102,14 @@ const TenantModel = {
 
       // SIMPLIFIED VACATE FILTER - Just get tenant IDs from vacate_records
       if (vacate_status === "vacated") {
-        // Only show tenants that exist in vacate_records table
-        where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
-      } else if (vacate_status === "active") {
-        // Show tenants that are NOT in vacate_records table AND have active bed assignments
-        where.push(
-          "t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)",
-        );
-        where.push(
-          "EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)",
-        );
-      }
+  where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+} else if (vacate_status === "active") {
+  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+  where.push("EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)");
+} else if (vacate_status === "non_vacated") {
+  // Show everyone except vacated — new, assigned, unassigned, all
+  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+}
       // If vacate_status is undefined, show all tenants (no filter)
 
       // Existing filters
@@ -172,7 +169,6 @@ const TenantModel = {
       const sql = `
       SELECT 
         t.*,
-        -- Include all occupation fields explicitly
         t.occupation_category,
         t.exact_occupation,
         t.occupation,
