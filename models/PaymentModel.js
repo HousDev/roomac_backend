@@ -1,10 +1,13 @@
 
 // models/paymentModel.js
+const { last } = require("pdf-lib");
 const db = require("../config/db");
 
 const Payment = {
   // Create a new payment
+
   async create(paymentData) {
+    console.log("payment data form crete fun payment model ",paymentData)
     const query = `
       INSERT INTO payments (
         tenant_id, booking_id,total_amount, discount_amount,new_balance, status,amount, payment_date, payment_mode,
@@ -425,10 +428,24 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
       }
     });
     
+    const latestPayment = await this.getLatestRentPayment(tenantId);
+    console.log("asdfagfdg",latestPayment)
+    const isCurrentMonth = (() => {
+  const today = new Date();
+
+  const currentMonth = today.toLocaleString("default", { month: "long" });
+  const currentYear = today.getFullYear();
+
+  return (
+    latestPayment.month === currentMonth &&
+    Number(latestPayment.year) === currentYear
+  );
+})();
     // ========== STEP 8: Calculate totals ==========
     const totalPaid = months.reduce((sum, m) => sum + m.paid, 0);
     const totalExpected = months.reduce((sum, m) => sum + m.rent, 0);
-    const totalPending = months.reduce((sum, m) => sum + m.pending, 0);
+
+    const totalPending = isCurrentMonth ? Number(latestPayment.new_balance) : Number(tenantData.monthly_rent) + Number(latestPayment.new_balance) || 0;
     
     // ========== STEP 9: Create unpaid months list ==========
     const unpaidMonths = months
@@ -1083,8 +1100,10 @@ async getLatestRentPayment(tenantId) {
         p.tenant_id,
         p.new_balance,
         p.payment_date,
+        p.amount,
         p.month,
         p.year,
+        p.total_amount,
         1 AS is_current_month,
         ba.tenant_rent
       FROM payments p
