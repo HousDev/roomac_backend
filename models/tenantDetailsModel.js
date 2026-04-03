@@ -39,9 +39,41 @@ async getById(tenantId) {
         t.preferred_property_id,
         t.id_proof_url,
 t.address_proof_url,
+t.id_proof_type,
+t.id_proof_number,
+t.address_proof_type,
+t.address_proof_number,
 t.additional_documents,  
 t.aadhar_number,
 t.pan_number,
+t.country_code,
+t.work_mode,
+t.shift_timing,
+t.organization,
+t.years_of_experience,
+t.monthly_income,
+t.course_duration,
+t.student_id,
+t.portfolio_url,
+t.employee_id,
+t.partner_full_name,
+t.partner_phone,
+t.partner_email,
+t.partner_gender,
+t.partner_date_of_birth,
+t.partner_address,
+t.partner_occupation,
+t.partner_organization,
+t.partner_relationship,
+t.partner_id_proof_type,
+    t.partner_id_proof_number,
+    t.partner_id_proof_url,
+    t.partner_address_proof_type,
+    t.partner_address_proof_number,
+    t.partner_address_proof_url,
+    t.partner_photo_url,
+    t.is_couple_booking,
+    t.couple_id,
 
 
         
@@ -99,48 +131,82 @@ t.pan_number,
   }
 },
 
-  async updateProfile(tenantId, updateData) {
-    try {
-      
-      const allowedFields = [
-        'full_name', 'phone', 'country_code', 'date_of_birth', 'gender',
-        'occupation', 'occupation_category', 'exact_occupation',
-        'address', 'city', 'state', 'pincode',
-        'preferred_sharing', 'preferred_room_type',
-        'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
-        'email'
-      ];
-      
-      // Filter only allowed fields
-      const filteredData = {};
-      Object.keys(updateData).forEach(key => {
-        if (allowedFields.includes(key)) {
-          filteredData[key] = updateData[key];
+ async updateProfile(tenantId, updateData) {
+  try {
+    console.log('📝 Updating profile for tenant:', tenantId);
+    
+    // ALLOWED FIELDS - All partner fields are OPTIONAL
+    const allowedFields = [
+      // Basic info
+      'full_name', 'phone', 'country_code', 'date_of_birth', 'gender',
+      // Occupation
+      'occupation', 'occupation_category', 'exact_occupation',
+      'organization', 'work_mode', 'shift_timing', 'years_of_experience',
+  'monthly_income', 'course_duration', 'student_id', 'portfolio_url', 'employee_id',
+      // Address
+      'address', 'city', 'state', 'pincode',
+      // Preferences
+      'preferred_sharing', 'preferred_room_type',
+      // Emergency contact
+      'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
+      // Email
+      'email',
+      // Partner fields - ALL OPTIONAL
+      'partner_full_name', 'partner_phone', 'partner_email', 'partner_gender',
+      'partner_date_of_birth', 'partner_address', 'partner_occupation',
+      'partner_organization', 'partner_relationship',
+
+      'id_proof_type', 'id_proof_number', 'address_proof_type', 'address_proof_number',
+      'partner_id_proof_type', 'partner_id_proof_number',
+      'partner_address_proof_type', 'partner_address_proof_number',
+      'partner_id_proof_url', 'partner_address_proof_url', 'partner_photo_url'
+    ];
+    
+    // Filter and clean data - convert empty strings to NULL for database
+    const filteredData = {};
+    Object.keys(updateData).forEach(key => {
+      if (allowedFields.includes(key)) {
+        let value = updateData[key];
+        
+        // Convert empty strings to NULL (especially important for partner fields)
+        if (value === '' || value === null || value === undefined) {
+          value = null;
         }
-      });
-
-      if (Object.keys(filteredData).length === 0) {
-        throw new Error('No valid fields to update');
+        
+        // Only add if value is not undefined
+        if (updateData[key] !== undefined) {
+          filteredData[key] = value;
+        }
       }
+    });
 
-      const setClause = Object.keys(filteredData)
-        .map(key => `${key} = ?`)
-        .join(', ');
-      
-      const values = Object.values(filteredData);
-      values.push(tenantId);
+    console.log('📝 Fields to update:', Object.keys(filteredData));
 
-      const [result] = await pool.query(
-        `UPDATE tenants SET ${setClause}, updated_at = NOW() WHERE id = ?`,
-        values
-      );
-
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('❌ Error in updateProfile:', error);
-      throw error;
+    if (Object.keys(filteredData).length === 0) {
+      console.log('⚠️ No fields to update');
+      return true; // Return true as no error, just nothing to update
     }
-  },
+
+    // Build SET clause
+    const setClause = Object.keys(filteredData)
+      .map(key => `${key} = ?`)
+      .join(', ');
+    
+    const values = Object.values(filteredData);
+    values.push(tenantId);
+
+    const [result] = await pool.query(
+      `UPDATE tenants SET ${setClause}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+
+    console.log('✅ Update successful:', result.affectedRows > 0);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('❌ Error in updateProfile:', error);
+    throw error;
+  }
+},
 
 
   async getAdditionalDocuments(tenantId) {
