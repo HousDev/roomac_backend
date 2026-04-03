@@ -201,13 +201,10 @@ const TenantModel = {
       ${whereSql} 
       GROUP BY t.id 
       ORDER BY t.created_at DESC 
-      LIMIT ? OFFSET ?
     `;
 
       const [rows] = await pool.query(sql, [
         ...params,
-        parseInt(pageSize, 10),
-        parseInt(offset, 10),
       ]);
 
       // Count query also needs same filters

@@ -34,6 +34,11 @@ router.get("/receipts/:id/download", paymentController.downloadReceipt);
 // Tenant specific routes
 router.get("/tenant/:tenantId", paymentController.getPaymentsByTenant);
 router.get("/tenant/:tenantId/payment-form", paymentController.getTenantPaymentFormData);
+// Get latest rent payment for tenant
+router.get(
+  "/tenant/:tenantId/latest-rent",
+  paymentController.getLatestRentPayment
+);
 
 // Booking specific routes
 router.get("/booking/:bookingId", paymentController.getPaymentsByBooking);

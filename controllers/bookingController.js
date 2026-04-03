@@ -303,7 +303,7 @@ const bookingController = {
         booking = await Booking.create(data);
 
         // ========== STEP 3: ASSIGN THE BED ==========
-        let rentValue = data.discountedRent || data.rentAmount || data.monthlyRent || 0;
+        let rentValue =  data.rentAmount || data.discountedRent || data.monthlyRent || 0;
         rentValue = parseFloat(rentValue);
         if (isNaN(rentValue)) rentValue = 0;
 
@@ -343,6 +343,7 @@ const bookingController = {
           const paymentMonth = moveInDate ? new Date(moveInDate).toLocaleString('default', { month: 'long' }) : currentDate.toLocaleString('default', { month: 'long' });
           const paymentYear = moveInDate ? new Date(moveInDate).getFullYear() : currentDate.getFullYear();
           const neBalance = Number(data.rentAmount) - Number(data.discountedRent) - Number(data.discountAmount);
+          const rentPaymentStatus = Number(neBalance) === 0 ?  "paid" : neBalance > 0 && Number(neBalance) < Number(data.rentAmount)-Number(discountAmount) ? 'partial': "pending";
           const rentPayment = await Payment.create({
             tenant_id: tenant.id,
             booking_id: booking.id,
@@ -356,7 +357,7 @@ const bookingController = {
             month: paymentMonth,
             year: paymentYear,
             remark: `Rent payment for ${data.roomNumber} - Bed ${data.bedNumber} | Original: ₹${originalRent.toLocaleString()} | Discount: ₹${discountAmount.toLocaleString()} | Offer: ${data.offerCode || 'None'} | Valid only for first month`,
-            status: "approved"
+            status: rentPaymentStatus,
           });
         }
 
@@ -373,7 +374,7 @@ const bookingController = {
             month: null,
             year: null,
             remark: `Security deposit for ${data.roomNumber} - Bed ${data.bedNumber}`,
-            status: "approved"
+            status: "paid"
           });
         }
 
