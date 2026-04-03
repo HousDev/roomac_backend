@@ -336,8 +336,7 @@ const paymentController = {
         paymentData.payment_type = 'rent';
       }
 
-      const status = Number(paymentData.total_amount) ===  Number(paymentData.amount) ? 'paid' : Number(paymentData.amount) > 0 && Number(paymentData.total_amount) - Number(paymentData.discount_amount) > Number(paymentData.amount) ? 'partial' : 'pending';
-
+      const status = Number(paymentData.new_balance) ===  0 ? 'paid' : Number(paymentData.amount) > 0 && Number(paymentData.total_amount) - Number(paymentData.discount_amount) > Number(paymentData.amount) ? 'partial' : 'pending';
 
       const newPayment = await Payment.create({...paymentData, status: status});
 
