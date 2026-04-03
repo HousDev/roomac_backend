@@ -311,7 +311,7 @@ const paymentController = {
   async createPayment(req, res) {
     try {
       const paymentData = req.body;
-
+      console.log("payment dataaaa", paymentData)
       if (!paymentData.amount || !paymentData.payment_mode) {
         return res.status(400).json({
           success: false,
@@ -336,7 +336,10 @@ const paymentController = {
         paymentData.payment_type = 'rent';
       }
 
-      const newPayment = await Payment.create(paymentData);
+      const status = Number(paymentData.total_amount) ===  Number(paymentData.amount) ? 'paid' : Number(paymentData.amount) > 0 && Number(paymentData.total_amount) - Number(paymentData.discount_amount) > Number(paymentData.amount) ? 'partial' : 'pending';
+
+
+      const newPayment = await Payment.create({...paymentData, status: status});
 
       res.status(201).json({
         success: true,
@@ -353,6 +356,33 @@ const paymentController = {
       });
     }
   },
+
+   async getLatestRentPayment(req, res){
+  try {
+    const { tenantId } = req.params;
+
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        message: "Tenant ID is required",
+      });
+    }
+
+    const data = await Payment.getLatestRentPayment(tenantId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Latest rent payment fetched successfully",
+      data: data || null,
+    });
+  } catch (error) {
+    console.error("getLatestRentPayment error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+},
 
   // Get payment by ID
   async getPayment(req, res) {

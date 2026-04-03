@@ -7,10 +7,10 @@ const Payment = {
   async create(paymentData) {
     const query = `
       INSERT INTO payments (
-        tenant_id, booking_id,total_amount, discount_amount,new_balance, amount, payment_date, payment_mode,
+        tenant_id, booking_id,total_amount, discount_amount,new_balance, status,amount, payment_date, payment_mode,
         bank_name, transaction_id, payment_proof, proof_uploaded_at, 
         month, year, remark, payment_type, created_at, updated_at
-      ) VALUES (?, ?, ?, ?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
 
     const paymentDate = paymentData.payment_date 
@@ -18,13 +18,14 @@ const Payment = {
       : new Date();
     const monthName = paymentDate.toLocaleString('default', { month: 'long' });
     const year = paymentDate.getFullYear();
-
+    
     const values = [
       paymentData.tenant_id || null,
       paymentData.booking_id || null,
       paymentData.total_amount || 0, 
       paymentData.discount_amount || 0,
-      paymentData. newbalance || 0,
+      paymentData.new_balance || 0,
+      paymentData.status || 'pending',
       paymentData.amount,
       paymentData.payment_date || new Date().toISOString().split('T')[0],
       paymentData.payment_mode,
@@ -134,6 +135,76 @@ const Payment = {
 
 // In paymentModel.js - getTenantPaymentFormData function
 
+groupMonthlySummary(payments) {
+  const grouped = {};
+
+  payments.forEach((p) => {
+    const monthNumber =
+      new Date(`${p.month} 1, ${p.year}`).getMonth() + 1;
+
+    const key = `${p.year}-${String(monthNumber).padStart(2, "0")}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        month: p.month,
+        year: p.year,
+        month_key: key,
+        amount: 0,
+        total_amount: 0,
+        previous_balance: null,
+        new_balance: null,
+        discount_amount: 0,
+        status: null,
+        payments: [],
+      };
+    }
+
+    const group = grouped[key];
+
+    // ✅ Aggregate values
+    group.amount += parseFloat(p.amount || 0);
+    group.discount_amount += parseFloat(p.discount_amount || 0);
+
+    // total_amount → take max (same for month)
+    group.total_amount = Math.max(
+      group.total_amount,
+      parseFloat(p.total_amount || 0)
+    );
+
+    // Store payment
+    group.payments.push(p);
+  });
+
+  // ✅ Fix balances + latest status
+  Object.values(grouped).forEach((group) => {
+    // Sort payments by date ASC (old → new)
+    group.payments.sort(
+      (a, b) => new Date(a.payment_date) - new Date(b.payment_date)
+    );
+
+    // First payment → previous_balance
+    group.previous_balance = parseFloat(
+      group.payments[0]?.previous_balance || 0
+    );
+
+    // Last payment → new_balance + status
+    const lastPayment = group.payments[group.payments.length - 1];
+
+    group.new_balance = parseFloat(lastPayment?.new_balance || 0);
+    group.status = lastPayment?.status || null;
+  });
+
+  // ✅ Sort months ASC → March → April → May
+  return Object.values(grouped).sort((a, b) => {
+    const [yearA, monthA] = a.month_key.split("-").map(Number);
+    const [yearB, monthB] = b.month_key.split("-").map(Number);
+
+    return yearA !== yearB
+      ? yearA - yearB
+      : monthA - monthB;
+  });
+},
+
 async getTenantPaymentFormData(tenantId) {
   try {
     // Step 1: Get tenant and bed assignment
@@ -160,6 +231,7 @@ async getTenantPaymentFormData(tenantId) {
       WHERE t.id = ?`,
       [tenantId]
     );
+    console.log("tenant dataaaaa",tenantData)
 
     if (!tenantData.length || !tenantData[0].assignment_date) {
       return null;
@@ -266,8 +338,7 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
     year: date.getFullYear(),
     month_key: monthKey,
     rent: rentAmount,
-    total_amount: 0,
-    discount_amount: 0,
+        
     original_rent: originalMonthlyRent,   // always full rent
     effective_rent: rentAmount,            // what's actually owed
     isFirstMonth: i === 0,
@@ -297,6 +368,7 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
         year,
         transaction_id,
         bank_name,
+        status,
         remark,
         DATE_FORMAT(payment_date, '%Y-%m') as month_key
        FROM payments 
@@ -304,7 +376,8 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
        ORDER BY payment_date ASC`,
       [tenantId]
     );
-    
+    console.log("rent payments", rentPayments);
+    const groupedPayments = this.groupMonthlySummary(rentPayments);
     // ========== STEP 6: Apply payments to months ==========
     for (const payment of rentPayments) {
       let remainingAmount = parseFloat(payment.amount);
@@ -320,12 +393,19 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
           
           month.payments.push({
             id: payment.id,
-            amount: amountToPay,
             date: payment.payment_date,
             mode: payment.payment_mode,
             bank_name: payment.bank_name,
             transaction_id: payment.transaction_id,
-            remark: payment.remark
+            remark: payment.remark,
+            amount: payment.amount,
+            total_amount: payment.total_amount,
+    discount_amount: payment.discount_amount,
+    new_balance: payment.new_balance,
+    status: payment.status,
+    previous_balance: payment.previous_balance,
+    month: payment.month,
+    year: payment.year
           });
         }
       }
@@ -395,7 +475,8 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
         id: tenant.id,
         name: tenant.full_name,
         email: tenant.email,
-        phone: tenant.phone
+        phone: tenant.phone,
+        tenant_rent: tenant.monthly_rent
       },
       room_info: {
         room_id: tenant.room_id,
@@ -415,6 +496,7 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
       total_months_since_joining: totalMonthsSinceJoining,
       month_wise_history: months,
       unpaid_months: unpaidMonths,
+      groupedPayments: groupedPayments, // Add grouped payments to the result
       recent_months: months.slice(-3).reverse(),
       total_paid: totalPaid,
       total_expected: totalExpected,
@@ -993,6 +1075,36 @@ async getSecurityDepositInfo(tenantId) {
     throw error;
   }
 },
+
+async getLatestRentPayment(tenantId) {
+  try {
+    const sql = `
+      SELECT 
+        p.tenant_id,
+        p.new_balance,
+        p.payment_date,
+        p.month,
+        p.year,
+        1 AS is_current_month,
+        ba.tenant_rent
+      FROM payments p
+
+      left join bed_assignments ba on p.tenant_id = ba.tenant_id 
+
+      WHERE p.tenant_id = ?
+        AND p.payment_type = 'rent'
+      ORDER BY p.created_at DESC
+      LIMIT 1
+    `;
+
+    const [rows] = await db.query(sql, [tenantId]);
+
+    return rows.length ? rows[0] : null;
+  } catch (error) {
+    console.error("getLatestRentPayment model error:", error);
+    throw error;
+  }
+}
 
 
 };
