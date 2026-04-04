@@ -45,6 +45,7 @@ const updateHandover = async (req, res) => {
     const data = await HandoverModel.update(req.params.id, req.body);
     res.json({ success: true, message: "Handover updated successfully", data });
   } catch (err) {
+    console.log(err)
     res.status(500).json({ success: false, error: err.message });
   }
 };

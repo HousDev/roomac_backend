@@ -79,7 +79,7 @@ const HandoverModel = {
     [
       parseInt(data.tenant_id) || 0, data.tenant_name, data.tenant_phone, data.tenant_email || null,
       parseInt(data.property_id), data.property_name, data.room_number, data.bed_number || null,
-      data.move_in_date, data.handover_date, data.inspector_name,
+      data.move_in_date.split("T")[0], data.handover_date.split("T")[0], data.inspector_name,
       parseFloat(data.security_deposit) || 0, parseFloat(data.rent_amount) || 0,
       data.notes || null, data.status || 'Active',
       JSON.stringify(handover_items || []),

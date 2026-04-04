@@ -10,7 +10,6 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.82.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",

@@ -49,6 +49,7 @@ const createPurchase = async (req, res) => {
 
 const updatePurchase = async (req, res) => {
   try {
+    console.log(req.body)
     const existing = await MaterialPurchaseModel.getPurchaseById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, message: "Purchase not found" });
 
