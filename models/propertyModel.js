@@ -169,7 +169,7 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
       FROM properties p
       left join  master_item_values as mi on p.property_manager_role = mi.id
          ${whereSql} 
-      ORDER BY p.created_at DESC 
+      ORDER BY p.id ASC
       LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
