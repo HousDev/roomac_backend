@@ -167,7 +167,7 @@ const MoveOutInspectionModel = {
           updated_at = NOW()
          WHERE id = ?`,
         [
-          inspection_date, inspector_name, parseFloat(total_penalty) || 0,
+          inspection_date.split('T')[0], inspector_name, parseFloat(total_penalty) || 0,
           notes || null, status,
           JSON.stringify(penalty_rules || []),
           JSON.stringify(inspection_items),
