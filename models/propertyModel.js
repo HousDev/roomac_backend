@@ -794,7 +794,12 @@ add("staff_id", property.staff_id, (v) => v ? parseInt(v) : null);
       add("terms_conditions", property.terms_conditions);
       add("terms_json", property.terms_json, (v) => v ? JSON.stringify(v) : null);
       add("additional_terms", property.additional_terms, (v) => JSON.stringify(v || []));
-      add("tags", property.tags, (v) => JSON.stringify(v || []));
+      console.log("test prpoperty", property.tag);
+      if (property.tags) {
+        add("tags", property.tags, (v) => JSON.stringify(v || []));
+      } else {
+        add("tags", JSON.stringify([]));
+      }
 
       if (!fields.length) return false;
 
