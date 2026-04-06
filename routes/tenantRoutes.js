@@ -43,6 +43,7 @@ router.get("/check-existence", TenantController.checkExistence);
 
 router.post("/", tenantDocumentUploadFlexible, handleUploadError, TenantController.create);
 router.put("/:id", tenantDocumentUploadFlexible, handleUploadError, TenantController.update);
+router.post("/:id/send-credentials", TenantController.sendCredentials);
 
 
 // Other routes without file upload

@@ -929,6 +929,117 @@ address_proof_type: body.address_proof_type || null,
   }
 },
 
+async sendCredentials(req, res) { try {
+    const tenantId = req.params.id;
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Password is required" 
+      });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Password must be at least 6 characters" 
+      });
+    }
+    
+    // Get tenant details
+    const tenant = await TenantModel.findById(tenantId);
+    
+    if (!tenant) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Tenant not found" 
+      });
+    }
+    
+    // Hash the password
+    const bcrypt = require("bcrypt");
+    const SALT_ROUNDS = 10;
+    const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+    
+    // Check if credentials already exist
+    const credentials = await TenantModel.getCredentialsByTenantIds([tenantId]);
+    const hasCredentials = credentials && credentials.length > 0;
+    
+    // Save/Update credentials in database
+    if (!hasCredentials) {
+      // Create new credentials
+      await TenantModel.createCredential({
+        tenant_id: tenantId,
+        email: tenant.email,
+        password_hash,
+      });
+      console.log(`✅ Credentials created for tenant ${tenantId}`);
+    } else {
+      // Update existing credentials
+      await TenantModel.updateCredential(tenantId, { 
+        password_hash,
+        email: tenant.email 
+      });
+      console.log(`✅ Credentials updated for tenant ${tenantId}`);
+    }
+    
+    // Also update portal_access_enabled in tenants table
+    await pool.query(
+      "UPDATE tenants SET portal_access_enabled = 1 WHERE id = ?",
+      [tenantId]
+    );
+    
+    // Send email with credentials
+    const portalUrl = "https://roomac.in/login";
+    
+    await sendEmail(
+      tenant.email,
+      "Your ROOMAC Tenant Portal Login Credentials",
+      `
+      <h2>Welcome to ROOMAC</h2>
+      
+      <p>Hello ${tenant.full_name},</p>
+      
+      <p>Your tenant portal account has been ${hasCredentials ? 'updated' : 'created'}.</p>
+      
+      <h3>📋 Login Details</h3>
+      
+      <p><strong>Email:</strong> ${tenant.email}</p>
+      <p><strong>Password:</strong> ${password}</p>
+      
+      <p><strong>🔗 Login here:</strong></p>
+      <p><a href="${portalUrl}" target="_blank" style="background-color: #4F46E5; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; display: inline-block;">Click to Login</a></p>
+      <p>Or copy this link: ${portalUrl}</p>
+      
+      <hr/>
+      <p><strong>⚠️ Security Tip:</strong> For security reasons, we recommend changing your password after first login.</p>
+      
+      <br/>
+      <p>Thank you,<br/>ROOMAC Team</p>
+      `
+    );
+    
+    console.log(`✅ Credentials email sent to ${tenant.email}`);
+    
+    return res.json({
+      success: true,
+      message: "Credentials saved and email sent successfully",
+      data: {
+        email: tenant.email,
+        has_credentials: true
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error sending credentials email:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send credentials email: " + error.message
+    });
+  }
+},
+
 
 async update(req, res) {
   try {
