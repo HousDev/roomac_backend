@@ -111,7 +111,7 @@ async findAll() {
         ) as bed_assignments_json
       FROM rooms r
       JOIN properties p ON p.id = r.property_id
-      ORDER BY r.id DESC
+    ORDER BY r.id ASC
     `);
 
     return rows.map(room => ({
@@ -1690,7 +1690,7 @@ if (availability_status && availability_status !== 'any') {
       FROM rooms r
       JOIN properties p ON p.id = r.property_id
       ${whereClause}
-      ORDER BY r.id DESC
+      ORDER BY r.id ASC
       LIMIT ? OFFSET ?
     `;
 
