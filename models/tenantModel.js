@@ -284,9 +284,16 @@ async findById(id) {
         t.id_proof_number,
         t.address_proof_type,
         t.address_proof_number,
-        -- Partner fields
+            t.emergency_contact_name,
+    t.emergency_contact_phone,
+    t.emergency_contact_relation,
+    t.emergency_contact_email,  
+            t.partner_salutation,    
+
         t.partner_full_name,
         t.partner_phone,
+            t.partner_country_code, 
+
         t.partner_email,
         t.partner_gender,
         t.partner_date_of_birth,
@@ -419,8 +426,8 @@ async create(payload) {
       pan_number,
       id_proof_type,
       address_proof_type,
-      id_proof_number,      // <-- ADD THIS LINE
-      address_proof_number,  // <-- ADD THIS LINE
+      id_proof_number,      
+      address_proof_number,  
       address,
       city,
       state,
@@ -433,6 +440,7 @@ async create(payload) {
       emergency_contact_name,
       emergency_contact_phone,
       emergency_contact_relation,
+      emergency_contact_email,
       additional_documents = "[]",
       lockin_period_months,
       lockin_penalty_amount,
@@ -440,6 +448,8 @@ async create(payload) {
       notice_period_days,
       notice_penalty_amount,
       notice_penalty_type,
+      partner_salutation,
+partner_country_code,
       partner_full_name,
       partner_phone,
       partner_email,
@@ -544,6 +554,7 @@ async create(payload) {
       emergency_contact_name || null,
       emergency_contact_phone || null,
       emergency_contact_relation || null,
+      emergency_contact_email || null,
       additionalDocsJson,
       lockin_period_months || 0,
       lockin_penalty_amount || 0,
@@ -552,6 +563,8 @@ async create(payload) {
       notice_penalty_amount || 0,
       notice_penalty_type || "fixed",
       // Partner fields
+        partner_salutation || null,     // ADD THIS
+partner_country_code || '+91',  // ADD THIS
       partner_full_name || null,
       partner_phone || null,
       partner_email || null,
@@ -585,11 +598,11 @@ async create(payload) {
         address, city, state, pincode,
         preferred_sharing, preferred_room_type, preferred_property_id,
         property_id, check_in_date,
-        emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
+        emergency_contact_name, emergency_contact_phone, emergency_contact_relation,emergency_contact_email,
         additional_documents,
         lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
         notice_period_days, notice_penalty_amount, notice_penalty_type,
-        partner_full_name, partner_phone, partner_email, partner_gender,
+        partner_salutation, partner_full_name, partner_phone, partner_country_code, partner_email, partner_gender,
         partner_date_of_birth, partner_address, partner_occupation, partner_organization,
         partner_relationship, partner_id_proof_type, partner_id_proof_number,
         partner_id_proof_url, partner_address_proof_type, partner_address_proof_number,
@@ -771,6 +784,7 @@ setIf("address_proof_number", payload.address_proof_number);
       setIf("emergency_contact_name", payload.emergency_contact_name);
       setIf("emergency_contact_phone", payload.emergency_contact_phone);
       setIf("emergency_contact_relation", payload.emergency_contact_relation);
+setIf("emergency_contact_email", payload.emergency_contact_email);
 
       // Partner fields
     setIf("partner_full_name", payload.partner_full_name);
@@ -791,6 +805,9 @@ setIf("address_proof_number", payload.address_proof_number);
     setIf("partner_photo_url", payload.partner_photo_url);
     setIf("is_couple_booking", payload.is_couple_booking ? 1 : 0);
     setIf("couple_id", payload.couple_id);
+    // In setIf calls:
+setIf("partner_salutation", payload.partner_salutation);
+setIf("partner_country_code", payload.partner_country_code);
 
       // Additional documents
       if (typeof payload.additional_documents !== "undefined") {
@@ -1380,57 +1397,57 @@ async createFromBooking(bookingData, roomData, propertyData, files = {}) {
       property_id, room_id, bed_id, check_in_date,
       preferred_property_id, preferred_sharing,
       is_active, portal_access_enabled,
-      partner_full_name, partner_phone, partner_email, partner_gender, partner_date_of_birth,
+      partner_salutation,
+      partner_full_name, partner_phone, partner_country_code, partner_email, partner_gender, partner_date_of_birth,
       is_couple_booking, couple_id,
       id_proof_type, id_proof_number, id_proof_url,
       address_proof_type, address_proof_number, address_proof_url,
       partner_id_proof_type, partner_id_proof_number, partner_id_proof_url,
-      partner_address_proof_type, partner_address_proof_number, partner_address_proof_url,
-      created_at, updated_at
-    ) VALUES (${Array(32).fill('?').join(', ')}, NOW(), NOW())
+      partner_address_proof_type, partner_address_proof_number, partner_address_proof_url
+    ) VALUES (${Array(34).fill('?').join(', ')})
   `;
-
-  const values = [
-    bookingData.salutation || "Mr.",
-    bookingData.fullName,
-    email,
-    bookingData.phone,
-    bookingData.gender || "Other",
-    bookingData.propertyId,
-    bookingData.roomId,
-    null, // bed_id
-    bookingData.moveInDate || bookingData.checkInDate || null,
-    bookingData.propertyId, // preferred_property_id
-    sharingType, // preferred_sharing
-    1, // is_active
-    0, // portal_access_enabled
-    // Partner fields (5 fields)
-    bookingData.partner_full_name || null,
-    bookingData.partner_phone || null,
-    bookingData.partner_email || null,
-    bookingData.partner_gender || null,
-    bookingData.partner_date_of_birth || null,
-    isCoupleBooking ? 1 : 0, // is_couple_booking
-    coupleId, // couple_id
-    // Document fields (12 fields)
-    bookingData.id_proof_type || null,
-    bookingData.id_proof_number || null,
-    idProofUrl,
-    bookingData.address_proof_type || null,
-    bookingData.address_proof_number || null,
-    addressProofUrl,
-    bookingData.partner_id_proof_type || null,
-    bookingData.partner_id_proof_number || null,
-    partnerIdProofUrl,
-    bookingData.partner_address_proof_type || null,
-    bookingData.partner_address_proof_number || null,
-    partnerAddressProofUrl,
-  ];
-
+ const values = [
+  bookingData.salutation || "Mr.",
+  bookingData.fullName,
+  email,
+  bookingData.phone,
+  bookingData.gender || "Other",
+  bookingData.propertyId,
+  bookingData.roomId,
+  null,
+  bookingData.moveInDate || bookingData.checkInDate || null,
+  bookingData.propertyId,
+  sharingType,
+  1,
+  0,
+  // Partner fields - 7 fields
+  bookingData.partner_salutation || null,
+  bookingData.partner_full_name || null,
+  bookingData.partner_phone || null,
+  bookingData.partner_country_code || null,
+  bookingData.partner_email || null,
+  bookingData.partner_gender || null,
+  bookingData.partner_date_of_birth || null,
+  isCoupleBooking ? 1 : 0,
+  coupleId,
+  // Document fields - 12 fields
+  bookingData.id_proof_type || null,
+  bookingData.id_proof_number || null,
+  idProofUrl,
+  bookingData.address_proof_type || null,
+  bookingData.address_proof_number || null,
+  addressProofUrl,
+  bookingData.partner_id_proof_type || null,
+  bookingData.partner_id_proof_number || null,
+  partnerIdProofUrl,
+  bookingData.partner_address_proof_type || null,
+  bookingData.partner_address_proof_number || null,
+  partnerAddressProofUrl,
+];
   console.log('📋 Insert query values count:', values.length);
-  console.log('📋 Expected: 32 values');
+  console.log('📋 Expected: 34 values');
 
-  if (values.length !== 32) {
+  if (values.length !== 34) {
     console.error('❌ Values count mismatch! Expected 32, got', values.length);
     throw new Error(`Values count mismatch: expected 32, got ${values.length}`);
   }
