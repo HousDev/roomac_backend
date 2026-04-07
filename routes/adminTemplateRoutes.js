@@ -34,5 +34,6 @@ router.post("/bulk-delete", adminAuth, ctrl.bulkDeleteTemplates);
 
 // ── SOFT DELETE single
 router.delete("/:id", adminAuth, ctrl.deleteTemplate);
+router.post("/:id/toggle-active", adminAuth, ctrl.toggleActive);
 
 module.exports = router;

@@ -42,11 +42,14 @@ const CATEGORY_VARIABLES = {
 // ─── GET ALL TEMPLATES ───────────────────────────────────────────────────────
 exports.getTemplates = async (req, res) => {
   try {
-    const { channel, category, status, search } = req.query;
-
-    let where = ["mt.is_active = 1"];
+const { channel, category, status, search, is_active } = req.query;
+    let where = [];  // ← REMOVE "mt.is_active = 1" from here
     const params = [];
 
+    if (is_active !== undefined && is_active !== "all") {
+  where.push("mt.is_active = ?");
+  params.push(Number(is_active));
+}
     if (channel && channel !== "all") {
       where.push("mt.channel = ?");
       params.push(channel);
@@ -64,17 +67,17 @@ exports.getTemplates = async (req, res) => {
       params.push(`%${search}%`, `%${search}%`);
     }
 
-    const sql = `
-      SELECT 
-        mt.*,
-        creator.name  AS created_by_name,
-        approver.name AS approved_by_name
-      FROM message_templates mt
-      LEFT JOIN staff creator  ON mt.created_by  = creator.id
-      LEFT JOIN staff approver ON mt.approved_by = approver.id
-      WHERE ${where.join(" AND ")}
-      ORDER BY mt.created_at DESC
-    `;
+   const sql = `
+  SELECT 
+    mt.*,
+    creator.name  AS created_by_name,
+    approver.name AS approved_by_name
+  FROM message_templates mt
+  LEFT JOIN staff creator  ON mt.created_by  = creator.id
+  LEFT JOIN staff approver ON mt.approved_by = approver.id
+  ${where.length ? "WHERE " + where.join(" AND ") : ""}
+  ORDER BY mt.created_at DESC
+`;
 
     const [templates] = await db.query(sql, params);
 
@@ -87,12 +90,12 @@ exports.getTemplates = async (req, res) => {
         : [],
     }));
 
-    const [stats] = await db.query(`
+   const [stats] = await db.query(`
       SELECT
         channel,
-        SUM(CASE WHEN status = 'pending'  AND is_active = 1 THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN status = 'approved' AND is_active = 1 THEN 1 ELSE 0 END) AS approved,
-        COUNT(CASE WHEN is_active = 1 THEN 1 END) AS total
+        SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+        COUNT(*) AS total
       FROM message_templates
       GROUP BY channel
     `);
@@ -107,16 +110,17 @@ exports.getTemplates = async (req, res) => {
 };
 
 // ─── GET SINGLE TEMPLATE ─────────────────────────────────────────────────────
+// ─── GET SINGLE TEMPLATE ─────────────────────────────────────────────────────
 exports.getTemplateById = async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await db.query(
       `SELECT mt.*, creator.name AS created_by_name, approver.name AS approved_by_name
        FROM message_templates mt
-       LEFT JOIN staff creator  ON mt.created_by  = creator.id
+       LEFT JOIN staff creator ON mt.created_by = creator.id
        LEFT JOIN staff approver ON mt.approved_by = approver.id
-       WHERE mt.id = ? AND mt.is_active = 1`,
-      [id],
+       WHERE mt.id = ?`,
+      [id]
     );
     if (!rows.length)
       return res
@@ -318,12 +322,13 @@ exports.updateTemplate = async (req, res) => {
 };
 
 // ─── DELETE TEMPLATE (soft) ──────────────────────────────────────────────────
+// ─── DELETE TEMPLATE (hard delete) ──────────────────────────────────────────
 exports.deleteTemplate = async (req, res) => {
   try {
     const { id } = req.params;
     const [result] = await db.query(
-      "UPDATE message_templates SET is_active = 0, updated_at = NOW() WHERE id = ? AND is_active = 1",
-      [id],
+      "DELETE FROM message_templates WHERE id = ?",
+      [id]
     );
     if (!result.affectedRows)
       return res
@@ -339,6 +344,7 @@ exports.deleteTemplate = async (req, res) => {
 };
 
 // ─── BULK DELETE ─────────────────────────────────────────────────────────────
+// ─── BULK DELETE (hard delete) ─────────────────────────────────────────────
 exports.bulkDeleteTemplates = async (req, res) => {
   try {
     const { ids } = req.body;
@@ -348,8 +354,8 @@ exports.bulkDeleteTemplates = async (req, res) => {
         .json({ success: false, message: "Provide array of ids" });
     }
     const [result] = await db.query(
-      "UPDATE message_templates SET is_active = 0 WHERE id IN (?)",
-      [ids],
+      "DELETE FROM message_templates WHERE id IN (?)",
+      [ids]
     );
     res.json({
       success: true,
@@ -493,5 +499,26 @@ exports.incrementUsage = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Failed to increment usage" });
+  }
+};
+
+// ─── TOGGLE ACTIVE/INACTIVE ──────────────────────────────────────────────────
+exports.toggleActive = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await db.query(
+      "SELECT is_active FROM message_templates WHERE id = ?", [id]
+    );
+    if (!rows.length)
+      return res.status(404).json({ success: false, message: "Template not found" });
+
+    const newVal = rows[0].is_active === 1 ? 0 : 1;
+    await db.query(
+      "UPDATE message_templates SET is_active = ?, updated_at = NOW() WHERE id = ?",
+      [newVal, id]
+    );
+    res.json({ success: true, is_active: newVal, message: newVal ? "Activated" : "Deactivated" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Failed to toggle status" });
   }
 };
