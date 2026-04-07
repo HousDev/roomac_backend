@@ -507,6 +507,7 @@ if (body.partner_full_name) {
       emergency_contact_name: body.emergency_contact_name || null,
       emergency_contact_phone: body.emergency_contact_phone || null,
       emergency_contact_relation: body.emergency_contact_relation || null,
+  emergency_contact_email: body.emergency_contact_email || null,  // ADD THIS
 
       // Lock-in period fields
       lockin_period_months: body.lockin_period_months
@@ -536,7 +537,10 @@ address_proof_type: body.address_proof_type || null,
 
 // NEW: Partner Details
       partner_full_name: body.partner_full_name || null,
+        partner_salutation: body.partner_salutation || null,  // ADD THIS
+
       partner_phone: body.partner_phone || null,
+      partner_country_code: body.partner_country_code || '+91', // ADD THIS
       partner_email: body.partner_email || null,
       partner_gender: body.partner_gender || null,
       partner_date_of_birth: body.partner_date_of_birth || null,
@@ -1243,7 +1247,7 @@ async update(req, res) {
       'employee_id', 'portfolio_url', 'work_mode', 'shift_timing',
       'address', 'city', 'state', 'pincode', 'preferred_sharing', 'preferred_room_type',
       'preferred_property_id', 'check_in_date',
-      'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation',
+      'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation', 'emergency_contact_email',
       'aadhar_number', 'pan_number','id_proof_type', 'address_proof_type','id_proof_type', 'id_proof_number',      
   'address_proof_type', 'address_proof_number',   
     ];
@@ -1283,7 +1287,8 @@ async update(req, res) {
 
     // Add partner fields to updateData
     const partnerFields = [
-      'partner_full_name', 'partner_phone', 'partner_email', 'partner_gender',
+      'partner_full_name',   'partner_salutation',  'partner_country_code',
+'partner_phone', 'partner_email', 'partner_gender',
       'partner_date_of_birth', 'partner_address', 'partner_occupation',
       'partner_organization', 'partner_relationship', 'partner_id_proof_type',
       'partner_id_proof_number', 'partner_address_proof_type', 'partner_address_proof_number'

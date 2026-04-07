@@ -234,6 +234,8 @@ const bookingController = {
           const tenantId = await TenantModel.createFromBooking(
             {
               ...data,
+              partner_salutation: data.partner_salutation || null,      // ADD THIS
+          partner_country_code: data.partner_country_code || null,
               id_proof_url: idProofUrl,
               address_proof_url: addressProofUrl,
               partner_id_proof_url: partnerIdProofUrl,
@@ -281,8 +283,10 @@ const bookingController = {
           // Update existing tenant with partner details if couple booking
           if (data.isCouple && (!tenant.partner_full_name || !tenant.partner_phone)) {
             await TenantModel.update(tenant.id, {
+               partner_salutation: data.partner_salutation || null,
               partner_full_name: data.partner_full_name,
               partner_phone: data.partner_phone,
+                partner_country_code: data.partner_country_code || null,
               partner_email: data.partner_email,
               partner_gender: data.partner_gender,
               partner_date_of_birth: data.partner_date_of_birth,
