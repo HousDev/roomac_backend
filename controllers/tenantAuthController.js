@@ -1,9 +1,9 @@
-const TenantCredential = require('../models/tenantAuthModel');
-const jwt = require('jsonwebtoken');
-const db = require('../config/db');
-const bcrypt = require('bcrypt');
+const TenantCredential = require("../models/tenantAuthModel");
+const jwt = require("jsonwebtoken");
+const db = require("../config/db");
+const bcrypt = require("bcrypt");
 const { sendEmail } = require("../utils/emailService");
-
+const { getTemplate, replaceVariables } = require("../utils/templateService");
 const generateToken = ({ id, email, role, type }) => {
   return jwt.sign(
     {
@@ -29,7 +29,10 @@ class TenantAuthController {
       const { email } = req.body;
 
       const [rows] = await db.query(
-        "SELECT * FROM tenant_credentials WHERE email = ?",
+        `SELECT tc.*, t.full_name 
+   FROM tenant_credentials tc
+   LEFT JOIN tenants t ON tc.tenant_id = t.id
+   WHERE tc.email = ?`,
         [email],
       );
 
@@ -50,43 +53,21 @@ class TenantAuthController {
       );
 
       // send email
-      // await sendEmail(email, "Your Login OTP", `<h2>Your OTP is: ${otp}</h2>`);
+      // 1. template fetch
+      const template = await getTemplate("otp", "email");
 
-         await sendEmail(
-           email,
-           "Your Secure Login OTP – Roomac CRM",
-           `
-  <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 20px;">
-    <div style="max-width: 500px; margin: auto; background: #ffffff; border-radius: 10px; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-      
-      <h2 style="color: #2c3e50; text-align: center;">🔐 Secure Login OTP</h2>
-      
-      <p style="font-size: 14px; color: #555;">
-        Hello,
-      </p>
-      
-      <p style="font-size: 14px; color: #555;">
-        Your One-Time Password (OTP) for login is:
-      </p>
+      // 2. replace variables
+      const emailBody = replaceVariables(template.content, {
+        otp: otp,
+        tenant_name: rows[0]?.full_name || "User",
+        expiry_minutes: 5,
+      });
 
-      <div style="text-align: center; margin: 25px 0;">
-        <span style="display: inline-block; font-size: 28px; letter-spacing: 4px; font-weight: bold; color: #ffffff; background-color: #007bff; padding: 12px 25px; border-radius: 8px;">
-          ${otp}
-        </span>
-      </div>
+      // DEBUG (optional)
+      console.log("FINAL BODY:", emailBody);
 
-      <p style="font-size: 13px; color: #777;">
-        This OTP is valid for <b>5 minutes</b>. Please do not share this code with anyone.
-      </p>
-
-      <p style="font-size: 13px; color: #777;">
-        If you did not request this OTP, you can safely ignore this email.
-      </p>
-    </div>
-  </div>
-  `,
-         );
-
+      // 3. send email
+      await sendEmail(email, template.subject || "Your OTP", emailBody);
 
       return res.json({
         success: true,
@@ -101,49 +82,34 @@ class TenantAuthController {
     }
   }
 
-   static async sendRegisterOTP(req, res) {
+  static async sendRegisterOTP(req, res) {
     try {
-      const { email } = req.body;
-
+      const { email, full_name } = req.body;
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // send email
 
-         await sendEmail(
-           email,
-           "Your Secure Login OTP – Roomac CRM",
-           `
-  <div style="font-family: Arial, sans-serif; background-color: #f4f6f8; padding: 20px;">
-    <div style="max-width: 500px; margin: auto; background: #ffffff; border-radius: 10px; padding: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
-      
-      <h2 style="color: #2c3e50; text-align: center;">🔐 Secure Login OTP</h2>
-      
-      <p style="font-size: 14px; color: #555;">
-        Hello,
-      </p>
-      
-      <p style="font-size: 14px; color: #555;">
-        Your One-Time Password (OTP) for login is:
-      </p>
+      // ✅ ADD THIS QUERY
+      const [rows] = await db.query(
+        `SELECT tc.*, t.full_name 
+       FROM tenant_credentials tc
+       LEFT JOIN tenants t ON tc.tenant_id = t.id
+       WHERE tc.email = ?`,
+        [email],
+      );
 
-      <div style="text-align: center; margin: 25px 0;">
-        <span style="display: inline-block; font-size: 28px; letter-spacing: 4px; font-weight: bold; color: #ffffff; background-color: #007bff; padding: 12px 25px; border-radius: 8px;">
-          ${otp}
-        </span>
-      </div>
+      const tenantName = rows?.[0]?.full_name || "User";
 
-      <p style="font-size: 13px; color: #777;">
-        This OTP is valid for <b>5 minutes</b>. Please do not share this code with anyone.
-      </p>
+      // template
+      const template = await getTemplate("otp", "email");
 
-      <p style="font-size: 13px; color: #777;">
-        If you did not request this OTP, you can safely ignore this email.
-      </p>
-    </div>
-  </div>
-  `,
-         );
+      // replace
+      const emailBody = replaceVariables(template.content, {
+        otp: otp,
+        tenant_name: full_name,
+        expiry_minutes: 5,
+      });
 
+      // send
+      await sendEmail(email, template.subject || "Your OTP", emailBody);
 
       return res.json({
         otp,
@@ -784,6 +750,5 @@ class TenantAuthController {
     }
   }
 }
-
 
 module.exports = TenantAuthController;

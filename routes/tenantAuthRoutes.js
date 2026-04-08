@@ -6,8 +6,8 @@ const tenantAuth = require('../middleware/tenantAuth');
 
 // Public routes
 router.post('/login', TenantAuthController.login);
-router.post('/send-otp', TenantAuthController.sendOTP);
-router.post('/send-register-otp', TenantAuthController.sendRegisterOTP);
+router.post('/send-otp', TenantAuthController.sendOTP); //exiting tenants otp
+router.post('/send-register-otp', TenantAuthController.sendRegisterOTP);// booking otp
 router.post('/verify-otp', TenantAuthController.verifyOTP);
 router.post('/reset-password-request', TenantAuthController.requestPasswordReset);
 router.post('/reset-password', TenantAuthController.resetPassword);

@@ -45,6 +45,7 @@ router.post("/", tenantDocumentUploadFlexible, handleUploadError, TenantControll
 router.put("/:id", tenantDocumentUploadFlexible, handleUploadError, TenantController.update);
 router.post("/:id/send-credentials", TenantController.sendCredentials);
 
+router.get("/birthday-wish", TenantController.sendBirthdayWishes);
 
 // Other routes without file upload
 router.get("/:id", TenantController.getById);
