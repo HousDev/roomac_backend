@@ -169,6 +169,10 @@ const TenantModel = {
       const sql = `
       SELECT 
         t.*,
+        DATE_FORMAT(t.check_in_date, '%Y-%m-%d') as check_in_date,
+        DATE_FORMAT(t.check_out_date, '%Y-%m-%d') as check_out_date,
+        DATE_FORMAT(t.date_of_birth, '%Y-%m-%d') as date_of_birth,
+        DATE_FORMAT(t.partner_date_of_birth, '%Y-%m-%d') as partner_date_of_birth,
         t.occupation_category,
         t.exact_occupation,
         t.occupation,
@@ -284,16 +288,14 @@ async findById(id) {
         t.id_proof_number,
         t.address_proof_type,
         t.address_proof_number,
-            t.emergency_contact_name,
-    t.emergency_contact_phone,
-    t.emergency_contact_relation,
-    t.emergency_contact_email,  
-            t.partner_salutation,    
-
+        t.emergency_contact_name,
+        t.emergency_contact_phone,
+        t.emergency_contact_relation,
+        t.emergency_contact_email,  
+        t.partner_salutation,    
         t.partner_full_name,
         t.partner_phone,
-            t.partner_country_code, 
-
+        t.partner_country_code, 
         t.partner_email,
         t.partner_gender,
         t.partner_date_of_birth,
@@ -309,7 +311,12 @@ async findById(id) {
         t.partner_address_proof_url,
         t.partner_photo_url,
         t.is_couple_booking,
-        t.couple_id
+        t.couple_id,
+        -- Format dates directly in SQL to avoid timezone issues
+        DATE_FORMAT(t.check_in_date, '%Y-%m-%d') as check_in_date_formatted,
+        DATE_FORMAT(t.check_out_date, '%Y-%m-%d') as check_out_date_formatted,
+        DATE_FORMAT(t.date_of_birth, '%Y-%m-%d') as date_of_birth_formatted,
+        DATE_FORMAT(t.partner_date_of_birth, '%Y-%m-%d') as partner_date_of_birth_formatted
       FROM tenants t
       LEFT JOIN properties p ON t.property_id = p.id
       WHERE t.id = ?
@@ -319,6 +326,28 @@ async findById(id) {
     if (!rows[0]) return null;
 
     const tenant = rows[0];
+
+    // Use the formatted dates from SQL instead of parsing with JavaScript Date
+    // Replace the original date fields with formatted versions
+    if (tenant.check_in_date_formatted) {
+      tenant.check_in_date = tenant.check_in_date_formatted;
+    }
+    delete tenant.check_in_date_formatted;
+
+    if (tenant.check_out_date_formatted) {
+      tenant.check_out_date = tenant.check_out_date_formatted;
+    }
+    delete tenant.check_out_date_formatted;
+
+    if (tenant.date_of_birth_formatted) {
+      tenant.date_of_birth = tenant.date_of_birth_formatted;
+    }
+    delete tenant.date_of_birth_formatted;
+
+    if (tenant.partner_date_of_birth_formatted) {
+      tenant.partner_date_of_birth = tenant.partner_date_of_birth_formatted;
+    }
+    delete tenant.partner_date_of_birth_formatted;
 
     // Parse additional_documents if it exists
     if (tenant.additional_documents) {
@@ -332,23 +361,6 @@ async findById(id) {
       }
     } else {
       tenant.additional_documents = [];
-    }
-
-    // Format dates
-    if (tenant.date_of_birth) {
-      const date = new Date(tenant.date_of_birth);
-      tenant.date_of_birth = date.toISOString().split("T")[0];
-    }
-
-    if (tenant.check_in_date) {
-      const date = new Date(tenant.check_in_date);
-      tenant.check_in_date = date.toISOString().split("T")[0];
-    }
-    
-    // Format partner date of birth
-    if (tenant.partner_date_of_birth) {
-      const date = new Date(tenant.partner_date_of_birth);
-      tenant.partner_date_of_birth = date.toISOString().split("T")[0];
     }
 
     return tenant;
@@ -1390,11 +1402,38 @@ async createFromBooking(bookingData, roomData, propertyData, files = {}) {
     }
   }
 
-  // CORRECTED: 32 placeholders + 2 NOW() = 34 total
+  // In tenantModel.js - createFromBooking method
+
+let tenantCheckInDate = null;
+let tenantCheckOutDate = null;
+
+// Fix: Check for both "long" AND "monthly" booking types
+if (bookingData.bookingType === "long" || bookingData.bookingType === "monthly") {
+    // Long stay - use moveInDate
+    tenantCheckInDate = bookingData.moveInDate || null;
+    tenantCheckOutDate = null; // No check-out date for long stay
+} else {
+    // Short stay - use checkInDate and checkOutDate
+    tenantCheckInDate = bookingData.checkInDate || null;
+    tenantCheckOutDate = bookingData.checkOutDate || null;
+}
+
+  // COUNT THE FIELDS: 
+  // 1-5: salutation, full_name, email, phone, gender (5)
+  // 6-7: property_id, room_id (2) = 7
+  // 8: bed_id (1) = 8
+  // 9-10: check_in_date, check_out_date (2) = 10
+  // 11-12: preferred_property_id, preferred_sharing (2) = 12
+  // 13-14: is_active, portal_access_enabled (2) = 14
+  // 15-21: partner fields (7) = 21
+  // 22-23: is_couple_booking, couple_id (2) = 23
+  // 24-35: document fields (12) = 35
+  // TOTAL = 35 fields
+
   const query = `
     INSERT INTO tenants (
       salutation, full_name, email, phone, gender, 
-      property_id, room_id, bed_id, check_in_date,
+      property_id, room_id, bed_id, check_in_date, check_out_date,
       preferred_property_id, preferred_sharing,
       is_active, portal_access_enabled,
       partner_salutation,
@@ -1404,57 +1443,75 @@ async createFromBooking(bookingData, roomData, propertyData, files = {}) {
       address_proof_type, address_proof_number, address_proof_url,
       partner_id_proof_type, partner_id_proof_number, partner_id_proof_url,
       partner_address_proof_type, partner_address_proof_number, partner_address_proof_url
-    ) VALUES (${Array(34).fill('?').join(', ')})
+    ) VALUES (${Array(35).fill('?').join(', ')})
   `;
- const values = [
-  bookingData.salutation || "Mr.",
-  bookingData.fullName,
-  email,
-  bookingData.phone,
-  bookingData.gender || "Other",
-  bookingData.propertyId,
-  bookingData.roomId,
-  null,
-  bookingData.moveInDate || bookingData.checkInDate || null,
-  bookingData.propertyId,
-  sharingType,
-  1,
-  0,
-  // Partner fields - 7 fields
-  bookingData.partner_salutation || null,
-  bookingData.partner_full_name || null,
-  bookingData.partner_phone || null,
-  bookingData.partner_country_code || null,
-  bookingData.partner_email || null,
-  bookingData.partner_gender || null,
-  bookingData.partner_date_of_birth || null,
-  isCoupleBooking ? 1 : 0,
-  coupleId,
-  // Document fields - 12 fields
-  bookingData.id_proof_type || null,
-  bookingData.id_proof_number || null,
-  idProofUrl,
-  bookingData.address_proof_type || null,
-  bookingData.address_proof_number || null,
-  addressProofUrl,
-  bookingData.partner_id_proof_type || null,
-  bookingData.partner_id_proof_number || null,
-  partnerIdProofUrl,
-  bookingData.partner_address_proof_type || null,
-  bookingData.partner_address_proof_number || null,
-  partnerAddressProofUrl,
-];
-  console.log('📋 Insert query values count:', values.length);
-  console.log('📋 Expected: 34 values');
 
-  if (values.length !== 34) {
-    console.error('❌ Values count mismatch! Expected 32, got', values.length);
-    throw new Error(`Values count mismatch: expected 32, got ${values.length}`);
+  const values = [
+    // Personal info (5 fields)
+    bookingData.salutation || "Mr.",
+    bookingData.fullName,
+    email,
+    bookingData.phone,
+    bookingData.gender || "Other",
+    
+    // Property & Room (3 fields)
+    bookingData.propertyId,
+    bookingData.roomId,
+    null, // bed_id
+    
+    // Dates (2 fields)
+    tenantCheckInDate,   
+    tenantCheckOutDate,
+    
+    // Preferences (2 fields)
+    bookingData.propertyId, // preferred_property_id
+    sharingType, // preferred_sharing
+    
+    // Status (2 fields)
+    1, // is_active
+    0, // portal_access_enabled
+    
+    // Partner fields (7 fields)
+    bookingData.partner_salutation || null,
+    bookingData.partner_full_name || null,
+    bookingData.partner_phone || null,
+    bookingData.partner_country_code || null,
+    bookingData.partner_email || null,
+    bookingData.partner_gender || null,
+    bookingData.partner_date_of_birth || null,
+    
+    // Couple info (2 fields)
+    isCoupleBooking ? 1 : 0,
+    coupleId,
+    
+    // Document fields - Primary Tenant (6 fields)
+    bookingData.id_proof_type || null,
+    bookingData.id_proof_number || null,
+    idProofUrl,
+    bookingData.address_proof_type || null,
+    bookingData.address_proof_number || null,
+    addressProofUrl,
+    
+    // Document fields - Partner (6 fields)
+    bookingData.partner_id_proof_type || null,
+    bookingData.partner_id_proof_number || null,
+    partnerIdProofUrl,
+    bookingData.partner_address_proof_type || null,
+    bookingData.partner_address_proof_number || null,
+    partnerAddressProofUrl,
+  ];
+
+  console.log('📋 Insert query values count:', values.length);
+  console.log('📋 Expected: 35 values');
+
+  if (values.length !== 35) {
+    console.error('❌ Values count mismatch! Expected 35, got', values.length);
+    throw new Error(`Values count mismatch: expected 35, got ${values.length}`);
   }
 
   try {
     const [result] = await pool.query(query, values);
-    console.log("result" , result)
+    console.log("result", result);
     return result.insertId;
   } catch (error) {
     console.error("TenantModel.createFromBooking error:", error);

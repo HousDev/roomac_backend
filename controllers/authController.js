@@ -154,7 +154,6 @@ async getUserDetails(req, res) {
        WHERE s.email = ?`,
       [email],
     );
-    console.log(rows);
     let user;
     let userRoleName = null;
 
@@ -167,7 +166,6 @@ async getUserDetails(req, res) {
          FROM users WHERE email = ? LIMIT 1`,
         [email],
       );
-      console.log(userRows);
 
       if (!userRows.length) {
         return res.status(404).json({ message: "User not found" });

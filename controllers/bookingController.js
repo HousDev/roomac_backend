@@ -234,7 +234,11 @@ const bookingController = {
           const tenantId = await TenantModel.createFromBooking(
             {
               ...data,
-              partner_salutation: data.partner_salutation || null,      // ADD THIS
+               moveInDate: data.moveInDate,     
+      checkInDate: data.checkInDate,    
+      checkOutDate: data.checkOutDate, 
+      bookingType: data.bookingType,    
+              partner_salutation: data.partner_salutation || null,      
           partner_country_code: data.partner_country_code || null,
               id_proof_url: idProofUrl,
               address_proof_url: addressProofUrl,
@@ -298,6 +302,9 @@ const bookingController = {
               partner_address_proof_number: data.partner_address_proof_number,
               partner_address_proof_url: partnerAddressProofUrl,
               is_couple_booking: true,
+              // ADD THESE LINES to update check_in_date and check_out_date for existing tenants
+    check_in_date: data.bookingType === "monthly" ? data.moveInDate : data.checkInDate,
+    check_out_date: data.bookingType !== "monthly" ? data.checkOutDate : null,
             });
           }
         }

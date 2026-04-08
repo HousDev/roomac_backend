@@ -951,7 +951,8 @@ async getTenantPendingDemands(req, res) {
 
 // Add these methods to your paymentController object
 
-// Approve payment
+// controllers/paymentController.js - Update approvePayment
+
 async approvePayment(req, res) {
   try {
     const { id } = req.params;
@@ -965,7 +966,6 @@ async approvePayment(req, res) {
       });
     }
     
-    // Check if payment is already approved or rejected
     if (payment.status === 'approved') {
       return res.status(400).json({
         success: false,
@@ -976,27 +976,22 @@ async approvePayment(req, res) {
     if (payment.status === 'rejected') {
       return res.status(400).json({
         success: false,
-        message: "Rejected payments cannot be approved. Please create a new payment."
+        message: "Rejected payments cannot be approved"
       });
     }
     
     const approved = await Payment.approvePayment(id, approved_by);
     
     if (approved) {
-      // Optionally generate receipt here or mark for receipt generation
-      // Get the updated payment with all details for receipt
+      // ✅ Update monthly_rent table after approval
+      await Payment.updateMonthlyRentAfterApproval(id);
+      
       const approvedPayment = await Payment.getReceiptById(id);
-      
-      // Option 1: Generate receipt PDF and save it
-      // const receiptPDF = await generateReceiptPDF(approvedPayment);
-      // await saveReceiptToStorage(id, receiptPDF);
-      
-      // Option 2: Just mark as approved - receipt will be generated on demand
       
       res.status(200).json({
         success: true,
         message: "Payment approved successfully",
-        data: { id, status: 'approved' ,receipt: approvedPayment}
+        data: { id, status: 'approved', receipt: approvedPayment }
       });
     } else {
       res.status(400).json({
