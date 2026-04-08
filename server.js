@@ -56,6 +56,8 @@ const supportTicketsRouter = require('./routes/supportTicketsRoute');
 const partnershipEnquiryRoutes = require("./routes/partnershipEnquiryRoutes");
 const newsletterRoutes = require("./routes/newsletterRoutes");
 const templatesRoutes = require("./routes/adminTemplateRoutes");
+const cronScheduler = require('./utils/scheduler');
+
 
 dotenv.config();
 
@@ -166,6 +168,8 @@ app.use('/api/support-tickets', supportTicketsRouter);
 app.use("/api/partnership-enquiries", partnershipEnquiryRoutes);
 app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/admin/templates", templatesRoutes);
+
+cronScheduler.initialize();
 
 /* =========================
    SERVER START

@@ -208,11 +208,15 @@ groupMonthlySummary(payments) {
   });
 },
 
+// models/paymentModel.js - Update getTenantPaymentFormData
+
+// models/paymentModel.js - Update getTenantPaymentFormData
+
 async getTenantPaymentFormData(tenantId) {
   try {
     // Step 1: Get tenant and bed assignment
-    const [tenantData] = await db.execute(
-      `SELECT 
+    const [tenantData] = await db.execute(`
+      SELECT 
         t.id,
         t.full_name,
         t.email,
@@ -231,10 +235,8 @@ async getTenantPaymentFormData(tenantId) {
       LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
       LEFT JOIN rooms r ON ba.room_id = r.id
       LEFT JOIN properties prop ON r.property_id = prop.id
-      WHERE t.id = ?`,
-      [tenantId]
-    );
-    console.log("tenant dataaaaa",tenantData)
+      WHERE t.id = ?
+    `, [tenantId]);
 
     if (!tenantData.length || !tenantData[0].assignment_date) {
       return null;
@@ -244,9 +246,12 @@ async getTenantPaymentFormData(tenantId) {
     const originalMonthlyRent = parseFloat(tenant.monthly_rent) || 0;
     const securityDepositAmount = parseFloat(tenant.property_security_deposit) || 0;
     
-    // ========== STEP 2: Get booking with offer information ==========
-    const [bookingData] = await db.execute(
-      `SELECT 
+    // Use check_in_date or fallback to assignment_date
+    const checkInDate = tenant.check_in_date || tenant.assignment_date;
+    
+    // Step 2: Get booking with offer information
+    const [bookingData] = await db.execute(`
+      SELECT 
         b.id,
         b.original_amount,
         b.discount_amount,
@@ -262,103 +267,44 @@ async getTenantPaymentFormData(tenantId) {
       FROM bookings b
       WHERE b.tenant_id = ? AND b.status = 'active'
       ORDER BY b.created_at DESC
-      LIMIT 1`,
-      [tenantId]
-    );
+      LIMIT 1
+    `, [tenantId]);
     
-    // ========== STEP 3: Extract offer information ==========
+    // Step 3: Extract offer information
     let discountedFirstMonthRent = originalMonthlyRent;
     let hasOffer = false;
     let offerDetails = null;
     let discountAmountValue = 0;
     
     if (bookingData.length > 0 && bookingData[0].offer_code) {
-  hasOffer = true;
-  
-  // bookingData[0].monthly_rent is the DISCOUNTED rent stored during booking
-  const bookingMonthlyRent = parseFloat(bookingData[0].monthly_rent);
-  // bookingData[0].discount_amount is the saved discount
-  const discountFromBooking = parseFloat(bookingData[0].discount_amount);
-
-  // Use discount_amount as the source of truth (most reliable)
-  if (!isNaN(discountFromBooking) && discountFromBooking > 0) {
-    discountAmountValue = discountFromBooking;
-    discountedFirstMonthRent = originalMonthlyRent - discountAmountValue;
-  } else if (!isNaN(bookingMonthlyRent) && bookingMonthlyRent > 0 && bookingMonthlyRent < originalMonthlyRent) {
-    // Fallback: derive discount from the stored monthly_rent
-    discountedFirstMonthRent = bookingMonthlyRent;
-    discountAmountValue = originalMonthlyRent - discountedFirstMonthRent;
-  }
-
-  // Clamp: discounted rent cannot be negative
-  discountedFirstMonthRent = Math.max(0, discountedFirstMonthRent);
-
-  offerDetails = {
-    code: bookingData[0].offer_code,
-    title: bookingData[0].offer_title || 'Special Offer',
-    discount_type: bookingData[0].discount_type,
-    discount_amount: discountAmountValue,
-    original_rent: originalMonthlyRent,
-    discounted_rent: discountedFirstMonthRent,
-    valid_only_for_first_month: true
-  };
-} else {
-      console.log('📊 No offer found for tenant:', tenantId);
+      hasOffer = true;
+      const bookingMonthlyRent = parseFloat(bookingData[0].monthly_rent);
+      const discountFromBooking = parseFloat(bookingData[0].discount_amount);
+      
+      if (!isNaN(discountFromBooking) && discountFromBooking > 0) {
+        discountAmountValue = discountFromBooking;
+        discountedFirstMonthRent = originalMonthlyRent - discountAmountValue;
+      } else if (!isNaN(bookingMonthlyRent) && bookingMonthlyRent > 0 && bookingMonthlyRent < originalMonthlyRent) {
+        discountedFirstMonthRent = bookingMonthlyRent;
+        discountAmountValue = originalMonthlyRent - discountedFirstMonthRent;
+      }
+      
+      discountedFirstMonthRent = Math.max(0, discountedFirstMonthRent);
+      
+      offerDetails = {
+        code: bookingData[0].offer_code,
+        title: bookingData[0].offer_title || 'Special Offer',
+        discount_type: bookingData[0].discount_type,
+        discount_amount: discountAmountValue,
+        original_rent: originalMonthlyRent,
+        discounted_rent: discountedFirstMonthRent,
+        valid_only_for_first_month: true
+      };
     }
     
-    // ========== STEP 4: Build months array ==========
-    const joinDate = tenant.check_in_date 
-      ? new Date(tenant.check_in_date) 
-      : new Date(tenant.assignment_date);
-    
-    const currentDate = new Date();
-    const joinMonth = joinDate.getMonth();
-    const joinYear = joinDate.getFullYear();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-    
-    const totalMonthsSinceJoining = (currentYear - joinYear) * 12 + (currentMonth - joinMonth) + 1;
-    
-    // Step 4: Build months array — REPLACE existing loop
-const months = [];
-
-for (let i = 0; i < totalMonthsSinceJoining; i++) {
-  const date = new Date(joinYear, joinMonth + i, 1);
-  const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-  
-  // Month 0 with an offer → use discounted rent; all others → full rent
-  let rentAmount = originalMonthlyRent;
-  let isDiscountedMonth = false;
-  
-  if (hasOffer && i === 0 && discountedFirstMonthRent < originalMonthlyRent) {
-    rentAmount = discountedFirstMonthRent;
-    isDiscountedMonth = true;
-  }
-  
-  months.push({
-    month: date.toLocaleString('default', { month: 'long' }),
-    month_num: date.getMonth() + 1,
-    year: date.getFullYear(),
-    month_key: monthKey,
-    rent: rentAmount,
-        
-    original_rent: originalMonthlyRent,   // always full rent
-    effective_rent: rentAmount,            // what's actually owed
-    isFirstMonth: i === 0,
-    has_discount: isDiscountedMonth,
-    discount_applied: isDiscountedMonth ? discountAmountValue : 0,
-    paid: 0,
-    pending: rentAmount,
-    isCurrentMonth: date.getMonth() === currentMonth && date.getFullYear() === currentYear,
-    isPastMonth: date.getFullYear() < currentYear || 
-                (date.getFullYear() === currentYear && date.getMonth() < currentMonth),
-    payments: []
-  });
-}
-    
-    // ========== STEP 5: Get rent payments ==========
-    const [rentPayments] = await db.execute(
-      `SELECT 
+    // Step 4: Get rent payments - INCLUDE BOTH pending AND approved status
+    const [rentPayments] = await db.execute(`
+      SELECT 
         id,
         amount,
         total_amount,
@@ -372,21 +318,63 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
         transaction_id,
         bank_name,
         status,
-        remark,
-        DATE_FORMAT(payment_date, '%Y-%m') as month_key
-       FROM payments 
-       WHERE tenant_id = ? AND payment_type = 'rent'
-       ORDER BY payment_date ASC`,
-      [tenantId]
-    );
-    console.log("rent payments", rentPayments);
-    const groupedPayments = this.groupMonthlySummary(rentPayments);
-    // ========== STEP 6: Apply payments to months ==========
-    for (const payment of rentPayments) {
-      let remainingAmount = parseFloat(payment.amount);
+        remark
+      FROM payments 
+      WHERE tenant_id = ? 
+        AND payment_type = 'rent'
+        AND status IN ('approved', 'pending')  -- ✅ Include both approved and pending
+      ORDER BY payment_date ASC
+    `, [tenantId]);
+    
+    // Step 5: Get all months from check-in to current date
+    const startDate = new Date(checkInDate);
+    const currentDate = new Date();
+    const monthWiseHistory = [];
+    
+    let tempDate = new Date(startDate);
+    while (tempDate <= currentDate) {
+      const monthName = tempDate.toLocaleString('default', { month: 'long' });
+      const year = tempDate.getFullYear();
+      const monthNum = tempDate.getMonth() + 1;
+      const monthKey = `${year}-${String(monthNum).padStart(2, '0')}`;
       
-      for (let i = 0; i < months.length && remainingAmount > 0; i++) {
-        const month = months[i];
+      // Calculate rent for this month (apply discount only for first month)
+      let rentAmount = originalMonthlyRent;
+      let discountApplied = 0;
+      const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
+                           tempDate.getFullYear() === startDate.getFullYear());
+      
+      if (hasOffer && isFirstMonth && discountedFirstMonthRent < originalMonthlyRent) {
+        rentAmount = discountedFirstMonthRent;
+        discountApplied = originalMonthlyRent - discountedFirstMonthRent;
+      }
+      
+      monthWiseHistory.push({
+        month: monthName,
+        year: year,
+        month_key: monthKey,
+        rent: rentAmount,
+        original_rent: originalMonthlyRent,
+        discount_applied: discountApplied,
+        paid: 0,
+        pending: rentAmount,
+        status: 'pending',
+        payments: []
+      });
+      
+      tempDate.setMonth(tempDate.getMonth() + 1);
+    }
+    
+    // Step 6: Distribute payments to months (oldest-first)
+    const sortedPayments = [...rentPayments].sort((a, b) => 
+      new Date(a.payment_date) - new Date(b.payment_date)
+    );
+    
+    for (const payment of sortedPayments) {
+      let remainingAmount = parseFloat(payment.amount || 0);
+      
+      for (const month of monthWiseHistory) {
+        if (remainingAmount <= 0) break;
         
         if (month.pending > 0) {
           const amountToPay = Math.min(remainingAmount, month.pending);
@@ -401,99 +389,68 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
             bank_name: payment.bank_name,
             transaction_id: payment.transaction_id,
             remark: payment.remark,
-            amount: payment.amount,
-            total_amount: payment.total_amount,
-    discount_amount: payment.discount_amount,
-    new_balance: payment.new_balance,
-    status: payment.status,
-    previous_balance: payment.previous_balance,
-    month: payment.month,
-    year: payment.year
+            amount: amountToPay,
+            status: payment.status
           });
         }
       }
     }
     
-    // ========== STEP 7: Determine status ==========
-    months.forEach(month => {
+    // Step 7: Determine status for each month
+    for (const month of monthWiseHistory) {
       if (month.paid >= month.rent) {
         month.status = 'paid';
         month.pending = 0;
       } else if (month.paid > 0) {
         month.status = 'partial';
-      } else if (month.isPastMonth && month.paid === 0) {
-        month.status = 'overdue';
       } else {
         month.status = 'pending';
       }
-    });
+    }
     
-    const latestPayment = await this.getLatestRentPayment(tenantId);
-    console.log("asdfagfdg",latestPayment)
-    const isCurrentMonth = (() => {
-  const today = new Date();
-
-  const currentMonth = today.toLocaleString("default", { month: "long" });
-  const currentYear = today.getFullYear();
-
-  return (
-    latestPayment.month === currentMonth &&
-    Number(latestPayment.year) === currentYear
-  );
-})();
-    // ========== STEP 8: Calculate totals ==========
-    const totalPaid = months.reduce((sum, m) => sum + m.paid, 0);
-    const totalExpected = months.reduce((sum, m) => sum + m.rent, 0);
-
-    const totalPending = isCurrentMonth ? Number(latestPayment.new_balance) : Number(tenantData.monthly_rent) + Number(latestPayment.new_balance) || 0;
+    // Step 8: Calculate totals
+    const totalPaid = monthWiseHistory.reduce((sum, m) => sum + m.paid, 0);
+    const totalExpected = monthWiseHistory.reduce((sum, m) => sum + m.rent, 0);
+    const totalPending = monthWiseHistory.reduce((sum, m) => sum + m.pending, 0);
     
-    // ========== STEP 9: Create unpaid months list ==========
-    const unpaidMonths = months
+    // Step 9: Create unpaid months list
+    const unpaidMonths = monthWiseHistory
       .filter(m => m.pending > 0)
       .map(m => ({
         month: m.month,
-        month_num: m.month_num,
         year: m.year,
-        month_key: m.month_key,
         pending: m.pending,
         rent: m.rent,
         original_rent: m.original_rent,
-        has_discount: m.has_discount,
-        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()} (Rent: ₹${m.rent.toLocaleString()})${m.has_discount ? ' *Discounted' : ''}`
+        has_discount: m.discount_applied > 0,
+        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()}`
       }));
     
-    // ========== STEP 10: Get security deposit payments ==========
-    const [securityDepositPayments] = await db.execute(
-      `SELECT 
+    // Step 10: Get security deposit payments
+    const [securityDepositPayments] = await db.execute(`
+      SELECT 
         id,
         amount,
-          total_amount,
-          discount_amount,
-        previous_balance,
-        new_balance,
-
         payment_date,
         payment_mode,
         transaction_id,
         remark,
         status
-       FROM payments 
-       WHERE tenant_id = ? AND payment_type = 'security_deposit'
-       ORDER BY payment_date ASC`,
-      [tenantId]
-    );
+      FROM payments 
+      WHERE tenant_id = ? AND payment_type = 'security_deposit'
+      ORDER BY payment_date ASC
+    `, [tenantId]);
     
     const totalDepositPaid = securityDepositPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const depositPending = Math.max(0, securityDepositAmount - totalDepositPaid);
     
-    // ========== STEP 11: Build final result ==========
+    // Step 11: Build final result
     const result = {
       tenant: {
         id: tenant.id,
         name: tenant.full_name,
         email: tenant.email,
-        phone: tenant.phone,
-        tenant_rent: tenant.monthly_rent
+        phone: tenant.phone
       },
       room_info: {
         room_id: tenant.room_id,
@@ -507,18 +464,17 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
       discounted_first_month_rent: discountedFirstMonthRent,
       discount_amount: discountAmountValue,
       has_offer: hasOffer,
-      offer_info: offerDetails,  // <-- THIS IS THE KEY!
-      check_in_date: tenant.check_in_date,
-      joining_date: joinDate.toISOString().split('T')[0],
-      total_months_since_joining: totalMonthsSinceJoining,
-      month_wise_history: months,
+      offer_info: offerDetails,
+      check_in_date: checkInDate,
+      joining_date: new Date(checkInDate).toISOString().split('T')[0],
+      total_months_since_joining: monthWiseHistory.length,
+      month_wise_history: monthWiseHistory,
       unpaid_months: unpaidMonths,
-      groupedPayments: groupedPayments, // Add grouped payments to the result
-      recent_months: months.slice(-3).reverse(),
+      recent_months: monthWiseHistory.slice(-3).reverse(),
       total_paid: totalPaid,
       total_expected: totalExpected,
       total_pending: totalPending,
-      suggested_amount: totalPending > 0 ? totalPending : unpaidMonths[0]?.pending || 0,
+      suggested_amount: unpaidMonths.length > 0 ? unpaidMonths[0].pending : 0,
       payment_count: rentPayments.length,
       last_payment_date: rentPayments.length > 0 ? rentPayments[rentPayments.length - 1].payment_date : null,
       security_deposit: {
@@ -532,13 +488,68 @@ for (let i = 0; i < totalMonthsSinceJoining; i++) {
       note: hasOffer ? `🎉 Offer Applied: ${offerDetails.code} - First month rent: ₹${discountedFirstMonthRent.toLocaleString()} (was ₹${originalMonthlyRent.toLocaleString()})` : null
     };
     
-    console.log('📊 Final result offer_info:', result.offer_info);
-    
     return result;
     
   } catch (error) {
     console.error("Error in getTenantPaymentFormData:", error);
     throw error;
+  }
+},
+
+
+// models/paymentModel.js - Add this function
+
+async updateMonthlyRentAfterApproval(paymentId) {
+  try {
+    // Get the payment details
+    const [payment] = await db.execute(`
+      SELECT tenant_id, amount, month, year, status 
+      FROM payments 
+      WHERE id = ?
+    `, [paymentId]);
+    
+    if (!payment.length || payment[0].status !== 'approved') {
+      return false;
+    }
+    
+    const { tenant_id, amount, month, year } = payment[0];
+    
+    // Get or create monthly_rent record for this month
+    const [existing] = await db.execute(`
+      SELECT id, rent, paid, balance 
+      FROM monthly_rent 
+      WHERE tenant_id = ? AND month = ? AND year = ?
+    `, [tenant_id, month, year]);
+    
+    if (existing.length) {
+      // Update existing record
+      const newPaid = parseFloat(existing[0].paid) + parseFloat(amount);
+      const rent = parseFloat(existing[0].rent);
+      const newBalance = Math.max(0, rent - newPaid);
+      const status = newPaid >= rent ? 'paid' : (newPaid > 0 ? 'partial' : 'pending');
+      
+      await db.execute(`
+        UPDATE monthly_rent 
+        SET paid = ?, balance = ?, status = ?, updated_at = NOW()
+        WHERE id = ?
+      `, [newPaid, newBalance, status, existing[0].id]);
+    } else {
+      // Create new record
+      const rentAmount = 0; // You need to get the rent amount from bed assignment
+      const newBalance = Math.max(0, rentAmount - amount);
+      const status = amount >= rentAmount ? 'paid' : 'partial';
+      
+      await db.execute(`
+        INSERT INTO monthly_rent (tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, NOW(), NOW())
+      `, [tenant_id, month, year, rentAmount, amount, newBalance, status]);
+    }
+    
+    return true;
+    
+  } catch (error) {
+    console.error("Error updating monthly_rent after approval:", error);
+    return false;
   }
 },
 
