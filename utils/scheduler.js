@@ -5,7 +5,6 @@ const monthlyRentCron = require('../utils/monthlyRentCron');
 class CronScheduler {
   
   initialize() {
-    console.log('🕐 Initializing cron jobs...');
     
     // Run on the 1st day of every month at 00:00 (midnight)
     cron.schedule('0 0 1 * *', async () => {
@@ -34,8 +33,6 @@ class CronScheduler {
     }, {
       timezone: "Asia/Kolkata"
     });
-    
-    console.log('✅ Cron jobs initialized successfully');
   }
 }
 

@@ -482,7 +482,6 @@ partner_country_code,
       couple_id
     } = payload;
 
-    console.log("tenant payload",payload);
     // Prepare additional_documents JSON
     let additionalDocsJson = "[]";
     try {
@@ -987,8 +986,6 @@ setIf("partner_country_code", payload.partner_country_code);
 
   async updateCredential(tenant_id, { password_hash , email}) {
     try {
-      
-      console.log("updated creadetial funcion ", password_hash, email)
       const [result] = await pool.query(
         `UPDATE tenant_credentials SET password_hash = ? , email = ? , updated_at = ? WHERE tenant_id = ?`,
         [password_hash, email, new Date(), tenant_id],
@@ -1402,33 +1399,28 @@ async createFromBooking(bookingData, roomData, propertyData, files = {}) {
     }
   }
 
-  // In tenantModel.js - createFromBooking method
+// In tenantModel.js - createFromBooking method
 
 let tenantCheckInDate = null;
 let tenantCheckOutDate = null;
 
-// Fix: Check for both "long" AND "monthly" booking types
-if (bookingData.bookingType === "long" || bookingData.bookingType === "monthly") {
-    // Long stay - use moveInDate
+// Handle both long/monthly and short/daily
+if (bookingData.bookingType === "monthly" || bookingData.bookingType === "long") {
     tenantCheckInDate = bookingData.moveInDate || null;
-    tenantCheckOutDate = null; // No check-out date for long stay
-} else {
-    // Short stay - use checkInDate and checkOutDate
+    tenantCheckOutDate = null;
+} else if (bookingData.bookingType === "daily" || bookingData.bookingType === "short") {
     tenantCheckInDate = bookingData.checkInDate || null;
     tenantCheckOutDate = bookingData.checkOutDate || null;
+} else {
+    // Fallback logic
+    if (bookingData.moveInDate && !bookingData.checkInDate) {
+        tenantCheckInDate = bookingData.moveInDate;
+    } else if (bookingData.checkInDate) {
+        tenantCheckInDate = bookingData.checkInDate;
+        tenantCheckOutDate = bookingData.checkOutDate;
+    }
 }
 
-  // COUNT THE FIELDS: 
-  // 1-5: salutation, full_name, email, phone, gender (5)
-  // 6-7: property_id, room_id (2) = 7
-  // 8: bed_id (1) = 8
-  // 9-10: check_in_date, check_out_date (2) = 10
-  // 11-12: preferred_property_id, preferred_sharing (2) = 12
-  // 13-14: is_active, portal_access_enabled (2) = 14
-  // 15-21: partner fields (7) = 21
-  // 22-23: is_couple_booking, couple_id (2) = 23
-  // 24-35: document fields (12) = 35
-  // TOTAL = 35 fields
 
   const query = `
     INSERT INTO tenants (
@@ -1501,8 +1493,6 @@ if (bookingData.bookingType === "long" || bookingData.bookingType === "monthly")
     partnerAddressProofUrl,
   ];
 
-  console.log('📋 Insert query values count:', values.length);
-  console.log('📋 Expected: 35 values');
 
   if (values.length !== 35) {
     console.error('❌ Values count mismatch! Expected 35, got', values.length);
@@ -1511,7 +1501,6 @@ if (bookingData.bookingType === "long" || bookingData.bookingType === "monthly")
 
   try {
     const [result] = await pool.query(query, values);
-    console.log("result", result);
     return result.insertId;
   } catch (error) {
     console.error("TenantModel.createFromBooking error:", error);

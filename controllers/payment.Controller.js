@@ -307,54 +307,222 @@ async function generateProfessionalReceiptPDF(doc, receipt, settings) {
 }
 
 const paymentController = {
-  // Create a new payment
-  async createPayment(req, res) {
-    try {
-      const paymentData = req.body;
-      console.log("payment dataaaa", paymentData)
-      if (!paymentData.amount || !paymentData.payment_mode) {
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields: amount and payment_mode are required"
-        });
-      }
 
-      if (!paymentData.tenant_id) {
-        return res.status(400).json({
-          success: false,
-          message: "tenant_id is required"
-        });
-      }
+// controllers/paymentController.js - Updated createPayment
 
-      // Handle booking_id
-      if (!paymentData.booking_id || paymentData.booking_id === '') {
-        paymentData.booking_id = null;
-      }
-
-      // Set payment_type if not provided
-      if (!paymentData.payment_type) {
-        paymentData.payment_type = 'rent';
-      }
-
-      const status = Number(paymentData.new_balance) ===  0 ? 'paid' : Number(paymentData.amount) > 0 && Number(paymentData.total_amount) - Number(paymentData.discount_amount) > Number(paymentData.amount) ? 'partial' : 'pending';
-
-      const newPayment = await Payment.create({...paymentData, status: status});
-
-      res.status(201).json({
-        success: true,
-        message: "Payment created successfully",
-        data: newPayment
-      });
-
-    } catch (error) {
-      console.error("Error creating payment:", error);
-      res.status(500).json({
+async createPayment(req, res) {
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  try {
+    const paymentData = req.body;
+    console.log("payment dataaaa", paymentData);
+    
+    if (!paymentData.amount || !paymentData.payment_mode) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
         success: false,
-        message: "Failed to create payment",
-        error: error.message
+        message: "Missing required fields: amount and payment_mode are required"
       });
     }
-  },
+
+    if (!paymentData.tenant_id) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
+        success: false,
+        message: "tenant_id is required"
+      });
+    }
+
+    // Handle booking_id
+    if (!paymentData.booking_id || paymentData.booking_id === '') {
+      paymentData.booking_id = null;
+    }
+
+    // Set payment_type if not provided
+    if (!paymentData.payment_type) {
+      paymentData.payment_type = 'rent';
+    }
+
+    // ========== STEP 1: Get monthly rent records for this tenant ==========
+    const [monthlyRecords] = await connection.execute(`
+      SELECT id, month, year, rent, paid, balance, discount, status
+      FROM monthly_rent 
+      WHERE tenant_id = ? 
+      ORDER BY 
+        year ASC,
+        FIELD(month, 
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ) ASC
+    `, [paymentData.tenant_id]);
+
+    if (monthlyRecords.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
+        success: false,
+        message: "No monthly rent records found for this tenant. Please ensure check-in date is set."
+      });
+    }
+
+    // ========== STEP 2: Calculate payment distribution (oldest months first) ==========
+    let remainingAmount = parseFloat(paymentData.amount);
+    let distribution = [];
+    let updates = [];
+
+    for (const record of monthlyRecords) {
+      if (remainingAmount <= 0) break;
+      
+      const currentBalance = parseFloat(record.balance);
+      if (currentBalance > 0) {
+        const amountToPay = Math.min(remainingAmount, currentBalance);
+        const newBalance = currentBalance - amountToPay;
+        const newPaid = parseFloat(record.paid) + amountToPay;
+        const newStatus = newBalance === 0 ? 'paid' : (newPaid > 0 ? 'partial' : 'pending');
+        
+        distribution.push({
+          monthly_rent_id: record.id,
+          month: record.month,
+          year: record.year,
+          amount: amountToPay,
+          old_balance: currentBalance,
+          new_balance: newBalance,
+          old_paid: parseFloat(record.paid),
+          new_paid: newPaid,
+          status: newStatus
+        });
+        
+        // Store update for later
+        updates.push({
+          id: record.id,
+          paid: newPaid,
+          balance: newBalance,
+          status: newStatus
+        });
+        
+        remainingAmount -= amountToPay;
+      }
+    }
+
+    if (distribution.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({
+        success: false,
+        message: "No pending months found. All months are already paid!"
+      });
+    }
+
+    // ========== STEP 3: Calculate totals for payment record ==========
+    const totalPaidAmount = parseFloat(paymentData.amount);
+    const totalDistributed = distribution.reduce((sum, d) => sum + d.amount, 0);
+    
+    // Get total expected rent
+    const totalRent = monthlyRecords.reduce((sum, r) => sum + parseFloat(r.rent), 0);
+    const totalPaidBefore = monthlyRecords.reduce((sum, r) => sum + parseFloat(r.paid), 0);
+    const totalPendingBefore = totalRent - totalPaidBefore;
+    const totalPendingAfter = totalPendingBefore - totalDistributed;
+
+    // ========== STEP 4: Update monthly_rent table IMMEDIATELY ==========
+    for (const update of updates) {
+      await connection.execute(`
+        UPDATE monthly_rent 
+        SET paid = ?, balance = ?, status = ?, updated_at = NOW()
+        WHERE id = ?
+      `, [update.paid, update.balance, update.status, update.id]);
+      
+      console.log(`✅ Updated ${distribution.find(d => d.monthly_rent_id === update.id)?.month} ${distribution.find(d => d.monthly_rent_id === update.id)?.year}: Paid ₹${distribution.find(d => d.monthly_rent_id === update.id)?.amount}`);
+    }
+
+    // ========== STEP 5: Create payment record with status 'pending' ==========
+    // Note: Payment status remains 'pending' for receipt generation later
+    const paymentRecord = {
+      tenant_id: paymentData.tenant_id,
+      booking_id: paymentData.booking_id,
+      payment_type: paymentData.payment_type,
+      amount: totalPaidAmount,
+      total_amount: totalRent,
+      previous_balance: totalPendingBefore,
+      new_balance: totalPendingAfter,
+      discount_amount: paymentData.discount_amount || 0,
+      payment_mode: paymentData.payment_mode,
+      bank_name: paymentData.bank_name || null,
+      transaction_id: paymentData.transaction_id || null,
+      payment_date: paymentData.payment_date,
+      month: paymentData.month || new Date().toLocaleString('default', { month: 'long' }),
+      year: paymentData.year || new Date().getFullYear(),
+      remark: paymentData.remark || `Payment of ₹${totalPaidAmount} distributed to ${distribution.length} month(s)`,
+      status: 'pending' // ⭐ Payment status remains 'pending' for receipt
+    };
+
+    const [paymentResult] = await connection.execute(`
+      INSERT INTO payments (
+        tenant_id, booking_id, payment_type, amount, total_amount, 
+        previous_balance, new_balance, discount_amount, payment_mode, 
+        bank_name, transaction_id, payment_date, month, year, remark, 
+        status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      paymentRecord.tenant_id,
+      paymentRecord.booking_id,
+      paymentRecord.payment_type,
+      paymentRecord.amount,
+      paymentRecord.total_amount,
+      paymentRecord.previous_balance,
+      paymentRecord.new_balance,
+      paymentRecord.discount_amount,
+      paymentRecord.payment_mode,
+      paymentRecord.bank_name,
+      paymentRecord.transaction_id,
+      paymentRecord.payment_date,
+      paymentRecord.month,
+      paymentRecord.year,
+      paymentRecord.remark,
+      paymentRecord.status
+    ]);
+
+    const newPaymentId = paymentResult.insertId;
+
+    // ========== STEP 6: Commit transaction ==========
+    await connection.commit();
+    connection.release();
+
+    console.log(`💰 Payment ₹${totalPaidAmount} created and distributed to ${distribution.length} months.`);
+    console.log(`   Payment Status: ${paymentRecord.status} (pending for receipt)`);
+    console.log(`   Monthly rent records updated immediately.`);
+
+    res.status(201).json({
+      success: true,
+      message: "Payment created and distributed successfully",
+      data: {
+        id: newPaymentId,
+        payment_status: paymentRecord.status,
+        distribution: distribution,
+        remaining_amount: remainingAmount,
+        summary: {
+          total_paid: totalPaidAmount,
+          total_distributed: totalDistributed,
+          months_affected: distribution.length,
+          previous_pending: totalPendingBefore,
+          current_pending: totalPendingAfter
+        }
+      }
+    });
+
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error("Error creating payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create payment",
+      error: error.message
+    });
+  }
+},
 
    async getLatestRentPayment(req, res){
   try {
@@ -949,9 +1117,6 @@ async getTenantPendingDemands(req, res) {
   }
 },
 
-// Add these methods to your paymentController object
-
-// controllers/paymentController.js - Update approvePayment
 
 async approvePayment(req, res) {
   try {
@@ -980,18 +1145,20 @@ async approvePayment(req, res) {
       });
     }
     
+    // ✅ Only update payment status - monthly_rent already updated
     const approved = await Payment.approvePayment(id, approved_by);
     
     if (approved) {
-      // ✅ Update monthly_rent table after approval
-      await Payment.updateMonthlyRentAfterApproval(id);
-      
       const approvedPayment = await Payment.getReceiptById(id);
       
       res.status(200).json({
         success: true,
-        message: "Payment approved successfully",
-        data: { id, status: 'approved', receipt: approvedPayment }
+        message: "Payment approved successfully. Receipt generated.",
+        data: { 
+          id, 
+          status: 'approved', 
+          receipt: approvedPayment
+        }
       });
     } else {
       res.status(400).json({
@@ -1006,6 +1173,58 @@ async approvePayment(req, res) {
       message: "Failed to approve payment",
       error: error.message
     });
+  }
+},
+
+// Helper function to update monthly_rent from payment
+async updateMonthlyRentFromPayment(payment) {
+  const conn = await db.getConnection();
+  
+  try {
+    // Get the monthly_rent record for this specific month
+    const [monthlyRecord] = await conn.execute(
+      `SELECT id, rent, paid, balance FROM monthly_rent 
+       WHERE tenant_id = ? AND month = ? AND year = ?`,
+      [payment.tenant_id, payment.month, payment.year]
+    );
+    
+    if (monthlyRecord.length > 0) {
+      // Update existing record
+      const newPaid = parseFloat(monthlyRecord[0].paid) + parseFloat(payment.amount);
+      const rent = parseFloat(monthlyRecord[0].rent);
+      const newBalance = Math.max(0, rent - newPaid);
+      const status = newPaid >= rent ? 'paid' : (newPaid > 0 ? 'partial' : 'pending');
+      
+      await conn.execute(
+        `UPDATE monthly_rent 
+         SET paid = ?, balance = ?, status = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [newPaid, newBalance, status, monthlyRecord[0].id]
+      );
+    } else {
+      // Create new record if it doesn't exist
+      await conn.execute(
+        `INSERT INTO monthly_rent (tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          payment.tenant_id,
+          payment.month,
+          payment.year,
+          payment.total_amount || payment.amount,
+          payment.amount,
+          Math.max(0, (payment.total_amount || payment.amount) - payment.amount),
+          0,
+          'partial'
+        ]
+      );
+    }
+    
+    conn.release();
+    return true;
+  } catch (error) {
+    console.error("Error updating monthly_rent:", error);
+    conn.release();
+    return false;
   }
 },
 

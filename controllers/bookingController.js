@@ -144,8 +144,12 @@ const bookingController = {
         }
       }
 
-      // Normalize booking type
-      data.bookingType = data.bookingType === "short" ? "daily" : "monthly";
+// Normalize booking type - handle both frontend values
+if (data.bookingType === "short" || data.bookingType === "daily") {
+    data.bookingType = "daily";  // Short stay
+} else if (data.bookingType === "long" || data.bookingType === "monthly") {
+    data.bookingType = "monthly"; // Long stay
+}
       data.paymentStatus = "pending";
       data.tenantId = null;
 
@@ -347,47 +351,138 @@ const bookingController = {
         const discountAmount = parseFloat(data.discountAmount);
         const hasOffer = data.offerCode && data.offerCode !== '';
 
-        // Payment 1: RENT payment with discounted amount (only for first month)
-        if (discountedRent > 0) {
-          const currentDate = new Date();
-          const moveInDate = data.moveInDate || data.checkInDate;
-          const paymentMonth = moveInDate ? new Date(moveInDate).toLocaleString('default', { month: 'long' }) : currentDate.toLocaleString('default', { month: 'long' });
-          const paymentYear = moveInDate ? new Date(moveInDate).getFullYear() : currentDate.getFullYear();
-          const neBalance = Number(data.rentAmount) - Number(data.discountedRent) - Number(data.discountAmount);
-          const rentPaymentStatus = Number(neBalance) === 0 ?  "paid" : neBalance > 0 && Number(neBalance) < Number(data.rentAmount)-Number(discountAmount) ? 'partial': "pending";
-          const rentPayment = await Payment.create({
-            tenant_id: tenant.id,
-            booking_id: booking.id,
-            amount: discountedRent,
-            total_amount: data.rentAmount,
-            newbalance: neBalance,
-            discount_amount: discountAmount,
-            payment_date: moveInDate || currentDate.toISOString().split('T')[0],
-            payment_mode: "online",
-            payment_type: "rent",
-            month: paymentMonth,
-            year: paymentYear,
-            remark: `Rent payment for ${data.roomNumber} - Bed ${data.bedNumber} | Original: ₹${originalRent.toLocaleString()} | Discount: ₹${discountAmount.toLocaleString()} | Offer: ${data.offerCode || 'None'} | Valid only for first month`,
-            status: rentPaymentStatus,
-          });
-        }
+        // Get move-in date or check-in date
+      const moveInDate = data.moveInDate || data.checkInDate;
+      const moveInDateObj = moveInDate ? new Date(moveInDate) : new Date();
+      const paymentMonth = moveInDateObj.toLocaleString('default', { month: 'long' });
+      const paymentYear = moveInDateObj.getFullYear();
 
-        // Payment 2: SECURITY DEPOSIT payment (full amount, no discount)
-        if (securityDeposit > 0) {
-          const depositPayment = await Payment.create({
-            tenant_id: tenant.id,
-            booking_id: booking.id,
-            total_amount: securityDeposit,
-            amount: securityDeposit,
-            payment_date: data.moveInDate || data.checkInDate || new Date().toISOString().split('T')[0],
-            payment_mode: "online",
-            payment_type: "security_deposit",
-            month: null,
-            year: null,
-            remark: `Security deposit for ${data.roomNumber} - Bed ${data.bedNumber}`,
-            status: "paid"
-          });
+
+      // Payment 1: RENT payment with discounted amount (FIRST MONTH - FULLY PAID)
+  if (discountedRent > 0) {
+    // For first month with offer, the discounted amount is fully paid
+    // So new_balance should be 0, status should be 'paid'
+    const rentPayment = await Payment.create({
+      tenant_id: tenant.id,
+      booking_id: booking.id,
+      amount: discountedRent,
+      total_amount: discountedRent,  // Total is the discounted amount since that's what they pay
+      new_balance: 0,  // Fully paid, no balance
+      discount_amount: discountAmount,
+      payment_date: moveInDate || new Date().toISOString().split('T')[0],
+      payment_mode: "online",
+      payment_type: "rent",
+      month: paymentMonth,
+      year: paymentYear,
+      transaction_id: data.transaction_id,
+      remark: `Rent payment for ${data.roomNumber} - Bed ${data.bedNumber} | Original: ₹${originalRent.toLocaleString()} | Discount: ₹${discountAmount.toLocaleString()} | Offer: ${data.offerCode || 'None'} | First month fully paid Transaction: ${data.transaction_id}`,
+      status: "paid"  // ✅ Set to 'paid' since they paid online
+    });
+  }
+
+  // Payment 2: SECURITY DEPOSIT payment (full amount, fully paid)
+  if (securityDeposit > 0) {
+    const depositPayment = await Payment.create({
+      tenant_id: tenant.id,
+      booking_id: booking.id,
+      total_amount: securityDeposit,
+      amount: securityDeposit,
+      new_balance: 0,  // Fully paid
+      payment_date: moveInDate || new Date().toISOString().split('T')[0],
+      payment_mode: "online",
+      payment_type: "security_deposit",
+      month: paymentMonth,
+      year: paymentYear,
+       transaction_id: data.transaction_id, 
+      remark: `Security deposit for ${data.roomNumber} - Bed ${data.bedNumber} | Transaction: ${data.transaction_id}`,
+      status: "paid"  // ✅ Set to 'paid'
+    });
+  }
+
+  // ========== STEP 5: CREATE MONTHLY RENT RECORDS ==========
+  const checkInDate = data.moveInDate || data.checkInDate;
+  if (checkInDate && data.bookingType === "monthly") {
+    const startDate = new Date(checkInDate);
+    const currentDate = new Date();
+    let createdCount = 0;
+    
+    // Generate months from check-in date to current date
+    let tempDate = new Date(startDate);
+    tempDate.setDate(1); // Start from first day of month
+    
+    while (tempDate <= currentDate) {
+      const monthName = tempDate.toLocaleString('default', { month: 'long' });
+      const year = tempDate.getFullYear();
+      
+      // Check if record already exists
+      const [existing] = await conn.execute(
+        `SELECT id FROM monthly_rent WHERE tenant_id = ? AND month = ? AND year = ?`,
+        [tenant.id, monthName, year]
+      );
+      
+      if (existing.length === 0) {
+        // Calculate rent amount (first month gets discount and is FULLY PAID)
+        let rentAmount = originalRent;
+        let discountApplied = 0;
+        let paidAmount = 0;
+        let balance = rentAmount;
+        let status = 'pending';
+        
+        const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
+                             tempDate.getFullYear() === startDate.getFullYear());
+        
+         // 🔧 FIX: For first month, it should be FULLY PAID regardless of offer
+      if (isFirstMonth) {
+        if (hasOffer && discountedRent < originalRent) {
+          // With offer: use discounted rent
+          rentAmount = discountedRent;
+          discountApplied = discountAmount;
         }
+        // ✅ FIRST MONTH IS ALWAYS PAID (since payment is made online)
+        paidAmount = rentAmount;  // ← CHANGE THIS: was 0, now rentAmount
+        balance = 0;              // ← CHANGE THIS: was rentAmount, now 0
+        status = 'paid';          // ← CHANGE THIS: was 'pending', now 'paid'
+      }
+        
+        // Insert monthly rent record
+        await conn.execute(
+          `INSERT INTO monthly_rent (tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            tenant.id,
+            monthName,
+            year,
+            rentAmount,
+            paidAmount,  // ✅ Set paid amount for first month
+            balance,     // ✅ Set balance to 0 for first month
+            discountApplied,
+            status       // ✅ Set status to 'paid' for first month
+          ]
+        );
+        createdCount++;
+        console.log(`✅ Created monthly rent record for ${monthName} ${year} - Rent: ₹${rentAmount}, Paid: ₹${paidAmount}, Status: ${status}`);
+      } else {
+        // Update existing record if it's the first month and should be paid
+        const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
+                             tempDate.getFullYear() === startDate.getFullYear());
+        
+        if (hasOffer && isFirstMonth && discountedRent < originalRent) {
+          await conn.execute(
+            `UPDATE monthly_rent 
+             SET paid = ?, balance = ?, status = ?, updated_at = NOW()
+             WHERE tenant_id = ? AND month = ? AND year = ?`,
+            [discountedRent, 0, 'paid', tenant.id, monthName, year]
+          );
+          console.log(`✅ Updated monthly rent record for ${monthName} ${year} to paid status`);
+        }
+      }
+      
+      tempDate.setMonth(tempDate.getMonth() + 1);
+    }
+    
+    console.log(`📊 Created/Updated ${createdCount} monthly rent records for tenant ${tenant.id}`);
+  }
+
 
         // Update booking payment status
         await Booking.updatePaymentStatus(booking.id, "paid");

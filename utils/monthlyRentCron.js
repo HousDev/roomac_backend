@@ -35,8 +35,7 @@ async createMonthlyRentRecords() {
       INNER JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
       INNER JOIN rooms r ON ba.room_id = r.id
       LEFT JOIN bookings b ON t.id = b.tenant_id AND b.status = 'active'
-      WHERE t.status = 'active'
-        AND t.is_active = 1
+      WHERE  t.is_active = 1
         AND t.check_in_date IS NOT NULL
     `);
     
