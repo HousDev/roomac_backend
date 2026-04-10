@@ -85,7 +85,7 @@ const Payment = {
       FROM payments p
       LEFT JOIN tenants t ON p.tenant_id = t.id
       WHERE p.booking_id = ? 
-      ORDER BY p.created_at DESC
+      ORDER BY p.id DESC
     `;
     try {
       const [rows] = await db.execute(query, [bookingId]);
@@ -123,7 +123,7 @@ const Payment = {
       LEFT JOIN rooms r ON ba.room_id = r.id
       LEFT JOIN properties prop ON r.property_id = prop.id
       WHERE p.tenant_id = ? 
-      ORDER BY p.payment_date DESC
+      ORDER BY p.id DESC
     `;
     try {
       const [rows] = await db.execute(query, [tenantId]);
@@ -208,9 +208,8 @@ groupMonthlySummary(payments) {
   });
 },
 
-// models/paymentModel.js - Update getTenantPaymentFormData
 
-// models/paymentModel.js - Update getTenantPaymentFormData
+// models/paymentModel.js - Fixed getTenantPaymentFormData (NO recalculation)
 
 async getTenantPaymentFormData(tenantId) {
   try {
@@ -246,8 +245,16 @@ async getTenantPaymentFormData(tenantId) {
     const originalMonthlyRent = parseFloat(tenant.monthly_rent) || 0;
     const securityDepositAmount = parseFloat(tenant.property_security_deposit) || 0;
     
-    // Use check_in_date or fallback to assignment_date
-    const checkInDate = tenant.check_in_date || tenant.assignment_date;
+    // Get check-in date
+    let checkInDate = tenant.check_in_date || tenant.assignment_date;
+    if (typeof checkInDate === 'string') {
+      checkInDate = checkInDate.split('T')[0];
+    }
+    
+    const startDate = new Date(checkInDate);
+    const currentDate = new Date();
+    
+    console.log(`🔄 Processing tenant ${tenantId}, check-in date: ${checkInDate}`);
     
     // Step 2: Get booking with offer information
     const [bookingData] = await db.execute(`
@@ -259,7 +266,7 @@ async getTenantPaymentFormData(tenantId) {
         b.offer_title,
         b.discount_type,
         b.total_amount,
-        b.monthly_rent,
+        b.monthly_rent as discounted_monthly_rent,
         b.security_deposit,
         b.created_at as booking_date,
         b.check_in_date,
@@ -278,7 +285,7 @@ async getTenantPaymentFormData(tenantId) {
     
     if (bookingData.length > 0 && bookingData[0].offer_code) {
       hasOffer = true;
-      const bookingMonthlyRent = parseFloat(bookingData[0].monthly_rent);
+      const bookingMonthlyRent = parseFloat(bookingData[0].discounted_monthly_rent);
       const discountFromBooking = parseFloat(bookingData[0].discount_amount);
       
       if (!isNaN(discountFromBooking) && discountFromBooking > 0) {
@@ -302,131 +309,176 @@ async getTenantPaymentFormData(tenantId) {
       };
     }
     
-    // Step 4: Get rent payments - INCLUDE BOTH pending AND approved status
-    const [rentPayments] = await db.execute(`
-      SELECT 
-        id,
-        amount,
-        total_amount,
-        discount_amount,
-        previous_balance,
-        new_balance,
-        payment_date,
-        payment_mode,
-        month,
-        year,
-        transaction_id,
-        bank_name,
-        status,
-        remark
-      FROM payments 
-      WHERE tenant_id = ? 
-        AND payment_type = 'rent'
-        AND status IN ('approved', 'pending')  -- ✅ Include both approved and pending
-      ORDER BY payment_date ASC
-    `, [tenantId]);
-    
-    // Step 5: Get all months from check-in to current date
-    const startDate = new Date(checkInDate);
-    const currentDate = new Date();
-    const monthWiseHistory = [];
-    
+    // ========== STEP 4: AUTO-CREATE MISSING MONTHLY RENT RECORDS ==========
+    // Generate ALL months from check-in date to current date
+    const allMonths = [];
     let tempDate = new Date(startDate);
+    tempDate.setDate(1);
+    
     while (tempDate <= currentDate) {
       const monthName = tempDate.toLocaleString('default', { month: 'long' });
       const year = tempDate.getFullYear();
       const monthNum = tempDate.getMonth() + 1;
       const monthKey = `${year}-${String(monthNum).padStart(2, '0')}`;
-      
-      // Calculate rent for this month (apply discount only for first month)
-      let rentAmount = originalMonthlyRent;
-      let discountApplied = 0;
       const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
                            tempDate.getFullYear() === startDate.getFullYear());
       
+      let rentAmount = originalMonthlyRent;
+      let discountApplied = 0;
+      
       if (hasOffer && isFirstMonth && discountedFirstMonthRent < originalMonthlyRent) {
         rentAmount = discountedFirstMonthRent;
-        discountApplied = originalMonthlyRent - discountedFirstMonthRent;
+        discountApplied = discountAmountValue;
       }
       
-      monthWiseHistory.push({
+      allMonths.push({
         month: monthName,
         year: year,
+        month_num: monthNum,
         month_key: monthKey,
         rent: rentAmount,
-        original_rent: originalMonthlyRent,
-        discount_applied: discountApplied,
-        paid: 0,
-        pending: rentAmount,
-        status: 'pending',
-        payments: []
+        discount: discountApplied,
+        isFirstMonth: isFirstMonth
       });
       
       tempDate.setMonth(tempDate.getMonth() + 1);
     }
     
-    // Step 6: Distribute payments to months (oldest-first)
-    const sortedPayments = [...rentPayments].sort((a, b) => 
-      new Date(a.payment_date) - new Date(b.payment_date)
-    );
-    
-    for (const payment of sortedPayments) {
-      let remainingAmount = parseFloat(payment.amount || 0);
+    // Create missing records (but DON'T update existing ones)
+    let createdCount = 0;
+    for (const monthData of allMonths) {
+      const [existing] = await db.execute(`
+        SELECT id FROM monthly_rent 
+        WHERE tenant_id = ? AND month = ? AND year = ?
+      `, [tenantId, monthData.month, monthData.year]);
       
-      for (const month of monthWiseHistory) {
-        if (remainingAmount <= 0) break;
-        
-        if (month.pending > 0) {
-          const amountToPay = Math.min(remainingAmount, month.pending);
-          month.paid += amountToPay;
-          month.pending -= amountToPay;
-          remainingAmount -= amountToPay;
-          
-          month.payments.push({
-            id: payment.id,
-            date: payment.payment_date,
-            mode: payment.payment_mode,
-            bank_name: payment.bank_name,
-            transaction_id: payment.transaction_id,
-            remark: payment.remark,
-            amount: amountToPay,
-            status: payment.status
-          });
-        }
+      if (existing.length === 0) {
+        await db.execute(`
+          INSERT INTO monthly_rent (
+            tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `, [
+          tenantId,
+          monthData.month,
+          monthData.year,
+          monthData.rent,
+          0,
+          monthData.rent,
+          monthData.discount,
+          'pending'
+        ]);
+        createdCount++;
+        console.log(`✅ Created missing record for ${monthData.month} ${monthData.year} - Rent: ₹${monthData.rent}`);
       }
     }
     
-    // Step 7: Determine status for each month
-    for (const month of monthWiseHistory) {
-      if (month.paid >= month.rent) {
-        month.status = 'paid';
-        month.pending = 0;
-      } else if (month.paid > 0) {
-        month.status = 'partial';
-      } else {
-        month.status = 'pending';
-      }
+    if (createdCount > 0) {
+      console.log(`📊 Created ${createdCount} missing monthly rent records for tenant ${tenantId}`);
     }
     
-    // Step 8: Calculate totals
+    // ========== STEP 5: READ DIRECTLY FROM monthly_rent table (NO RECALCULATION) ==========
+    const [monthlyRecords] = await db.execute(`
+      SELECT 
+        id,
+        month,
+        year,
+        rent,
+        paid,
+        balance,
+        discount,
+        status,
+        created_at,
+        updated_at
+      FROM monthly_rent 
+      WHERE tenant_id = ?
+      ORDER BY 
+        year ASC,
+        FIELD(month, 
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ) ASC
+    `, [tenantId]);
+    
+    console.log(`📊 Found ${monthlyRecords.length} monthly rent records for tenant ${tenantId}`);
+    
+    // Log current values for debugging
+    for (const record of monthlyRecords) {
+      console.log(`   ${record.month} ${record.year}: Rent=${record.rent}, Paid=${record.paid}, Balance=${record.balance}, Status=${record.status}`);
+    }
+    
+    // ========== STEP 6: Get payments for reference only (NOT for distribution) ==========
+    const [rentPayments] = await db.execute(`
+      SELECT 
+        id,
+        amount,
+        payment_date,
+        payment_mode,
+        bank_name,
+        transaction_id,
+        remark,
+        month,
+        year,
+        status
+      FROM payments 
+      WHERE tenant_id = ? 
+        AND payment_type = 'rent'
+      ORDER BY payment_date ASC
+    `, [tenantId]);
+    
+    // ========== STEP 7: Build month history DIRECTLY from monthly_rent records ==========
+    const monthWiseHistory = monthlyRecords.map(record => {
+      // Find payments for this specific month (just for display, not for calculation)
+      const monthPayments = rentPayments.filter(p => 
+        p.month === record.month && p.year === parseInt(record.year)
+      );
+      
+      return {
+        month: record.month,
+        year: parseInt(record.year),
+        month_key: `${record.year}-${String(new Date(Date.parse(record.month + " 1, " + record.year)).getMonth() + 1).padStart(2, '0')}`,
+        month_num: new Date(Date.parse(record.month + " 1, " + record.year)).getMonth() + 1,
+        rent: parseFloat(record.rent),
+        original_rent: parseFloat(record.rent) + parseFloat(record.discount),
+        discount_applied: parseFloat(record.discount),
+        paid: parseFloat(record.paid),    // DIRECT from database
+        pending: parseFloat(record.balance), // DIRECT from database
+        status: record.status,             // DIRECT from database
+        has_discount: parseFloat(record.discount) > 0,
+        isFirstMonth: parseFloat(record.discount) > 0,
+        payments: monthPayments.map(p => ({
+          id: p.id,
+          date: p.payment_date,
+          mode: p.payment_mode,
+          bank_name: p.bank_name,
+          transaction_id: p.transaction_id,
+          remark: p.remark,
+          amount: p.amount,
+          status: p.status
+        }))
+      };
+    });
+    
+    // ========== STEP 8: Calculate totals from the data ==========
     const totalPaid = monthWiseHistory.reduce((sum, m) => sum + m.paid, 0);
     const totalExpected = monthWiseHistory.reduce((sum, m) => sum + m.rent, 0);
     const totalPending = monthWiseHistory.reduce((sum, m) => sum + m.pending, 0);
     
-    // Step 9: Create unpaid months list
+    // ========== STEP 9: Create unpaid months list ==========
     const unpaidMonths = monthWiseHistory
       .filter(m => m.pending > 0)
       .map(m => ({
         month: m.month,
+        month_num: m.month_num,
         year: m.year,
+        month_key: m.month_key,
         pending: m.pending,
         rent: m.rent,
         original_rent: m.original_rent,
-        has_discount: m.discount_applied > 0,
-        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()}`
+        has_discount: m.has_discount,
+        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()} (Rent: ₹${m.rent.toLocaleString()})${m.has_discount ? ' *Discounted' : ''}`
       }));
     
-    // Step 10: Get security deposit payments
+    // ========== STEP 10: Get security deposit info ==========
     const [securityDepositPayments] = await db.execute(`
       SELECT 
         id,
@@ -444,7 +496,7 @@ async getTenantPaymentFormData(tenantId) {
     const totalDepositPaid = securityDepositPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const depositPending = Math.max(0, securityDepositAmount - totalDepositPaid);
     
-    // Step 11: Build final result
+    // ========== STEP 11: Build final result ==========
     const result = {
       tenant: {
         id: tenant.id,
@@ -466,7 +518,7 @@ async getTenantPaymentFormData(tenantId) {
       has_offer: hasOffer,
       offer_info: offerDetails,
       check_in_date: checkInDate,
-      joining_date: new Date(checkInDate).toISOString().split('T')[0],
+      joining_date: new Date(startDate).toISOString().split('T')[0],
       total_months_since_joining: monthWiseHistory.length,
       month_wise_history: monthWiseHistory,
       unpaid_months: unpaidMonths,
@@ -488,10 +540,46 @@ async getTenantPaymentFormData(tenantId) {
       note: hasOffer ? `🎉 Offer Applied: ${offerDetails.code} - First month rent: ₹${discountedFirstMonthRent.toLocaleString()} (was ₹${originalMonthlyRent.toLocaleString()})` : null
     };
     
+    console.log(`✅ Returning ${monthWiseHistory.length} months for tenant ${tenantId}`);
+    
     return result;
     
   } catch (error) {
     console.error("Error in getTenantPaymentFormData:", error);
+    throw error;
+  }
+},
+
+async createPaymentAndUpdateMonthlyRent(paymentData) {
+  const conn = await db.getConnection();
+  await conn.beginTransaction();
+  
+  try {
+    // Create payment record
+    const paymentResult = await this.create(paymentData);
+    
+    // Update or create monthly_rent record for this month
+    const [existing] = await conn.execute(
+      `SELECT id, paid FROM monthly_rent 
+       WHERE tenant_id = ? AND month = ? AND year = ?`,
+      [paymentData.tenant_id, paymentData.month, paymentData.year]
+    );
+    
+    if (existing.length > 0) {
+      const newPaid = parseFloat(existing[0].paid) + parseFloat(paymentData.amount);
+      await conn.execute(
+        `UPDATE monthly_rent SET paid = ?, updated_at = NOW() WHERE id = ?`,
+        [newPaid, existing[0].id]
+      );
+    }
+    
+    await conn.commit();
+    conn.release();
+    return paymentResult;
+    
+  } catch (error) {
+    await conn.rollback();
+    conn.release();
     throw error;
   }
 },
@@ -603,7 +691,7 @@ async updateMonthlyRentAfterApproval(paymentId) {
       params.push(filters.month, filters.year);
     }
 
-    query += ' ORDER BY p.created_at DESC';
+    query += ' ORDER BY p.id DESC';
 
     try {
       const [rows] = await db.execute(query, params);
@@ -655,7 +743,7 @@ async getReceipts(filters = {}) {
     params.push(filters.start_date, filters.end_date);
   }
 
-  query += ' ORDER BY p.payment_date DESC';
+  query += ' ORDER BY p.id DESC';
 
   try {
     const [rows] = await db.execute(query, params);

@@ -733,32 +733,6 @@ const TenantController = {
         }
       }
 
-      // Validate check-in date (cannot be in the past)
-      if (tenantData.check_in_date) {
-        const checkInDate = new Date(tenantData.check_in_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        if (checkInDate < today) {
-          // Clean up uploaded files
-          if (req.files) {
-            Object.values(req.files).forEach((fileArray) => {
-              if (fileArray && fileArray.length > 0) {
-                fileArray.forEach((file) => {
-                  if (file.path && fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                  }
-                });
-              }
-            });
-          }
-
-          return res.status(400).json({
-            success: false,
-            message: "Check-in date cannot be in the past",
-          });
-        }
-      }
 
       // --- IMPORTANT PART: Check for existing soft-deleted tenant ---
       // Check if tenant with same email or phone already exists (including soft-deleted)

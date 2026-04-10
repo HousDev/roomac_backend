@@ -9,6 +9,7 @@ const {
 } = require("../middleware/uploadDocument");
 const adminAuth = require("../middleware/adminAuth");
 const uploadImport = require("../middleware/uploadImport");
+const db = require("../config/db");
 
 
 // Import route - add this BEFORE other POST routes
@@ -210,5 +211,89 @@ router.get('/current-room', adminAuth, async (req, res) => {
   }
 });
 
+
+// Get tenants by room
+router.get("/room/:roomId", async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    
+    // Fix: Use 'is_active' instead of 'status' column
+    const [rows] = await db.execute(`
+      SELECT DISTINCT 
+        t.id, 
+        t.full_name, 
+        t.phone, 
+        t.email,
+        t.salutation,
+        t.country_code
+      FROM tenants t
+      INNER JOIN bed_assignments ba ON t.id = ba.tenant_id
+      WHERE ba.room_id = ? 
+        AND ba.is_available = 0 
+        AND t.is_active = 1
+        AND t.deleted_at IS NULL
+      ORDER BY t.full_name ASC
+    `, [roomId]);
+    
+    res.json({ 
+      success: true, 
+      data: rows 
+    });
+  } catch (error) {
+    console.error("Error fetching tenants by room:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// routes/tenantRoutes.js - Update filter endpoint
+
+router.get("/filter", async (req, res) => {
+  try {
+    const { propertyId, roomId, search } = req.query;
+    let query = `
+      SELECT DISTINCT 
+        t.id, 
+        t.full_name, 
+        t.phone, 
+        t.email,
+        t.salutation,
+        t.country_code,
+        r.room_number, 
+        p.name as property_name
+      FROM tenants t
+      INNER JOIN bed_assignments ba ON t.id = ba.tenant_id
+      INNER JOIN rooms r ON ba.room_id = r.id
+      INNER JOIN properties p ON r.property_id = p.id
+      WHERE ba.is_available = 0 
+        AND t.is_active = 1
+        AND t.deleted_at IS NULL
+    `;
+    let params = [];
+
+    if (propertyId) {
+      query += " AND r.property_id = ?";
+      params.push(propertyId);
+    }
+    if (roomId) {
+      query += " AND ba.room_id = ?";
+      params.push(roomId);
+    }
+    if (search) {
+      query += " AND (t.full_name LIKE ? OR t.phone LIKE ?)";
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    query += " ORDER BY t.full_name ASC";
+    
+    const [rows] = await db.execute(query, params);
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error("Error in filter endpoint:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 module.exports = router;
