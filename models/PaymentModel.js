@@ -209,7 +209,8 @@ groupMonthlySummary(payments) {
 },
 
 
-// models/paymentModel.js - Fixed getTenantPaymentFormData (NO recalculation)
+
+// models/paymentModel.js - Updated getTenantPaymentFormData with prorated calculation
 
 async getTenantPaymentFormData(tenantId) {
   try {
@@ -309,8 +310,63 @@ async getTenantPaymentFormData(tenantId) {
       };
     }
     
-    // ========== STEP 4: AUTO-CREATE MISSING MONTHLY RENT RECORDS ==========
-    // Generate ALL months from check-in date to current date
+    // ========== STEP 4: Helper function for prorated calculation ==========
+    const calculateProratedRent = (checkInDate, monthlyRent) => {
+      const checkIn = new Date(checkInDate);
+      const year = checkIn.getFullYear();
+      const month = checkIn.getMonth();
+      
+      // Get last day of the month
+      const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+      const checkInDay = checkIn.getDate();
+      
+      // If check-in is on 1st, no proration needed
+      if (checkInDay === 1) {
+        return {
+          is_prorated: false,
+          prorated_rent: monthlyRent,
+          days_count: lastDayOfMonth,
+          daily_rate: monthlyRent / lastDayOfMonth,
+          check_in_day: checkInDay,
+          total_days: lastDayOfMonth
+        };
+      }
+      
+      // Calculate days from check-in to end of month (inclusive)
+      const daysCount = lastDayOfMonth - checkInDay + 1;
+      const dailyRate = monthlyRent / lastDayOfMonth;
+      const proratedRent = Math.round(dailyRate * daysCount);
+      
+      return {
+        is_prorated: true,
+        prorated_rent: proratedRent,
+        days_count: daysCount,
+        daily_rate: Math.round(dailyRate * 100) / 100,
+        check_in_day: checkInDay,
+        total_days: lastDayOfMonth,
+        month_name: checkIn.toLocaleString('default', { month: 'long' }),
+        year: year
+      };
+    };
+    
+    // Calculate first month rent (with proration and offer)
+    const proratedInfo = calculateProratedRent(startDate, originalMonthlyRent);
+    let effectiveFirstMonthRent = proratedInfo.prorated_rent;
+    
+    // Apply offer discount if exists (on prorated amount or full amount?)
+    if (hasOffer) {
+      // Option: Apply discount to the prorated amount
+      effectiveFirstMonthRent = Math.max(0, effectiveFirstMonthRent - discountAmountValue);
+      // Or if offer should apply to full month rent, use discountedFirstMonthRent and then prorate
+      // effectiveFirstMonthRent = calculateProratedRent(startDate, discountedFirstMonthRent).prorated_rent;
+    }
+    
+    console.log(`📊 First month calculation: ${proratedInfo.is_prorated ? `Prorated - ${proratedInfo.days_count} days at ₹${proratedInfo.daily_rate}/day = ₹${proratedInfo.prorated_rent}` : `Full month - ₹${proratedInfo.prorated_rent}`}`);
+    if (hasOffer) {
+      console.log(`   Offer applied: -₹${discountAmountValue} = ₹${effectiveFirstMonthRent}`);
+    }
+    
+    // ========== STEP 5: AUTO-CREATE MISSING MONTHLY RENT RECORDS ==========
     const allMonths = [];
     let tempDate = new Date(startDate);
     tempDate.setDate(1);
@@ -325,10 +381,18 @@ async getTenantPaymentFormData(tenantId) {
       
       let rentAmount = originalMonthlyRent;
       let discountApplied = 0;
+      let isProrated = false;
+      let proratedDays = 0;
+      let proratedDailyRate = 0;
+      let originalRentForDisplay = originalMonthlyRent;
       
-      if (hasOffer && isFirstMonth && discountedFirstMonthRent < originalMonthlyRent) {
-        rentAmount = discountedFirstMonthRent;
-        discountApplied = discountAmountValue;
+      if (isFirstMonth) {
+        rentAmount = effectiveFirstMonthRent;
+        discountApplied = hasOffer ? discountAmountValue : 0;
+        isProrated = proratedInfo.is_prorated;
+        proratedDays = proratedInfo.days_count;
+        proratedDailyRate = proratedInfo.daily_rate;
+        originalRentForDisplay = originalMonthlyRent;
       }
       
       allMonths.push({
@@ -337,14 +401,19 @@ async getTenantPaymentFormData(tenantId) {
         month_num: monthNum,
         month_key: monthKey,
         rent: rentAmount,
+        original_rent: originalRentForDisplay,
         discount: discountApplied,
-        isFirstMonth: isFirstMonth
+        isFirstMonth: isFirstMonth,
+        isProrated: isProrated,
+        proratedDays: proratedDays,
+        proratedDailyRate: proratedDailyRate,
+        checkInDay: isFirstMonth ? startDate.getDate() : null
       });
       
       tempDate.setMonth(tempDate.getMonth() + 1);
     }
     
-    // Create missing records (but DON'T update existing ones)
+    // Create missing records in monthly_rent table (store the calculated rent amount directly)
     let createdCount = 0;
     for (const monthData of allMonths) {
       const [existing] = await db.execute(`
@@ -353,6 +422,7 @@ async getTenantPaymentFormData(tenantId) {
       `, [tenantId, monthData.month, monthData.year]);
       
       if (existing.length === 0) {
+        // Store the calculated rent amount (already prorated if needed)
         await db.execute(`
           INSERT INTO monthly_rent (
             tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at
@@ -368,7 +438,7 @@ async getTenantPaymentFormData(tenantId) {
           'pending'
         ]);
         createdCount++;
-        console.log(`✅ Created missing record for ${monthData.month} ${monthData.year} - Rent: ₹${monthData.rent}`);
+        console.log(`✅ Created record for ${monthData.month} ${monthData.year} - Rent: ₹${monthData.rent}${monthData.isProrated ? ` (Prorated: ${monthData.proratedDays} days @ ₹${monthData.proratedDailyRate}/day)` : ''}`);
       }
     }
     
@@ -376,7 +446,7 @@ async getTenantPaymentFormData(tenantId) {
       console.log(`📊 Created ${createdCount} missing monthly rent records for tenant ${tenantId}`);
     }
     
-    // ========== STEP 5: READ DIRECTLY FROM monthly_rent table (NO RECALCULATION) ==========
+    // ========== STEP 6: READ DIRECTLY FROM monthly_rent table ==========
     const [monthlyRecords] = await db.execute(`
       SELECT 
         id,
@@ -406,7 +476,7 @@ async getTenantPaymentFormData(tenantId) {
       console.log(`   ${record.month} ${record.year}: Rent=${record.rent}, Paid=${record.paid}, Balance=${record.balance}, Status=${record.status}`);
     }
     
-    // ========== STEP 6: Get payments for reference only (NOT for distribution) ==========
+    // ========== STEP 7: Get payments for reference ==========
     const [rentPayments] = await db.execute(`
       SELECT 
         id,
@@ -425,12 +495,14 @@ async getTenantPaymentFormData(tenantId) {
       ORDER BY payment_date ASC
     `, [tenantId]);
     
-    // ========== STEP 7: Build month history DIRECTLY from monthly_rent records ==========
-    const monthWiseHistory = monthlyRecords.map(record => {
-      // Find payments for this specific month (just for display, not for calculation)
+    // ========== STEP 8: Build month history with prorated info for frontend ==========
+    const monthWiseHistory = monthlyRecords.map((record, index) => {
       const monthPayments = rentPayments.filter(p => 
         p.month === record.month && p.year === parseInt(record.year)
       );
+      
+      // Get prorated info for first month from our calculation
+      const firstMonthData = allMonths.find(m => m.month === record.month && m.year === parseInt(record.year));
       
       return {
         month: record.month,
@@ -440,11 +512,16 @@ async getTenantPaymentFormData(tenantId) {
         rent: parseFloat(record.rent),
         original_rent: parseFloat(record.rent) + parseFloat(record.discount),
         discount_applied: parseFloat(record.discount),
-        paid: parseFloat(record.paid),    // DIRECT from database
-        pending: parseFloat(record.balance), // DIRECT from database
-        status: record.status,             // DIRECT from database
+        paid: parseFloat(record.paid),
+        pending: parseFloat(record.balance),
+        status: record.status,
         has_discount: parseFloat(record.discount) > 0,
-        isFirstMonth: parseFloat(record.discount) > 0,
+        isFirstMonth: index === 0,
+        // Prorated info for display (only for first month if applicable)
+        is_prorated: firstMonthData?.isProrated || false,
+        prorated_days: firstMonthData?.proratedDays || 0,
+        prorated_daily_rate: firstMonthData?.proratedDailyRate || 0,
+        check_in_day: firstMonthData?.checkInDay || null,
         payments: monthPayments.map(p => ({
           id: p.id,
           date: p.payment_date,
@@ -458,12 +535,12 @@ async getTenantPaymentFormData(tenantId) {
       };
     });
     
-    // ========== STEP 8: Calculate totals from the data ==========
+    // ========== STEP 9: Calculate totals ==========
     const totalPaid = monthWiseHistory.reduce((sum, m) => sum + m.paid, 0);
     const totalExpected = monthWiseHistory.reduce((sum, m) => sum + m.rent, 0);
     const totalPending = monthWiseHistory.reduce((sum, m) => sum + m.pending, 0);
     
-    // ========== STEP 9: Create unpaid months list ==========
+    // ========== STEP 10: Create unpaid months list ==========
     const unpaidMonths = monthWiseHistory
       .filter(m => m.pending > 0)
       .map(m => ({
@@ -475,10 +552,11 @@ async getTenantPaymentFormData(tenantId) {
         rent: m.rent,
         original_rent: m.original_rent,
         has_discount: m.has_discount,
-        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()} (Rent: ₹${m.rent.toLocaleString()})${m.has_discount ? ' *Discounted' : ''}`
+        is_prorated: m.is_prorated,
+        display: `${m.month} ${m.year} - ₹${m.pending.toLocaleString()} (Rent: ₹${m.rent.toLocaleString()})${m.has_discount ? ' *Discounted' : ''}${m.is_prorated ? ' *Prorated' : ''}`
       }));
     
-    // ========== STEP 10: Get security deposit info ==========
+    // ========== STEP 11: Get security deposit info ==========
     const [securityDepositPayments] = await db.execute(`
       SELECT 
         id,
@@ -496,7 +574,7 @@ async getTenantPaymentFormData(tenantId) {
     const totalDepositPaid = securityDepositPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
     const depositPending = Math.max(0, securityDepositAmount - totalDepositPaid);
     
-    // ========== STEP 11: Build final result ==========
+    // ========== STEP 12: Build final result with prorated info ==========
     const result = {
       tenant: {
         id: tenant.id,
@@ -513,7 +591,7 @@ async getTenantPaymentFormData(tenantId) {
         property_name: tenant.property_name
       },
       monthly_rent: originalMonthlyRent,
-      discounted_first_month_rent: discountedFirstMonthRent,
+      discounted_first_month_rent: effectiveFirstMonthRent,
       discount_amount: discountAmountValue,
       has_offer: hasOffer,
       offer_info: offerDetails,
@@ -529,6 +607,14 @@ async getTenantPaymentFormData(tenantId) {
       suggested_amount: unpaidMonths.length > 0 ? unpaidMonths[0].pending : 0,
       payment_count: rentPayments.length,
       last_payment_date: rentPayments.length > 0 ? rentPayments[rentPayments.length - 1].payment_date : null,
+      // Add prorated info for first month display
+      first_month_prorated: monthWiseHistory[0]?.is_prorated ? {
+        days: monthWiseHistory[0].prorated_days,
+        daily_rate: monthWiseHistory[0].prorated_daily_rate,
+        check_in_day: monthWiseHistory[0].check_in_day,
+        original_rent: originalMonthlyRent,
+        actual_rent: monthWiseHistory[0].rent
+      } : null,
       security_deposit: {
         total: securityDepositAmount,
         paid: totalDepositPaid,
@@ -537,7 +623,8 @@ async getTenantPaymentFormData(tenantId) {
         payments: securityDepositPayments,
         last_payment_date: securityDepositPayments.length > 0 ? securityDepositPayments[0].payment_date : null
       },
-      note: hasOffer ? `🎉 Offer Applied: ${offerDetails.code} - First month rent: ₹${discountedFirstMonthRent.toLocaleString()} (was ₹${originalMonthlyRent.toLocaleString()})` : null
+      note: hasOffer ? `🎉 Offer Applied: ${offerDetails.code} - First month rent: ₹${effectiveFirstMonthRent.toLocaleString()} (was ₹${originalMonthlyRent.toLocaleString()})` : 
+            (proratedInfo.is_prorated ? `📅 Prorated first month: ${proratedInfo.days_count} days at ₹${proratedInfo.daily_rate}/day = ₹${effectiveFirstMonthRent.toLocaleString()}` : null)
     };
     
     console.log(`✅ Returning ${monthWiseHistory.length} months for tenant ${tenantId}`);

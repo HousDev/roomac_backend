@@ -400,88 +400,110 @@ if (data.bookingType === "short" || data.bookingType === "daily") {
   }
 
   // ========== STEP 5: CREATE MONTHLY RENT RECORDS ==========
-  const checkInDate = data.moveInDate || data.checkInDate;
-  if (checkInDate && data.bookingType === "monthly") {
-    const startDate = new Date(checkInDate);
-    const currentDate = new Date();
-    let createdCount = 0;
+// controllers/bookingController.js - Update monthly rent creation
+
+// ========== STEP 5: CREATE MONTHLY RENT RECORDS ==========
+const checkInDate = data.moveInDate || data.checkInDate;
+if (checkInDate && data.bookingType === "monthly") {
+  const startDate = new Date(checkInDate);
+  const currentDate = new Date();
+  let createdCount = 0;
+  
+  // Helper function for prorated calculation
+  const calculateProratedRent = (checkInDate, monthlyRent) => {
+    const checkIn = new Date(checkInDate);
+    const lastDayOfMonth = new Date(checkIn.getFullYear(), checkIn.getMonth() + 1, 0).getDate();
+    const checkInDay = checkIn.getDate();
     
-    // Generate months from check-in date to current date
-    let tempDate = new Date(startDate);
-    tempDate.setDate(1); // Start from first day of month
-    
-    while (tempDate <= currentDate) {
-      const monthName = tempDate.toLocaleString('default', { month: 'long' });
-      const year = tempDate.getFullYear();
-      
-      // Check if record already exists
-      const [existing] = await conn.execute(
-        `SELECT id FROM monthly_rent WHERE tenant_id = ? AND month = ? AND year = ?`,
-        [tenant.id, monthName, year]
-      );
-      
-      if (existing.length === 0) {
-        // Calculate rent amount (first month gets discount and is FULLY PAID)
-        let rentAmount = originalRent;
-        let discountApplied = 0;
-        let paidAmount = 0;
-        let balance = rentAmount;
-        let status = 'pending';
-        
-        const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
-                             tempDate.getFullYear() === startDate.getFullYear());
-        
-         // 🔧 FIX: For first month, it should be FULLY PAID regardless of offer
-      if (isFirstMonth) {
-        if (hasOffer && discountedRent < originalRent) {
-          // With offer: use discounted rent
-          rentAmount = discountedRent;
-          discountApplied = discountAmount;
-        }
-        // ✅ FIRST MONTH IS ALWAYS PAID (since payment is made online)
-        paidAmount = rentAmount;  // ← CHANGE THIS: was 0, now rentAmount
-        balance = 0;              // ← CHANGE THIS: was rentAmount, now 0
-        status = 'paid';          // ← CHANGE THIS: was 'pending', now 'paid'
-      }
-        
-        // Insert monthly rent record
-        await conn.execute(
-          `INSERT INTO monthly_rent (tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [
-            tenant.id,
-            monthName,
-            year,
-            rentAmount,
-            paidAmount,  // ✅ Set paid amount for first month
-            balance,     // ✅ Set balance to 0 for first month
-            discountApplied,
-            status       // ✅ Set status to 'paid' for first month
-          ]
-        );
-        createdCount++;
-        console.log(`✅ Created monthly rent record for ${monthName} ${year} - Rent: ₹${rentAmount}, Paid: ₹${paidAmount}, Status: ${status}`);
-      } else {
-        // Update existing record if it's the first month and should be paid
-        const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
-                             tempDate.getFullYear() === startDate.getFullYear());
-        
-        if (hasOffer && isFirstMonth && discountedRent < originalRent) {
-          await conn.execute(
-            `UPDATE monthly_rent 
-             SET paid = ?, balance = ?, status = ?, updated_at = NOW()
-             WHERE tenant_id = ? AND month = ? AND year = ?`,
-            [discountedRent, 0, 'paid', tenant.id, monthName, year]
-          );
-          console.log(`✅ Updated monthly rent record for ${monthName} ${year} to paid status`);
-        }
-      }
-      
-      tempDate.setMonth(tempDate.getMonth() + 1);
+    if (checkInDay === 1) {
+      return { is_prorated: false, rent: monthlyRent, days: lastDayOfMonth, daily_rate: monthlyRent / lastDayOfMonth };
     }
     
-    console.log(`📊 Created/Updated ${createdCount} monthly rent records for tenant ${tenant.id}`);
+    const daysCount = lastDayOfMonth - checkInDay + 1;
+    const dailyRate = monthlyRent / lastDayOfMonth;
+    const proratedRent = Math.round(dailyRate * daysCount);
+    
+    return {
+      is_prorated: true,
+      rent: proratedRent,
+      days: daysCount,
+      daily_rate: Math.round(dailyRate * 100) / 100,
+      check_in_day: checkInDay,
+      total_days: lastDayOfMonth
+    };
+  };
+  
+  // Calculate first month rent
+  let firstMonthRent = originalRent;
+  let isFirstMonthProrated = false;
+  let proratedDays = 0;
+  let proratedDailyRate = 0;
+  
+  const proratedInfo = calculateProratedRent(startDate, originalRent);
+  firstMonthRent = proratedInfo.rent;
+  isFirstMonthProrated = proratedInfo.is_prorated;
+  proratedDays = proratedInfo.days;
+  proratedDailyRate = proratedInfo.daily_rate;
+  
+  // Apply offer discount if exists
+  if (hasOffer && discountedRent < originalRent) {
+    firstMonthRent = Math.max(0, firstMonthRent - discountAmount);
   }
+  
+  console.log(`📊 First month: ${isFirstMonthProrated ? `Prorated - ${proratedDays} days @ ₹${proratedDailyRate}/day = ₹${firstMonthRent}` : `Full month - ₹${firstMonthRent}`}`);
+  
+  // Generate months
+  let tempDate = new Date(startDate);
+  tempDate.setDate(1);
+  
+  while (tempDate <= currentDate) {
+    const monthName = tempDate.toLocaleString('default', { month: 'long' });
+    const year = tempDate.getFullYear();
+    
+    const [existing] = await conn.execute(
+      `SELECT id FROM monthly_rent WHERE tenant_id = ? AND month = ? AND year = ?`,
+      [tenant.id, monthName, year]
+    );
+    
+    if (existing.length === 0) {
+      let rentAmount = originalRent;
+      let discountApplied = 0;
+      let paidAmount = 0;
+      let balance = rentAmount;
+      let status = 'pending';
+      
+      const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
+                           tempDate.getFullYear() === startDate.getFullYear());
+      
+      if (isFirstMonth) {
+        rentAmount = firstMonthRent;
+        discountApplied = hasOffer ? discountAmount : 0;
+        paidAmount = rentAmount;  // Fully paid
+        balance = 0;
+        status = 'paid';
+      }
+      
+      await conn.execute(`
+        INSERT INTO monthly_rent (
+          tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      `, [
+        tenant.id,
+        monthName,
+        year,
+        rentAmount,
+        paidAmount,
+        balance,
+        discountApplied,
+        status
+      ]);
+      createdCount++;
+      console.log(`✅ Created record for ${monthName} ${year} - Rent: ₹${rentAmount}${isFirstMonth && isFirstMonthProrated ? ` (Prorated: ${proratedDays} days)` : ''}`);
+    }
+    
+    tempDate.setMonth(tempDate.getMonth() + 1);
+  }
+}
 
 
         // Update booking payment status
