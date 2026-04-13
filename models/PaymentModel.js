@@ -447,7 +447,7 @@ async getTenantPaymentFormData(tenantId) {
     }
     
     // ========== STEP 6: READ DIRECTLY FROM monthly_rent table ==========
-    const [monthlyRecords] = await db.execute(`
+     const [monthlyRecords] = await db.execute(`
       SELECT 
         id,
         month,
@@ -457,6 +457,8 @@ async getTenantPaymentFormData(tenantId) {
         balance,
         discount,
         status,
+        days,
+        original_rent,
         created_at,
         updated_at
       FROM monthly_rent 
@@ -495,47 +497,62 @@ async getTenantPaymentFormData(tenantId) {
       ORDER BY payment_date ASC
     `, [tenantId]);
     
-    // ========== STEP 8: Build month history with prorated info for frontend ==========
-    const monthWiseHistory = monthlyRecords.map((record, index) => {
-      const monthPayments = rentPayments.filter(p => 
-        p.month === record.month && p.year === parseInt(record.year)
-      );
+    // ========== BUILD MONTH HISTORY ==========
+    const monthWiseHistory = monthlyRecords.map(record => {
+      const rent = parseFloat(record.rent);
+      const originalRent = parseFloat(record.original_rent);
+      const discount = parseFloat(record.discount);
+      const paid = parseFloat(record.paid);
+      const balance = parseFloat(record.balance);
+      const days = record.days;
+      const isProrated = days !== null && days > 0;
       
-      // Get prorated info for first month from our calculation
-      const firstMonthData = allMonths.find(m => m.month === record.month && m.year === parseInt(record.year));
+      // Calculate daily rate for display (only if prorated)
+      let dailyRate = 0;
+      let totalDaysInMonth = 0;
+      if (isProrated && days > 0 && originalRent) {
+        const date = new Date(Date.parse(record.month + " 1, " + record.year));
+        totalDaysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+        dailyRate = Math.round((originalRent / totalDaysInMonth) * 100) / 100;
+      }
+      
+      // Determine what to show as "original rent"
+      let displayOriginalRent = null;
+      if (originalRent && originalRent > rent) {
+        displayOriginalRent = originalRent;  // Show strikethrough for prorated month
+      } else if (discount > 0) {
+        displayOriginalRent = rent + discount;  // Show original before discount
+      }
       
       return {
         month: record.month,
         year: parseInt(record.year),
         month_key: `${record.year}-${String(new Date(Date.parse(record.month + " 1, " + record.year)).getMonth() + 1).padStart(2, '0')}`,
         month_num: new Date(Date.parse(record.month + " 1, " + record.year)).getMonth() + 1,
-        rent: parseFloat(record.rent),
-        original_rent: parseFloat(record.rent) + parseFloat(record.discount),
-        discount_applied: parseFloat(record.discount),
-        paid: parseFloat(record.paid),
-        pending: parseFloat(record.balance),
+        rent: rent,
+        original_rent: displayOriginalRent,
+        discount_applied: discount,
+        paid: paid,
+        pending: balance,
         status: record.status,
-        has_discount: parseFloat(record.discount) > 0,
-        isFirstMonth: index === 0,
-        // Prorated info for display (only for first month if applicable)
-        is_prorated: firstMonthData?.isProrated || false,
-        prorated_days: firstMonthData?.proratedDays || 0,
-        prorated_daily_rate: firstMonthData?.proratedDailyRate || 0,
-        check_in_day: firstMonthData?.checkInDay || null,
-        payments: monthPayments.map(p => ({
-          id: p.id,
-          date: p.payment_date,
-          mode: p.payment_mode,
-          bank_name: p.bank_name,
-          transaction_id: p.transaction_id,
-          remark: p.remark,
-          amount: p.amount,
-          status: p.status
-        }))
+        has_discount: discount > 0,
+        is_prorated: isProrated,
+        prorated_days: days || 0,
+        prorated_daily_rate: dailyRate,
+        total_days_in_month: totalDaysInMonth,
+        payments: [] // Add payments if needed
       };
     });
+   // Get first month prorated info for badge display
+    const firstMonth = monthWiseHistory[0];
+    const firstMonthProrated = firstMonth?.is_prorated ? {
+      days: firstMonth.prorated_days,
+      daily_rate: firstMonth.prorated_daily_rate,
+      original_rent: firstMonth.original_rent,
+      actual_rent: firstMonth.rent
+    } : null;
     
-    // ========== STEP 9: Calculate totals ==========
+    // Calculate totals
     const totalPaid = monthWiseHistory.reduce((sum, m) => sum + m.paid, 0);
     const totalExpected = monthWiseHistory.reduce((sum, m) => sum + m.rent, 0);
     const totalPending = monthWiseHistory.reduce((sum, m) => sum + m.pending, 0);
@@ -598,7 +615,11 @@ async getTenantPaymentFormData(tenantId) {
       check_in_date: checkInDate,
       joining_date: new Date(startDate).toISOString().split('T')[0],
       total_months_since_joining: monthWiseHistory.length,
-      month_wise_history: monthWiseHistory,
+       month_wise_history: monthWiseHistory,
+      total_paid: totalPaid,
+      total_expected: totalExpected,
+      total_pending: totalPending,
+      first_month_prorated: firstMonthProrated,
       unpaid_months: unpaidMonths,
       recent_months: monthWiseHistory.slice(-3).reverse(),
       total_paid: totalPaid,

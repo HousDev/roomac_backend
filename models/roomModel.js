@@ -747,7 +747,7 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         `UPDATE bed_assignments 
          SET tenant_id = ?, tenant_gender = ?, tenant_rent = ?, is_couple = ?, is_available = FALSE 
          WHERE id = ?`,
-        [tenantId, tenantGender, finalRent, finalIsCouple, bedId]
+        [tenantId, tenantGender, tenantRent, finalIsCouple, bedId]
       );
       
       if (updateResult.affectedRows === 0) {
