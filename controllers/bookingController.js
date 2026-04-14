@@ -261,6 +261,7 @@ if (data.bookingType === "short" || data.bookingType === "daily") {
               ba.id, 
               ba.room_id, 
               ba.bed_number, 
+              ba.tenant_rent,
               r.room_number,
               p.name as property_name
              FROM bed_assignments ba
@@ -331,7 +332,7 @@ if (data.bookingType === "short" || data.bookingType === "daily") {
           parseInt(data.bedNumber),
           tenant.id,
           data.gender,
-          rentValue,
+          data.originalRentAmount,
           isCoupleValue,
         );
 
@@ -344,63 +345,86 @@ if (data.bookingType === "short" || data.bookingType === "daily") {
           });
         }
 
-        // ========== STEP 4: CREATE PAYMENTS ==========
-        const originalRent = parseFloat(data.rentAmount);
-        const discountedRent = parseFloat(data.discountedRent);
-        const securityDeposit = parseFloat(data.securityDeposit);
-        const discountAmount = parseFloat(data.discountAmount);
-        const hasOffer = data.offerCode && data.offerCode !== '';
+ // ========== STEP 4: CREATE PAYMENTS ==========
+// First, define all the variables we need
+const originalRent = parseFloat(data.rentAmount) || parseFloat(data.originalRentAmount) || 0;
+const discountedRent = parseFloat(data.discountedRentAmount) || parseFloat(data.monthlyRent) || 0;
+const securityDeposit = parseFloat(data.securityDeposit) || 0;
+const discountAmount = parseFloat(data.discountAmount) || 0;
+const hasOffer = data.offerCode && data.offerCode !== '';
+const proratedDaysFromFrontend = parseInt(data.prorated_days) || 0;
+const proratedDailyRateFromFrontend = parseFloat(data.prorated_daily_rate) || 0;
+const calculatedRentAmount = parseFloat(data.calculatedRentAmount) || 0;
+const originalRentAmount = parseFloat(data.originalRentAmount) || parseFloat(data.rentAmount) || 0;
 
-        // Get move-in date or check-in date
-      const moveInDate = data.moveInDate || data.checkInDate;
-      const moveInDateObj = moveInDate ? new Date(moveInDate) : new Date();
-      const paymentMonth = moveInDateObj.toLocaleString('default', { month: 'long' });
-      const paymentYear = moveInDateObj.getFullYear();
+console.log(`💰 Rent payment calculation:`);
+console.log(`   Original Rent: ₹${originalRentAmount}`);
+console.log(`   Prorated Days: ${proratedDaysFromFrontend}`);
+console.log(`   Discount Amount: ₹${discountAmount}`);
+console.log(`   Discounted Rent Amount: ₹${discountedRent}`);
+console.log(`   Calculated Rent Amount: ₹${calculatedRentAmount}`);
 
+// Calculate the correct rent amount to pay
+let rentAmountToPay = 0;
 
-      // Payment 1: RENT payment with discounted amount (FIRST MONTH - FULLY PAID)
-  if (discountedRent > 0) {
-    // For first month with offer, the discounted amount is fully paid
-    // So new_balance should be 0, status should be 'paid'
-    const rentPayment = await Payment.create({
-      tenant_id: tenant.id,
-      booking_id: booking.id,
-      amount: discountedRent,
-      total_amount: discountedRent,  // Total is the discounted amount since that's what they pay
-      new_balance: 0,  // Fully paid, no balance
-      discount_amount: discountAmount,
-      payment_date: moveInDate || new Date().toISOString().split('T')[0],
-      payment_mode: "online",
-      payment_type: "rent",
-      month: paymentMonth,
-      year: paymentYear,
-      transaction_id: data.transaction_id,
-      remark: `Rent payment for ${data.roomNumber} - Bed ${data.bedNumber} | Original: ₹${originalRent.toLocaleString()} | Discount: ₹${discountAmount.toLocaleString()} | Offer: ${data.offerCode || 'None'} | First month fully paid Transaction: ${data.transaction_id}`,
-      status: "paid"  // ✅ Set to 'paid' since they paid online
-    });
-  }
+if (hasOffer) {
+  // For offer bookings, use discountedRentAmount (already includes proration + discount)
+  rentAmountToPay = discountedRent;
+} else {
+  // For non-offer bookings, use calculatedRentAmount (prorated amount)
+  rentAmountToPay = calculatedRentAmount || discountedRent || parseFloat(data.monthlyRent) || 0;
+}
 
-  // Payment 2: SECURITY DEPOSIT payment (full amount, fully paid)
-  if (securityDeposit > 0) {
-    const depositPayment = await Payment.create({
-      tenant_id: tenant.id,
-      booking_id: booking.id,
-      total_amount: securityDeposit,
-      amount: securityDeposit,
-      new_balance: 0,  // Fully paid
-      payment_date: moveInDate || new Date().toISOString().split('T')[0],
-      payment_mode: "online",
-      payment_type: "security_deposit",
-      month: paymentMonth,
-      year: paymentYear,
-       transaction_id: data.transaction_id, 
-      remark: `Security deposit for ${data.roomNumber} - Bed ${data.bedNumber} | Transaction: ${data.transaction_id}`,
-      status: "paid"  // ✅ Set to 'paid'
-    });
-  }
+console.log(`💰 Final Rent payment amount: ₹${rentAmountToPay}`);
 
-  // ========== STEP 5: CREATE MONTHLY RENT RECORDS ==========
-// controllers/bookingController.js - Update monthly rent creation
+// Get move-in date or check-in date
+const moveInDate = data.moveInDate || data.checkInDate;
+const moveInDateObj = moveInDate ? new Date(moveInDate) : new Date();
+const paymentMonth = moveInDateObj.toLocaleString('default', { month: 'long' });
+const paymentYear = moveInDateObj.getFullYear();
+
+// ========== PAYMENT 1: RENT PAYMENT ==========
+if (rentAmountToPay > 0) {
+  const rentPayment = await Payment.create({
+    tenant_id: tenant.id,
+    booking_id: booking.id,
+    amount: rentAmountToPay,
+    total_amount: rentAmountToPay,
+    new_balance: 0,
+    discount_amount: discountAmount,
+    payment_date: moveInDate || new Date().toISOString().split('T')[0],
+    payment_mode: "online",
+    payment_type: "rent",
+    month: paymentMonth,
+    year: paymentYear,
+    transaction_id: data.transaction_id,
+    remark: `Rent payment for ${data.roomNumber} - Bed ${data.bedNumber} | Original: ₹${originalRentAmount.toLocaleString()} | ${proratedDaysFromFrontend > 0 ? `Prorated: ${proratedDaysFromFrontend} days | ` : ''}Discount: ₹${discountAmount.toLocaleString()} | Offer: ${data.offerCode || 'None'} | Transaction: ${data.transaction_id}`,
+    status: "paid"
+  });
+  console.log(`✅ Rent payment created: ₹${rentAmountToPay}`);
+} else {
+  console.log(`⚠️ Rent amount is 0, skipping rent payment`);
+}
+
+// ========== PAYMENT 2: SECURITY DEPOSIT PAYMENT ==========
+if (securityDeposit > 0) {
+  const depositPayment = await Payment.create({
+    tenant_id: tenant.id,
+    booking_id: booking.id,
+    total_amount: securityDeposit,
+    amount: securityDeposit,
+    new_balance: 0,
+    payment_date: moveInDate || new Date().toISOString().split('T')[0],
+    payment_mode: "online",
+    payment_type: "security_deposit",
+    month: paymentMonth,
+    year: paymentYear,
+    transaction_id: data.transaction_id,
+    remark: `Security deposit for ${data.roomNumber} - Bed ${data.bedNumber} | Transaction: ${data.transaction_id}`,
+    status: "paid"
+  });
+  console.log(`✅ Security deposit payment created: ₹${securityDeposit}`);
+}
 
 // ========== STEP 5: CREATE MONTHLY RENT RECORDS ==========
 const checkInDate = data.moveInDate || data.checkInDate;
@@ -409,50 +433,43 @@ if (checkInDate && data.bookingType === "monthly") {
   const currentDate = new Date();
   let createdCount = 0;
   
-  // Helper function for prorated calculation
-  const calculateProratedRent = (checkInDate, monthlyRent) => {
-    const checkIn = new Date(checkInDate);
-    const lastDayOfMonth = new Date(checkIn.getFullYear(), checkIn.getMonth() + 1, 0).getDate();
-    const checkInDay = checkIn.getDate();
-    
-    if (checkInDay === 1) {
-      return { is_prorated: false, rent: monthlyRent, days: lastDayOfMonth, daily_rate: monthlyRent / lastDayOfMonth };
-    }
-    
-    const daysCount = lastDayOfMonth - checkInDay + 1;
-    const dailyRate = monthlyRent / lastDayOfMonth;
-    const proratedRent = Math.round(dailyRate * daysCount);
-    
-    return {
-      is_prorated: true,
-      rent: proratedRent,
-      days: daysCount,
-      daily_rate: Math.round(dailyRate * 100) / 100,
-      check_in_day: checkInDay,
-      total_days: lastDayOfMonth
-    };
-  };
+  // Use the already defined variables
+  console.log(`📊 Booking data for first month calculation:`);
+  console.log(`   Original Rent: ₹${originalRentAmount}`);
+  console.log(`   Prorated Days: ${proratedDaysFromFrontend}`);
+  console.log(`   Prorated Daily Rate: ₹${proratedDailyRateFromFrontend}`);
+  console.log(`   Calculated Rent (before discount): ₹${calculatedRentAmount}`);
+  console.log(`   Discounted Rent Amount: ₹${discountedRent}`);
+  console.log(`   Discount Amount: ₹${discountAmount}`);
+  console.log(`   Has Offer: ${hasOffer}`);
   
-  // Calculate first month rent
-  let firstMonthRent = originalRent;
-  let isFirstMonthProrated = false;
-  let proratedDays = 0;
-  let proratedDailyRate = 0;
+  // Calculate first month rent - use discountedRent for offer bookings
+  let firstMonthRent = discountedRent;  // This already has proration + discount applied
+  let firstMonthDays = proratedDaysFromFrontend;
+  let discountApplied = discountAmount;
   
-  const proratedInfo = calculateProratedRent(startDate, originalRent);
-  firstMonthRent = proratedInfo.rent;
-  isFirstMonthProrated = proratedInfo.is_prorated;
-  proratedDays = proratedInfo.days;
-  proratedDailyRate = proratedInfo.daily_rate;
-  
-  // Apply offer discount if exists
-  if (hasOffer && discountedRent < originalRent) {
-    firstMonthRent = Math.max(0, firstMonthRent - discountAmount);
+  // If no offer, use the calculated prorated amount
+  if (!hasOffer) {
+    firstMonthRent = calculatedRentAmount;
   }
   
-  console.log(`📊 First month: ${isFirstMonthProrated ? `Prorated - ${proratedDays} days @ ₹${proratedDailyRate}/day = ₹${firstMonthRent}` : `Full month - ₹${firstMonthRent}`}`);
+  // If frontend didn't send calculated rent, calculate it
+  if (firstMonthRent === 0 && firstMonthDays > 0) {
+    const lastDayOfMonth = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
+    const dailyRate = originalRentAmount / lastDayOfMonth;
+    firstMonthRent = Math.round(dailyRate * firstMonthDays);
+    console.log(`   Calculated prorated rent: ₹${firstMonthRent}`);
+  }
   
-  // Generate months
+  // If no proration (check-in on 1st), use full rent
+  if (firstMonthDays === 0 || startDate.getDate() === 1) {
+    firstMonthRent = hasOffer ? discountedRent : originalRentAmount;
+    firstMonthDays = null;
+  }
+  
+  console.log(`📊 First month final: ${firstMonthDays ? `Prorated - ${firstMonthDays} days = ₹${firstMonthRent}` : `Full month - ₹${firstMonthRent}`}`);
+  
+  // Generate months from check-in to current date
   let tempDate = new Date(startDate);
   tempDate.setDate(1);
   
@@ -466,27 +483,33 @@ if (checkInDate && data.bookingType === "monthly") {
     );
     
     if (existing.length === 0) {
-      let rentAmount = originalRent;
-      let discountApplied = 0;
+      let rentAmount = originalRentAmount;
+      let discountAmountForMonth = 0;
       let paidAmount = 0;
       let balance = rentAmount;
       let status = 'pending';
+      let daysCount = null;
+      let originalRentValue = null;
       
       const isFirstMonth = (tempDate.getMonth() === startDate.getMonth() && 
                            tempDate.getFullYear() === startDate.getFullYear());
       
       if (isFirstMonth) {
         rentAmount = firstMonthRent;
-        discountApplied = hasOffer ? discountAmount : 0;
-        paidAmount = rentAmount;  // Fully paid
+        discountAmountForMonth = discountApplied;
+        daysCount = firstMonthDays;
+        originalRentValue = originalRentAmount;
+        paidAmount = rentAmount;
         balance = 0;
         status = 'paid';
       }
       
       await conn.execute(`
         INSERT INTO monthly_rent (
-          tenant_id, month, year, rent, paid, balance, discount, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+          tenant_id, month, year, rent, paid, balance, discount, status,
+          days, original_rent,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `, [
         tenant.id,
         monthName,
@@ -494,11 +517,13 @@ if (checkInDate && data.bookingType === "monthly") {
         rentAmount,
         paidAmount,
         balance,
-        discountApplied,
-        status
+        discountAmountForMonth,
+        status,
+        daysCount,
+        originalRentValue
       ]);
       createdCount++;
-      console.log(`✅ Created record for ${monthName} ${year} - Rent: ₹${rentAmount}${isFirstMonth && isFirstMonthProrated ? ` (Prorated: ${proratedDays} days)` : ''}`);
+      console.log(`✅ Created record for ${monthName} ${year} - Rent: ₹${rentAmount}${daysCount ? ` (Prorated: ${daysCount} days)` : ''}${discountAmountForMonth > 0 ? ` (Discount: ₹${discountAmountForMonth})` : ''}`);
     }
     
     tempDate.setMonth(tempDate.getMonth() + 1);
