@@ -9,6 +9,10 @@ const { uploadProof } = require("../middleware/paymentUpload");
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
+const { getTemplate, replaceVariables } = require("../utils/templateService");
+const { sendEmail } = require("../utils/emailService");
+const PDFGenerator = require('../utils/pdfGenerator');
+const { generateLedgerHTML } = require('../utils/ledgerGenerator');
 
 // In paymentController.js - Professional Clean PDF Receipt Generator
 
@@ -367,6 +371,14 @@ async createPayment(req, res) {
         message: "No monthly rent records found for this tenant. Please ensure check-in date is set."
       });
     }
+    // After updating monthly_rent records, verify the totals
+const [updatedRecords] = await connection.execute(`
+  SELECT SUM(paid) as total_paid, SUM(balance) as total_pending 
+  FROM monthly_rent 
+  WHERE tenant_id = ?
+`, [paymentData.tenant_id]);
+
+console.log(`Tenant ${paymentData.tenant_id} - Total Paid: ${updatedRecords[0].total_paid}, Total Pending: ${updatedRecords[0].total_pending}`);
 
     // ========== STEP 2: Calculate payment distribution (oldest months first) ==========
     let remainingAmount = parseFloat(paymentData.amount);
@@ -956,45 +968,116 @@ async createDemandPayment(req, res) {
       due_date,
       payment_type: payment_type || 'rent',
       description,
-      late_fee: 0, // Always 0 since we removed late fee
+      late_fee: 0,
       created_by: req.user?.id || null
     };
 
     const newDemand = await Payment.createDemand(demandData);
 
-    // Create notification for tenant
-    if (newDemand) {
-      // Build notification message
-      let notificationMessage = `Payment request details:\n`;
-      notificationMessage += `Amount: ₹${amount}\n`;
-      notificationMessage += `Due Date: ${new Date(due_date).toLocaleDateString()}\n`;
-      notificationMessage += `Payment Type: ${payment_type}\n`;
-      if (description) {
-        notificationMessage += `Note: ${description}`;
+    // Send email notification if requested
+    let emailSent = false;
+    let emailError = null;
+
+    if (newDemand && send_email === true) {
+      try {
+        // Get tenant details with property info
+        const [tenantInfo] = await db.execute(`
+          SELECT 
+            t.id,
+            t.full_name as tenant_name,
+            t.email as tenant_email,
+            t.phone as tenant_phone,
+            r.room_number,
+            ba.bed_number,
+            p.name as property_name
+          FROM tenants t
+          LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
+          LEFT JOIN rooms r ON ba.room_id = r.id
+          LEFT JOIN properties p ON r.property_id = p.id
+          WHERE t.id = ?
+        `, [tenant_id]);
+
+        const tenant = tenantInfo[0];
+
+        if (!tenant || !tenant.tenant_email) {
+          console.log("Tenant email not found");
+          emailError = "Tenant email not found";
+        } else {
+          // Prepare variables for template
+          const variables = {
+            tenant_name: tenant.tenant_name || "Tenant",
+            amount: amount.toLocaleString('en-IN'),
+            due_date: new Date(due_date).toLocaleDateString('en-IN', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            }),
+            payment_type: payment_type === 'rent' ? 'Rent' : 'Security Deposit',
+            property_name: tenant.property_name || 'Property',
+            room_number: tenant.room_number || 'N/A',
+            bed_number: tenant.bed_number || '',
+            bed_info: tenant.bed_number ? `<p>🛏️ Bed: #${tenant.bed_number}</p>` : '',
+            payment_link: `${process.env.CLIENT_URL || 'http://localhost:3000'}/tenant/payments?demand_id=${newDemand.id}&action=pay`,
+            request_id: newDemand.id,
+            status: 'pending'
+          };
+
+          // Get email template
+          const template = await getTemplate("reminder", "email");
+          
+          // Replace variables in subject and content
+          const emailSubject = replaceVariables(template.subject, variables);
+          const emailBody = replaceVariables(template.content, variables);
+
+          // Send email
+          await sendEmail(tenant.tenant_email, emailSubject, emailBody);
+          emailSent = true;
+          console.log(`✅ Demand payment email sent to ${tenant.tenant_email}`);
+        }
+      } catch (emailErr) {
+        console.error("Failed to send demand payment email:", emailErr);
+        emailError = emailErr.message;
       }
+    }
 
-      // Import notification controller
-      const notificationController = require('../controllers/tenantNotificationController');
-      
-      await notificationController.createNotification({
-        tenantId: tenant_id,
-        title: `💰 Payment Request - ${payment_type === 'rent' ? 'Rent' : 'Security Deposit'}`,
-        message: notificationMessage,
-        notificationType: 'payment',
-        relatedEntityType: 'demand',
-        relatedEntityId: newDemand.id,
-        priority: 'high'
-      });
+    // Create notification for tenant (in-app notification)
+    if (newDemand) {
+      try {
+        const notificationController = require('../controllers/tenantNotificationController');
+        
+        let notificationMessage = `💰 Payment Request\n`;
+        notificationMessage += `Amount: ₹${amount.toLocaleString()}\n`;
+        notificationMessage += `Due Date: ${new Date(due_date).toLocaleDateString()}\n`;
+        notificationMessage += `Payment Type: ${payment_type === 'rent' ? 'Rent' : 'Security Deposit'}`;
+        if (description) {
+          notificationMessage += `\nNote: ${description}`;
+        }
 
-      
+        await notificationController.createNotification({
+          tenantId: tenant_id,
+          title: `💰 Payment Request - ${payment_type === 'rent' ? 'Rent' : 'Security Deposit'}`,
+          message: notificationMessage,
+          notificationType: 'payment',
+          relatedEntityType: 'demand',
+          relatedEntityId: newDemand.id,
+          priority: 'high'
+        });
+        console.log(`✅ In-app notification created for tenant ${tenant_id}`);
+      } catch (notifError) {
+        console.error("Failed to create in-app notification:", notifError);
+      }
     }
 
     res.status(201).json({
       success: true,
-      message: "Payment demand created successfully",
+      message: emailSent 
+        ? "Payment demand created and email sent successfully" 
+        : "Payment demand created successfully" + (emailError ? ` (Email failed: ${emailError})` : ""),
       data: {
         ...newDemand,
-        total_amount: amount
+        total_amount: amount,
+        email_sent: emailSent,
+        email_error: emailError
       }
     });
 
@@ -1452,6 +1535,351 @@ async createAdminNotification(req, res) {
       message: "Failed to create notification",
       error: error.message
     });
+  }
+},
+
+ async generateLedgerPDF(req, res) {
+    try {
+      const { tenantId } = req.params;
+      
+      // Fetch tenant data
+      const [tenantRows] = await db.execute(`
+        SELECT 
+          t.id,
+          t.full_name as name,
+          t.salutation,
+          t.phone,
+          t.country_code,
+          t.email,
+          t.check_in_date,
+          r.room_number,
+          ba.bed_number,
+          ba.tenant_rent as monthly_rent,
+          p.name as property_name,
+          p.address as property_address,
+          p.security_deposit
+        FROM tenants t
+        LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
+        LEFT JOIN rooms r ON ba.room_id = r.id
+        LEFT JOIN properties p ON r.property_id = p.id
+        WHERE t.id = ?
+      `, [tenantId]);
+      
+      if (tenantRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tenant not found'
+        });
+      }
+      
+      const tenant = tenantRows[0];
+      
+      // Fetch payments
+      const [paymentRows] = await db.execute(`
+        SELECT 
+          id,
+          amount,
+          payment_date,
+          payment_mode,
+          bank_name,
+          transaction_id,
+          month,
+          year,
+          remark,
+          status,
+          payment_type
+        FROM payments 
+        WHERE tenant_id = ?
+        ORDER BY payment_date DESC
+      `, [tenantId]);
+      
+      // Calculate summary
+      const isSuccessful = (status) => ['approved', 'paid'].includes(status?.toLowerCase());
+      const isPending = (status) => status?.toLowerCase() === 'pending';
+      const isRejected = (status) => status?.toLowerCase() === 'rejected';
+      
+      const payments = paymentRows.map(p => ({
+        ...p,
+        amount: parseFloat(p.amount)
+      }));
+      
+      const totalRentPaid = payments
+        .filter(p => p.payment_type === 'rent' && isSuccessful(p.status))
+        .reduce((sum, p) => sum + p.amount, 0);
+      
+      const totalRentPending = payments
+        .filter(p => p.payment_type === 'rent' && isPending(p.status))
+        .reduce((sum, p) => sum + p.amount, 0);
+      
+      const totalRentRejected = payments
+        .filter(p => p.payment_type === 'rent' && isRejected(p.status))
+        .reduce((sum, p) => sum + p.amount, 0);
+      
+      const totalDepositPaid = payments
+        .filter(p => p.payment_type === 'security_deposit' && isSuccessful(p.status))
+        .reduce((sum, p) => sum + p.amount, 0);
+      
+      const securityDeposit = parseFloat(tenant.security_deposit) || 0;
+      const depositPending = Math.max(0, securityDeposit - totalDepositPaid);
+      
+      // Group payments by month for summary
+      const monthlySummary = payments
+        .filter(p => p.payment_type === 'rent')
+        .reduce((acc, p) => {
+          const key = `${p.month} ${p.year}`;
+          if (!acc[key]) {
+            acc[key] = {
+              month: p.month,
+              year: p.year,
+              totalPaid: 0,
+              totalPending: 0
+            };
+          }
+          if (isSuccessful(p.status)) acc[key].totalPaid += p.amount;
+          if (isPending(p.status)) acc[key].totalPending += p.amount;
+          return acc;
+        }, {});
+      
+      // Get settings
+      const [settingsRows] = await db.execute(
+        'SELECT setting_key, value FROM app_settings'
+      );
+      
+      const settings = {};
+      settingsRows.forEach(row => {
+        settings[row.setting_key] = { value: row.value };
+      });
+      
+      const siteName = settings.site_name?.value || 'ROOMAC';
+      const siteTagline = settings.site_tagline?.value || 'Premium Living Spaces';
+      const contactAddress = settings.contact_address?.value || '';
+      const contactPhone = settings.contact_phone?.value || '';
+      const contactEmail = settings.contact_email?.value || '';
+      const companyLogo = settings.logo_header?.value 
+        ? `${process.env.CLIENT_URL || 'http://localhost:3001'}${settings.logo_header.value}`
+        : null;
+      
+      // Prepare data for HTML template
+      const templateData = {
+        tenant: {
+          name: tenant.name,
+          salutation: tenant.salutation || 'Mr.',
+          phone: tenant.phone,
+          country_code: tenant.country_code || '+91',
+          email: tenant.email,
+          check_in_date: tenant.check_in_date,
+          room_number: tenant.room_number,
+          bed_number: tenant.bed_number,
+          property_name: tenant.property_name,
+          property_address: tenant.property_address,
+          monthly_rent: parseFloat(tenant.monthly_rent) || 0,
+          security_deposit: securityDeposit
+        },
+        payments: payments,
+        siteName,
+        siteTagline,
+        contactAddress,
+        contactPhone,
+        contactEmail,
+        companyLogo,
+        summary: {
+          totalRentPaid,
+          totalRentPending,
+          totalRentRejected,
+          totalDepositPaid,
+          depositPending,
+          grandTotal: payments.filter(p => isSuccessful(p.status)).reduce((sum, p) => sum + p.amount, 0),
+          monthlySummary
+        }
+      };
+      
+      // Generate HTML
+      const htmlContent = generateLedgerHTML(templateData);
+      
+      // Generate PDF
+      const pdfBuffer = await PDFGenerator.generateLedgerPDF(htmlContent);
+      
+       // ✅ Return PDF as attachment for download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="ledger-${tenant.name.replace(/\s/g, '_')}-${Date.now()}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+      
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate PDF',
+        error: error.message
+      });
+    }
+  },
+  
+// Preview PDF - Returns PDF buffer for iframe display (NO NEW TAB)
+async previewLedgerPDF(req, res) {
+  try {
+    const { tenantId } = req.params;
+    
+    // ✅ FIX: Original rent from bed_assignments (NOT from monthly_rent table)
+    const [tenantRows] = await db.execute(`
+      SELECT 
+        t.id,
+        t.full_name as name,
+        t.salutation,
+        t.phone,
+        t.country_code,
+        t.email,
+        t.check_in_date,
+        r.room_number,
+        ba.bed_number,
+        ba.tenant_rent as monthly_rent,
+        p.name as property_name,
+        p.address as property_address,
+        p.security_deposit
+      FROM tenants t
+      LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
+      LEFT JOIN rooms r ON ba.room_id = r.id
+      LEFT JOIN properties p ON r.property_id = p.id
+      WHERE t.id = ?
+    `, [tenantId]);
+    
+    if (tenantRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Tenant not found' });
+    }
+    
+    const tenant = tenantRows[0];
+    
+    // Fetch payments
+    const [paymentRows] = await db.execute(`
+      SELECT 
+        id, amount, payment_date, payment_mode, bank_name,
+        transaction_id, month, year, remark, status, payment_type
+      FROM payments 
+      WHERE tenant_id = ?
+      ORDER BY payment_date DESC
+    `, [tenantId]);
+    
+    // Calculate summary
+    const isSuccessful = (status) => ['approved', 'paid'].includes(status?.toLowerCase());
+    const payments = paymentRows.map(p => ({ ...p, amount: parseFloat(p.amount) }));
+    
+    const totalRentPaid = payments
+      .filter(p => p.payment_type === 'rent' && isSuccessful(p.status))
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const totalRentPending = payments
+      .filter(p => p.payment_type === 'rent' && p.status === 'pending')
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const totalDepositPaid = payments
+      .filter(p => p.payment_type === 'security_deposit' && isSuccessful(p.status))
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const securityDeposit = parseFloat(tenant.security_deposit) || 0;
+    const depositPending = Math.max(0, securityDeposit - totalDepositPaid);
+    
+    // Get settings
+    const [settingsRows] = await db.execute('SELECT setting_key, value FROM app_settings');
+    const settings = {};
+    settingsRows.forEach(row => { settings[row.setting_key] = { value: row.value }; });
+    
+    const siteName = settings.site_name?.value || 'ROOMAC';
+    const siteTagline = settings.site_tagline?.value || 'Premium Living Spaces';
+    const contactAddress = settings.contact_address?.value || '';
+    const contactPhone = settings.contact_phone?.value || '';
+    const contactEmail = settings.contact_email?.value || '';
+    const companyLogo = settings.logo_header?.value 
+      ? `${process.env.CLIENT_URL || 'http://localhost:3001'}${settings.logo_header.value}`
+      : null;
+    
+    // Calculate months since joining
+    let monthsSinceJoining = 0;
+    if (tenant.check_in_date) {
+      const checkInDate = new Date(tenant.check_in_date);
+      const currentDate = new Date();
+      monthsSinceJoining = (currentDate.getFullYear() - checkInDate.getFullYear()) * 12 +
+                           (currentDate.getMonth() - checkInDate.getMonth()) + 1;
+      if (monthsSinceJoining < 0) monthsSinceJoining = 0;
+    }
+    
+    // In the summary object, ensure monthlySummary is properly populated
+const monthlySummary = payments
+  .filter(p => p.payment_type === 'rent')
+  .reduce((acc, p) => {
+    const key = `${p.month} ${p.year}`;
+    if (!acc[key]) {
+      acc[key] = {
+        month: p.month,
+        year: p.year,
+        totalPaid: 0,
+        totalPending: 0
+      };
+    }
+    const amount = parseFloat(p.amount);
+    if (isSuccessful(p.status)) {
+      acc[key].totalPaid += amount;
+    }
+    if (p.status === 'pending') {
+      acc[key].totalPending += amount;
+    }
+    return acc;
+  }, {});
+
+// Add total expected rent for each month
+const monthlyRentAmount = parseFloat(tenant.monthly_rent) || 0;
+Object.keys(monthlySummary).forEach(key => {
+  monthlySummary[key].totalRent = monthlyRentAmount;
+});
+    
+    // Prepare template data
+    const templateData = {
+      tenant: {
+        name: tenant.name,
+        salutation: tenant.salutation || 'Mr.',
+        phone: tenant.phone,
+        country_code: tenant.country_code || '+91',
+        email: tenant.email,
+        check_in_date: tenant.check_in_date,
+        room_number: tenant.room_number,
+        bed_number: tenant.bed_number,
+        property_name: tenant.property_name,
+        property_address: tenant.property_address,
+        monthly_rent: parseFloat(tenant.monthly_rent) || 0, // ✅ ORIGINAL RENT
+        security_deposit: securityDeposit,
+        months_since_joining: monthsSinceJoining
+      },
+      payments: payments,
+      siteName,
+      siteTagline,
+      contactAddress,
+      contactPhone,
+      contactEmail,
+      companyLogo,
+      summary: {
+        totalRentPaid,
+        totalRentPending,
+        totalRentRejected: 0,
+        totalDepositPaid,
+        depositPending,
+        grandTotal: payments.filter(p => isSuccessful(p.status)).reduce((sum, p) => sum + p.amount, 0),
+        monthlySummary
+      }
+    };
+    
+    // Generate HTML
+    const htmlContent = generateLedgerHTML(templateData);
+    
+    // Generate PDF buffer
+    const pdfBuffer = await PDFGenerator.generateLedgerPDF(htmlContent);
+    
+    // ✅ Return PDF for iframe (not new tab)
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="ledger-preview.pdf"');
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error('Preview Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to preview report', error: error.message });
   }
 }
 

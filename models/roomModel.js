@@ -647,8 +647,7 @@ async repairBedAssignments(roomId) {
     }
   },
 
-// Update assignBed to handle bed_type
-// models/roomModel.js
+// models/roomModel.js - Fix the assignBed function
 
 async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false, partnerDetails = null) {
   let connection;
@@ -691,10 +690,20 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       throw new Error(`Room only has ${roomData.total_bed} beds`);
     }
     
-    if (roomData.occupied_beds >= roomData.total_bed) {
+    // ✅ FIX: Check actual occupied beds from bed_assignments table
+    const [occupiedCount] = await connection.query(
+      `SELECT COUNT(*) as occupied_count 
+       FROM bed_assignments 
+       WHERE room_id = ? AND is_available = FALSE`,
+      [roomId]
+    );
+    
+    const actualOccupied = occupiedCount[0].occupied_count;
+    
+    if (actualOccupied >= roomData.total_bed) {
       await connection.rollback();
       connection.release();
-      throw new Error(`Room ${roomId} is already full (${roomData.occupied_beds}/${roomData.total_bed})`);
+      throw new Error(`Room ${roomId} is already full (${actualOccupied}/${roomData.total_bed})`);
     }
     
     // Use custom rent if provided, otherwise use room's default rent
@@ -733,10 +742,12 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     } else {
       const bed = bedCheck[0];
       
-      if (!bed.is_available) {
+      // ✅ FIX: Check if bed is available (is_available should be TRUE for empty bed)
+      // Also check if tenant_id is NULL (no tenant assigned)
+      if (bed.is_available === 0 || bed.is_available === false || bed.tenant_id !== null) {
         await connection.rollback();
         connection.release();
-        throw new Error(`Bed ${bedNumber} is already occupied by tenant ${bed.tenant_id}`);
+        throw new Error(`Bed ${bedNumber} is already occupied. Please select another bed.`);
       }
       
       bedId = bed.id;
@@ -746,18 +757,18 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       const [updateResult] = await connection.query(
         `UPDATE bed_assignments 
          SET tenant_id = ?, tenant_gender = ?, tenant_rent = ?, is_couple = ?, is_available = FALSE 
-         WHERE id = ?`,
-        [tenantId, tenantGender, tenantRent, finalIsCouple, bedId]
+         WHERE id = ? AND is_available = TRUE`,
+        [tenantId, tenantGender, finalRent, finalIsCouple, bedId]
       );
       
       if (updateResult.affectedRows === 0) {
         await connection.rollback();
         connection.release();
-        throw new Error(`Failed to assign bed ${bedNumber}`);
+        throw new Error(`Failed to assign bed ${bedNumber} - bed may have been taken`);
       }
     }
     
-    // 4. UPDATE TENANT WITH PARTNER DETAILS (INSIDE THE SAME TRANSACTION)
+    // 4. UPDATE TENANT WITH PARTNER DETAILS
     if (finalIsCouple && partnerDetails && partnerDetails.partner_full_name) {
       // Generate a unique couple ID
       const coupleId = `CPL-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
@@ -802,12 +813,6 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
     );
     
     const tenantName = tenant.length > 0 ? tenant[0].full_name : `ID ${tenantId}`;
-    
-    // 7. Verify the data was saved correctly
-    const [savedBed] = await connection.query(
-      `SELECT id, bed_type, tenant_rent, is_couple FROM bed_assignments WHERE id = ?`,
-      [bedId]
-    );
     
     await connection.commit();
     connection.release();

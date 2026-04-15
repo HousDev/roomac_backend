@@ -116,28 +116,26 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
     const where = [];
     const params = [];
 
-    if (search) {
-      where.push(
-        "(p.name LIKE ? OR p.area LIKE ? OR p.property_manager_name LIKE ? OR p.address LIKE ? OR p.state LIKE ? OR p.city_id LIKE ?)"
-      );
-      const q = `%${search}%`;
-      params.push(q, q, q, q, q, q);
-    }
+    if (search?.trim()) {
+  const q = `%${search.trim()}%`;
+  where.push("(p.name LIKE ? OR p.area LIKE ? OR p.property_manager_name LIKE ? OR p.address LIKE ? OR p.state LIKE ?)");
+  params.push(q, q, q, q, q);
+}
 
-    if (area) {
-      where.push("p.area = ?");
-      params.push(area);
-    }
+if (area?.trim()) {
+  where.push("p.area = ?");
+  params.push(area.trim());
+}
 
-    if (state) {
-      where.push("p.state = ?");
-      params.push(state);
-    }
+if (state?.trim()) {
+  where.push("p.state = ?");
+  params.push(state.trim());
+}
 
-    if (typeof is_active !== "undefined" && is_active !== null) {
-      where.push("p.is_active = ?");
-      params.push(is_active ? 1 : 0);
-    }
+if (is_active !== undefined && is_active !== null) {
+  where.push("p.is_active = ?");
+  params.push(Number(is_active));
+}
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -170,7 +168,7 @@ async findAll({ page = 1, pageSize = 20, search = "", area, is_active, state }) 
       left join  master_item_values as mi on p.property_manager_role = mi.id
          ${whereSql} 
       ORDER BY p.id ASC
-      LIMIT ? OFFSET ?`,
+      `,
       [...params, pageSize, offset],
     );
     // Get count for pagination
@@ -794,7 +792,6 @@ add("staff_id", property.staff_id, (v) => v ? parseInt(v) : null);
       add("terms_conditions", property.terms_conditions);
       add("terms_json", property.terms_json, (v) => v ? JSON.stringify(v) : null);
       add("additional_terms", property.additional_terms, (v) => JSON.stringify(v || []));
-      console.log("test prpoperty", property.tag);
       if (property.tags) {
         add("tags", property.tags, (v) => JSON.stringify(v || []));
       } else {
