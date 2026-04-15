@@ -5,9 +5,116 @@ const TenantModel = require("../models/tenantModel");
 const EnquiryModel = require("../models/enquiryModel");
 const RoomModel = require("../models/roomModel");
 const db = require("../config/db");
+const { getTemplate, replaceVariables } = require("../utils/templateService");
+const { sendEmail } = require("../utils/emailService");
+
 
 const bookingController = {
-  // controllers/bookingController.js
+  // Helper function to send booking confirmation email
+async sendBookingConfirmationEmail(bookingData, tenantData, propertyData, paymentData) {
+  try {
+    const template = await getTemplate("Payment", "email");
+
+    // Format dates
+    const moveInDateFormatted = bookingData.moveInDate ? new Date(bookingData.moveInDate).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    }) : 'Not specified';
+    
+    const checkOutDateFormatted = bookingData.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    }) : 'N/A';
+    
+    // ✅ Build conditional HTML sections
+    let checkOutSection = '';
+    if (bookingData.bookingType === 'daily' && bookingData.checkOutDate) {
+      checkOutSection = `<p style="margin:5px 0;">📅 Check-out Date: <strong>${checkOutDateFormatted}</strong></p>`;
+    }
+    
+    // ✅ Discount section (only if discount amount > 0)
+    let discountSection = '';
+    if (paymentData.discountAmount > 0) {
+      discountSection = `<p style="margin:5px 0;">🎁 Discount Applied: <strong style="color:#22c55e;">-₹${paymentData.discountAmount.toLocaleString()}</strong></p>`;
+    }
+    
+    // ✅ Offer section (only if offer code exists)
+    let offerSection = '';
+    if (bookingData.offerCode) {
+      offerSection = `
+        <div style="background:#fef3c7;padding:10px;border-radius:8px;margin:15px 0;text-align:center;">
+          <p style="margin:0;color:#92400e;">🎉 Offer Applied: <strong>${bookingData.offerCode}</strong></p>
+          <p style="margin:5px 0 0;font-size:12px;color:#92400e;">You saved ₹${paymentData.discountAmount.toLocaleString()} on your first month!</p>
+        </div>
+      `;
+    }
+    
+    // ✅ Prorated info section (only if prorated)
+    let proratedSection = '';
+    if (bookingData.proratedDays && bookingData.proratedDays > 0) {
+      proratedSection = `<p style="margin:5px 0;">📅 Prorated: <strong>${bookingData.proratedDays} days</strong> (First month only)</p>`;
+    }
+    
+    // ✅ Couple booking section (only if couple booking)
+    let coupleBookingSection = '';
+    if (bookingData.isCouple) {
+      coupleBookingSection = `
+        <div style="background:#fce7f3;padding:15px;border-radius:10px;margin:15px 0;border-left:4px solid #ec4899;">
+          <p style="margin:0 0 8px 0;font-weight:bold;color:#be185d;">💑 Couple Booking Details</p>
+          <p style="margin:5px 0;">👫 Partner Name: <strong>${bookingData.partnerName || 'N/A'}</strong></p>
+          <p style="margin:5px 0;">📞 Partner Phone: <strong>${bookingData.partnerPhone || 'N/A'}</strong></p>
+          <p style="margin:5px 0;">💑 Relationship: <strong>${bookingData.partnerRelationship || 'Spouse'}</strong></p>
+          <p style="margin:5px 0;font-size:12px;color:#be185d;">✨ Both occupants have access to all amenities</p>
+        </div>
+      `;
+    }
+    
+    // Prepare variables for template
+    const variables = {
+      tenant_name: tenantData.full_name || bookingData.fullName,
+      property_name: propertyData.name || bookingData.propertyName,
+      property_address: propertyData.address || '',
+      room_number: bookingData.roomNumber,
+      bed_number: bookingData.bedNumber,
+      move_in_date: moveInDateFormatted,
+      // ✅ Use the conditional sections as variables
+      check_out_section: checkOutSection,
+      discount_section: discountSection,
+      offer_section: offerSection,
+      prorated_section: proratedSection,
+      couple_booking_section: coupleBookingSection,
+      // Keep original fields for backward compatibility
+      check_out_date: checkOutDateFormatted,
+      booking_type: bookingData.bookingType,
+      rent_amount: paymentData.rentAmount?.toLocaleString() || '0',
+      discount_amount: paymentData.discountAmount?.toLocaleString() || '0',
+      security_deposit: paymentData.securityDeposit?.toLocaleString() || '0',
+      total_amount: paymentData.totalAmount?.toLocaleString() || '0',
+      offer_code: bookingData.offerCode || '',
+      dashboard_link: `${process.env.CLIENT_URL || 'http://localhost:3000'}/tenant/dashboard`,
+      contact_email: process.env.CONTACT_EMAIL || propertyData.property_manager_email || 'info@roomac.in',
+      contact_phone: process.env.CONTACT_PHONE || propertyData.property_manager_phone || '+91 9923953933',
+      property_manager_name: propertyData.property_manager_name || 'Property Manager'
+    };
+    
+    console.log("📧 Sending booking confirmation email to:", tenantData.email || bookingData.email);
+    
+    // Replace variables in subject and content
+    const emailSubject = replaceVariables(template.subject, variables);
+    const emailBody = replaceVariables(template.content, variables);
+    
+    // Send email
+    await sendEmail(tenantData.email || bookingData.email, emailSubject, emailBody);
+    console.log(`✅ Booking confirmation email sent to ${tenantData.email || bookingData.email}`);
+    
+    return true;
+  } catch (error) {
+    console.error("Failed to send booking confirmation email:", error);
+    return false;
+  }
+},
 
  async createBooking(req, res) {
     const conn = await db.getConnection();
@@ -530,9 +637,74 @@ if (checkInDate && data.bookingType === "monthly") {
   }
 }
 
+// Update booking payment status
+await Booking.updatePaymentStatus(booking.id, "paid");
 
-        // Update booking payment status
-        await Booking.updatePaymentStatus(booking.id, "paid");
+// ========== SEND CONFIRMATION EMAIL ==========
+try {
+  // Get tenant data (if not already available)
+  const tenantDataForEmail = tenant || await TenantModel.findById(tenant.id);
+  
+  // Fetch property details from database using propertyId
+  const [propertyRows] = await db.execute(
+    `SELECT id, name, address, property_manager_name, property_manager_phone, property_manager_email 
+     FROM properties 
+     WHERE id = ?`,
+    [data.propertyId]
+  );
+
+  const propertyInfo = propertyRows[0] || { name: data.propertyName || 'Property' };
+
+  // Calculate payment amounts using the correct variables
+  const rentAmountPaid = rentAmountToPay || discountedRent || originalRent;
+  const totalAmountPaid = rentAmountPaid + securityDeposit;
+
+  // Prepare payment summary
+  const paymentSummary = {
+    rentAmount: rentAmountPaid,
+    discountAmount: discountAmount,
+    securityDeposit: securityDeposit,
+    totalAmount: totalAmountPaid
+  };
+
+  // Log the email details
+  console.log(`📧 Preparing confirmation email for ${data.email}`);
+  console.log(`   Rent Paid: ₹${rentAmountPaid}`);
+  console.log(`   Discount: ₹${discountAmount}`);
+  console.log(`   Security Deposit: ₹${securityDeposit}`);
+  console.log(`   Total: ₹${totalAmountPaid}`);
+  
+  // Send confirmation email
+   await bookingController.sendBookingConfirmationEmail(
+    {
+      fullName: data.fullName,
+      email: data.email,
+      roomNumber: data.roomNumber,
+      bedNumber: data.bedNumber,
+      moveInDate: data.moveInDate,
+      checkOutDate: data.checkOutDate,
+      bookingType: data.bookingType,
+      offerCode: data.offerCode,
+      propertyName: propertyInfo.name,
+      propertyAddress: propertyInfo.address,
+      proratedDays: proratedDaysFromFrontend,
+      // ✅ Add couple booking details
+    isCouple: data.isCouple === true || data.isCouple === 'true',
+    partnerName: data.partner_full_name || '',
+    partnerPhone: data.partner_phone || '',
+    partnerRelationship: data.partner_relationship || 'Spouse'
+    },
+    tenantDataForEmail,
+    propertyInfo,
+    paymentSummary
+  );
+  
+  console.log(`✅ Confirmation email sent successfully to ${data.email}`);
+  
+} catch (emailError) {
+  console.error("Email sending failed but booking successful:", emailError);
+  // Don't block the booking process if email fails
+}
         
       } else {
         // ========== IN-PERSON BOOKING ==========
@@ -564,8 +736,8 @@ if (checkInDate && data.bookingType === "monthly") {
         isCouple: data.isCouple,
         assignedBed: data.bedNumber,
         message: data.paymentMethod === "online"
-          ? "Booking confirmed and bed assigned successfully!"
-          : "Booking submitted! We'll contact you to complete the booking.",
+    ? "Booking confirmed and bed assigned successfully! A confirmation email has been sent to your registered email address."
+    : "Booking submitted! We'll contact you to complete the booking.",
       });
       
     } catch (err) {

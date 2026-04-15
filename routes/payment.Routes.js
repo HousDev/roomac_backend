@@ -59,4 +59,10 @@ router.get("/:id/proof", paymentController.getPaymentProof);
 router.post("/notifications", paymentController.createAdminNotification);
 router.get("/tenant/:tenantId/security-deposit", paymentController.getSecurityDepositInfo);
 
+// Generate and download PDF
+router.get('/ledger/:tenantId/download', paymentController.generateLedgerPDF);
+
+// Preview PDF in browser
+router.get('/ledger/:tenantId/preview', paymentController.previewLedgerPDF);
+
 module.exports = router;

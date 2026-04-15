@@ -100,17 +100,22 @@ const TenantModel = {
         where.push("t.deleted_at IS NULL");
       }
 
-      // SIMPLIFIED VACATE FILTER - Just get tenant IDs from vacate_records
-      if (vacate_status === "vacated") {
+      // SIMPLIFIED VACATE FILTER
+if (vacate_status === "vacated") {
+  // Only tenants with vacate records
   where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
 } else if (vacate_status === "active") {
+  // Only tenants with active assignments (currently living)
   where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
   where.push("EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)");
 } else if (vacate_status === "non_vacated") {
-  // Show everyone except vacated — new, assigned, unassigned, all
+  // All tenants who have never vacated (including those without assignments)
+  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+} else {
+  // DEFAULT: When no vacate_status is specified (All Tenants tab)
+  // Show only non-vacated tenants (not vacated)
   where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
 }
-      // If vacate_status is undefined, show all tenants (no filter)
 
       // Existing filters
       if (search) {

@@ -63,9 +63,6 @@ class TenantAuthController {
         expiry_minutes: 5,
       });
 
-      // DEBUG (optional)
-      console.log("FINAL BODY:", emailBody);
-
       // 3. send email
       await sendEmail(email, template.subject || "Your OTP", emailBody);
 
@@ -190,6 +187,7 @@ class TenantAuthController {
   static async login(req, res) {
     try {
       const { email, password } = req.body;
+      console.log(req.body)
 
       // Validate input
       if (!email || !password) {
@@ -207,6 +205,7 @@ class TenantAuthController {
         "SELECT * FROM tenant_credentials WHERE email = ? AND is_active = 1",
         [email],
       );
+
 
       if (credentials.length > 0) {
         const credential = credentials[0];
