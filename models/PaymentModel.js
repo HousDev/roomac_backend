@@ -9,18 +9,20 @@ const Payment = {
   async create(paymentData) {
     console.log("payment data form crete fun payment model ",paymentData)
     const query = `
-      INSERT INTO payments (
-        tenant_id, booking_id,total_amount, discount_amount,new_balance, status,amount, payment_date, payment_mode,
-        bank_name, transaction_id, payment_proof, proof_uploaded_at, 
-        month, year, remark, payment_type, created_at, updated_at
-      ) VALUES (?, ?, ?, ?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-    `;
+  INSERT INTO payments (
+    tenant_id, booking_id, total_amount, discount_amount, new_balance, status, amount, 
+    payment_date, payment_mode, bank_name, transaction_id, payment_proof, proof_uploaded_at, 
+    month, year, remark, payment_type, source, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+`;
 
     const paymentDate = paymentData.payment_date 
       ? new Date(paymentData.payment_date) 
       : new Date();
     const monthName = paymentDate.toLocaleString('default', { month: 'long' });
     const year = paymentDate.getFullYear();
+     // ✅ IMPORTANT: Use paymentData.source if provided, otherwise default to 'admin'
+  const sourceValue = paymentData.source || 'admin';
     
     const values = [
       paymentData.tenant_id || null,
@@ -39,7 +41,8 @@ const Payment = {
       monthName,
       year,
       paymentData.remark || null,
-      paymentData.payment_type || 'rent'
+      paymentData.payment_type || 'rent',
+       sourceValue,
     ];
 
     try {
@@ -254,8 +257,6 @@ async getTenantPaymentFormData(tenantId) {
     
     const startDate = new Date(checkInDate);
     const currentDate = new Date();
-    
-    console.log(`🔄 Processing tenant ${tenantId}, check-in date: ${checkInDate}`);
     
     // Step 2: Get booking with offer information
     const [bookingData] = await db.execute(`
@@ -759,7 +760,8 @@ async updateMonthlyRentAfterApproval(paymentId) {
              b.monthly_rent,
              b.booking_type,
              r.room_number,
-             prop.name as property_name
+             prop.name as property_name,
+             p.source
       FROM payments p
       LEFT JOIN tenants t ON p.tenant_id = t.id
       LEFT JOIN bookings b ON p.booking_id = b.id

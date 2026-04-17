@@ -42,14 +42,14 @@ const CATEGORY_VARIABLES = {
 // ─── GET ALL TEMPLATES ───────────────────────────────────────────────────────
 exports.getTemplates = async (req, res) => {
   try {
-const { channel, category, status, search, is_active } = req.query;
-    let where = [];  // ← REMOVE "mt.is_active = 1" from here
+    const { channel, category, sub_category, status, search, is_active } = req.query;
+    let where = [];
     const params = [];
 
     if (is_active !== undefined && is_active !== "all") {
-  where.push("mt.is_active = ?");
-  params.push(Number(is_active));
-}
+      where.push("mt.is_active = ?");
+      params.push(Number(is_active));
+    }
     if (channel && channel !== "all") {
       where.push("mt.channel = ?");
       params.push(channel);
@@ -57,6 +57,10 @@ const { channel, category, status, search, is_active } = req.query;
     if (category && category !== "all") {
       where.push("mt.category = ?");
       params.push(category);
+    }
+    if (sub_category && sub_category !== "all") {
+      where.push("mt.sub_category = ?");
+      params.push(sub_category);
     }
     if (status && status !== "all") {
       where.push("mt.status = ?");
@@ -67,17 +71,17 @@ const { channel, category, status, search, is_active } = req.query;
       params.push(`%${search}%`, `%${search}%`);
     }
 
-   const sql = `
-  SELECT 
-    mt.*,
-    creator.name  AS created_by_name,
-    approver.name AS approved_by_name
-  FROM message_templates mt
-  LEFT JOIN staff creator  ON mt.created_by  = creator.id
-  LEFT JOIN staff approver ON mt.approved_by = approver.id
-  ${where.length ? "WHERE " + where.join(" AND ") : ""}
-  ORDER BY mt.created_at DESC
-`;
+    const sql = `
+      SELECT 
+        mt.*,
+        creator.name AS created_by_name,
+        approver.name AS approved_by_name
+      FROM message_templates mt
+      LEFT JOIN staff creator ON mt.created_by = creator.id
+      LEFT JOIN staff approver ON mt.approved_by = approver.id
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+      ORDER BY mt.created_at DESC
+    `;
 
     const [templates] = await db.query(sql, params);
 
@@ -90,10 +94,10 @@ const { channel, category, status, search, is_active } = req.query;
         : [],
     }));
 
-   const [stats] = await db.query(`
+    const [stats] = await db.query(`
       SELECT
         channel,
-        SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
         SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
         COUNT(*) AS total
       FROM message_templates
@@ -103,13 +107,10 @@ const { channel, category, status, search, is_active } = req.query;
     res.json({ success: true, data: formatted, stats });
   } catch (err) {
     console.error("❌ Error fetching templates:", err.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch templates" });
+    res.status(500).json({ success: false, message: "Failed to fetch templates" });
   }
 };
 
-// ─── GET SINGLE TEMPLATE ─────────────────────────────────────────────────────
 // ─── GET SINGLE TEMPLATE ─────────────────────────────────────────────────────
 exports.getTemplateById = async (req, res) => {
   try {
@@ -150,6 +151,7 @@ exports.createTemplate = async (req, res) => {
       name,
       channel,
       category,
+      sub_category,  // This will come as the name (e.g., "payment_success", not the ID)
       content,
       subject,
       variables,
@@ -166,24 +168,28 @@ exports.createTemplate = async (req, res) => {
     }
 
     const contentVars = (content.match(/\{(\w+)\}/g) || []).map((v) =>
-      v.replace(/[{}]/g, ""),
+      v.replace(/[{}]/g, "")
     );
     const finalVars = variables && variables.length ? variables : contentVars;
 
     const finalStatus = auto_approve ? "approved" : status || "pending";
     const approvedAt = finalStatus === "approved" ? new Date() : null;
-    const approvedBy =
-      finalStatus === "approved" ? req.admin?.id || null : null;
+    const approvedBy = finalStatus === "approved" ? req.admin?.id || null : null;
+
+    // sub_category is already the name string, not the ID
+    // Just store it as is
+    const subCategoryValue = sub_category && sub_category !== "" ? sub_category : null;
 
     const [result] = await db.query(
       `INSERT INTO message_templates
-        (name, channel, category, content, subject, variables, status, priority,
+        (name, channel, category, sub_category, content, subject, variables, status, priority,
          auto_approve, created_by, approved_by, approved_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         channel,
         category,
+        subCategoryValue,  // Store the name directly
         content,
         subject || null,
         JSON.stringify(finalVars),
@@ -193,12 +199,12 @@ exports.createTemplate = async (req, res) => {
         req.admin?.id || null,
         approvedBy,
         approvedAt,
-      ],
+      ]
     );
 
     const [newTemplate] = await db.query(
       "SELECT * FROM message_templates WHERE id = ?",
-      [result.insertId],
+      [result.insertId]
     );
 
     res.status(201).json({
@@ -208,13 +214,11 @@ exports.createTemplate = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Error creating template:", err.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to create template" });
+    res.status(500).json({ success: false, message: "Failed to create template" });
   }
 };
 
-// ─── UPDATE TEMPLATE ─────────────────────────────────────────────────────────
+// ─── UPDATE TEMPLATE (ONLY ONE - WITH sub_category) ─────────────────────────
 exports.updateTemplate = async (req, res) => {
   try {
     const { id } = req.params;
@@ -222,6 +226,7 @@ exports.updateTemplate = async (req, res) => {
       name,
       channel,
       category,
+      sub_category,  // This comes as the name string
       content,
       subject,
       variables,
@@ -233,29 +238,32 @@ exports.updateTemplate = async (req, res) => {
 
     const [existing] = await db.query(
       "SELECT * FROM message_templates WHERE id = ? AND is_active = 1",
-      [id],
+      [id]
     );
     if (!existing.length)
-      return res
-        .status(404)
-        .json({ success: false, message: "Template not found" });
+      return res.status(404).json({ success: false, message: "Template not found" });
 
     const updates = [];
     const params = [];
 
-    if (name) {
+    if (name !== undefined) {
       updates.push("name = ?");
       params.push(name);
     }
-    if (channel) {
+    if (channel !== undefined) {
       updates.push("channel = ?");
       params.push(channel);
     }
-    if (category) {
+    if (category !== undefined) {
       updates.push("category = ?");
       params.push(category);
     }
-    if (content) {
+    if (sub_category !== undefined) {
+      // Store the name directly, not the ID
+      updates.push("sub_category = ?");
+      params.push(sub_category && sub_category !== "" ? sub_category : null);
+    }
+    if (content !== undefined) {
       updates.push("content = ?");
       params.push(content);
     }
@@ -263,7 +271,7 @@ exports.updateTemplate = async (req, res) => {
       updates.push("subject = ?");
       params.push(subject);
     }
-    if (priority) {
+    if (priority !== undefined) {
       updates.push("priority = ?");
       params.push(priority);
     }
@@ -272,18 +280,18 @@ exports.updateTemplate = async (req, res) => {
       params.push(auto_approve ? 1 : 0);
     }
 
-    if (variables) {
+    if (variables !== undefined) {
       updates.push("variables = ?");
       params.push(JSON.stringify(variables));
     } else if (content) {
       const contentVars = (content.match(/\{(\w+)\}/g) || []).map((v) =>
-        v.replace(/[{}]/g, ""),
+        v.replace(/[{}]/g, "")
       );
       updates.push("variables = ?");
       params.push(JSON.stringify(contentVars));
     }
 
-    if (status) {
+    if (status !== undefined) {
       updates.push("status = ?");
       params.push(status);
       if (status === "approved") {
@@ -301,12 +309,12 @@ exports.updateTemplate = async (req, res) => {
 
     await db.query(
       `UPDATE message_templates SET ${updates.join(", ")} WHERE id = ?`,
-      params,
+      params
     );
 
     const [updated] = await db.query(
       "SELECT * FROM message_templates WHERE id = ?",
-      [id],
+      [id]
     );
     res.json({
       success: true,
@@ -315,13 +323,10 @@ exports.updateTemplate = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Error updating template:", err.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to update template" });
+    res.status(500).json({ success: false, message: "Failed to update template" });
   }
 };
 
-// ─── DELETE TEMPLATE (soft) ──────────────────────────────────────────────────
 // ─── DELETE TEMPLATE (hard delete) ──────────────────────────────────────────
 exports.deleteTemplate = async (req, res) => {
   try {
@@ -343,7 +348,6 @@ exports.deleteTemplate = async (req, res) => {
   }
 };
 
-// ─── BULK DELETE ─────────────────────────────────────────────────────────────
 // ─── BULK DELETE (hard delete) ─────────────────────────────────────────────
 exports.bulkDeleteTemplates = async (req, res) => {
   try {
@@ -399,7 +403,7 @@ exports.rejectTemplate = async (req, res) => {
   }
 };
 
-// ─── DUPLICATE TEMPLATE (FIXED) ──────────────────────────────────────────────
+// ─── DUPLICATE TEMPLATE ──────────────────────────────────────────────────────
 exports.duplicateTemplate = async (req, res) => {
   try {
     const { id } = req.params;
@@ -407,18 +411,15 @@ exports.duplicateTemplate = async (req, res) => {
 
     const [rows] = await db.query(
       "SELECT * FROM message_templates WHERE id = ? AND is_active = 1",
-      [id],
+      [id]
     );
     if (!rows.length) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Template not found" });
+      return res.status(404).json({ success: false, message: "Template not found" });
     }
 
     const orig = rows[0];
     console.log("📄 Original template:", orig.name);
 
-    // ✅ Handle variables safely (ensure JSON string)
     let variablesValue = orig.variables;
     if (typeof variablesValue === "object") {
       variablesValue = JSON.stringify(variablesValue);
@@ -427,37 +428,32 @@ exports.duplicateTemplate = async (req, res) => {
       variablesValue = "[]";
     }
 
-    // ✅ Handle subject: if column is NOT NULL, use empty string instead of null
     const subjectValue = orig.subject === null ? "" : orig.subject;
-
-    // ✅ Ensure auto_approve is 0 or 1
     const autoApproveValue = orig.auto_approve === 1 ? 1 : 0;
-
-    // ✅ Priority default
     const priorityValue = orig.priority || "normal";
-
     const createdBy = req.admin?.id || null;
 
     const [result] = await db.query(
       `INSERT INTO message_templates
-        (name, channel, category, content, subject, variables, status, priority, auto_approve, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+        (name, channel, category, sub_category, content, subject, variables, status, priority, auto_approve, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       [
         `${orig.name} (Copy)`,
         orig.channel,
         orig.category,
+        orig.sub_category,
         orig.content,
         subjectValue,
         variablesValue,
         priorityValue,
         autoApproveValue,
         createdBy,
-      ],
+      ]
     );
 
     const [newT] = await db.query(
       "SELECT * FROM message_templates WHERE id = ?",
-      [result.insertId],
+      [result.insertId]
     );
     res.status(201).json({
       success: true,
