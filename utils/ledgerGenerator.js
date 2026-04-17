@@ -39,40 +39,23 @@ const generateLedgerHTML = (data) => {
     return `<span class="status-badge ${colorClass}">${status}</span>`;
   };
 
-  // Group payments by month for rent summary
-  const monthlyRentSummary = payments
-    .filter(p => p.payment_type === 'rent')
-    .reduce((acc, p) => {
-      const key = `${p.month} ${p.year}`;
-      if (!acc[key]) {
-        acc[key] = {
-          month: p.month,
-          year: p.year,
-          totalRent: tenant.monthly_rent || 0,
-          totalPaid: 0,
-          totalPending: 0,
-          payments: []
-        };
-      }
-      const amount = parseFloat(p.amount);
-      if (p.status === 'approved' || p.status === 'paid') {
-        acc[key].totalPaid += amount;
-      }
-      if (p.status === 'pending') {
-        acc[key].totalPending += amount;
-      }
-      acc[key].payments.push(p);
-      return acc;
-    }, {});
+  // Use the monthlySummary from the controller (already has prorated rent)
+  const monthlySummary = summary.monthlySummary || {};
 
-  // Calculate overall statistics
-  const totalRentExpected = Object.values(monthlyRentSummary).reduce(
-    (sum, m) => sum + m.totalRent, 0
-  );
-  const totalRentPaid = Object.values(monthlyRentSummary).reduce(
-    (sum, m) => sum + m.totalPaid, 0
-  );
-  const totalRentPending = totalRentExpected - totalRentPaid;
+  // Calculate overall statistics from monthlySummary
+  let totalRentExpected = 0;
+  let totalRentPaid = 0;
+  let totalRentPending = 0;
+  let totalDiscount = 0;
+
+  Object.values(monthlySummary).forEach(month => {
+    totalRentExpected += month.totalRent;
+    totalRentPaid += month.totalPaid;
+    totalRentPending += month.totalPending;
+    totalDiscount += (month.discount_amount || 0);
+  });
+
+  const grandTotal = summary.grandTotal || 0;
 
   return `<!DOCTYPE html>
 <html>
@@ -367,105 +350,143 @@ const generateLedgerHTML = (data) => {
       </div>
     </div>
     
-    <!-- Rent Summary by Month (Like Payment Form) -->
-    <div class="section-title">Monthly Rent Summary</div>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th class="text-right">Rent (₹)</th>
-            <th class="text-right">Paid (₹)</th>
-            <th class="text-right">Pending (₹)</th>
-            <th class="text-center">Status</th>
-           </tr>
-        </thead>
-        <tbody>
-          ${Object.values(monthlyRentSummary)
-            .sort((a, b) => {
-              const dateA = new Date(`${a.month} 1, ${a.year}`);
-              const dateB = new Date(`${b.month} 1, ${b.year}`);
-              return dateB.getTime() - dateA.getTime();
-            })
-            .map((month) => {
-              let status = "Pending";
-              let statusColor = "bg-red-100 text-red-800";
-              if (month.totalPaid >= month.totalRent && month.totalRent > 0) {
-                status = "Paid";
-                statusColor = "bg-green-100 text-green-800";
-              } else if (month.totalPaid > 0) {
-                status = "Partial";
-                statusColor = "bg-yellow-100 text-yellow-800";
-              }
-              return `
-                <tr>
-                  <td class="font-medium">${month.month} ${month.year}</td>
-                  <td class="text-right">${formatCurrency(month.totalRent)}</td>
-                  <td class="text-right text-green-600">${formatCurrency(month.totalPaid)}</td>
-                  <td class="text-right text-amber-600">${formatCurrency(month.totalRent - month.totalPaid)}</td>
-                  <td class="text-center"><span class="status-badge ${statusColor}">${status}</span></td>
-                </tr>
-              `;
-            }).join('')}
-        </tbody>
-        <tfoot>
-          <tr class="bg-slate-100 font-semibold">
-            <td class="text-right">Total</td>
-            <td class="text-right">${formatCurrency(totalRentExpected)}</td>
-            <td class="text-right text-green-600">${formatCurrency(totalRentPaid)}</td>
-            <td class="text-right text-amber-600">${formatCurrency(totalRentPending)}</td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+   <!-- Rent Summary by Month (Like Payment Form) -->
+<div class="section-title">Monthly Rent Summary</div>
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th class="text-right">Rent (₹)</th>
+        <th class="text-right">Paid (₹)</th>
+        <th class="text-right">Discount (₹)</th>
+        <th class="text-right">Pending (₹)</th>
+        <th class="text-center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${Object.values(monthlySummary)
+        .sort((a, b) => {
+          const dateA = new Date(`${a.month} 1, ${a.year}`);
+          const dateB = new Date(`${b.month} 1, ${b.year}`);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .map((month) => {
+          // Determine status and color
+          let statusText = month.status || 'Pending';
+          let statusColor = '';
+          if (statusText === 'Paid') {
+            statusColor = 'bg-green-100 text-green-800';
+          } else if (statusText === 'Partial') {
+            statusColor = 'bg-yellow-100 text-yellow-800';
+          } else {
+            statusColor = 'bg-red-100 text-red-800';
+          }
+          
+          // Add prorated badge
+          const proratedBadge = month.is_prorated && month.prorated_days > 0 ? 
+            `<span style="font-size: 9px; color: #d97706; margin-left: 8px;">(Prorated - ${month.prorated_days} days)</span>` : '';
+          
+          // Add discount badge
+          const discountBadge = month.discount_amount > 0 ? 
+            `<span style="font-size: 9px; color: #059669; margin-left: 8px;">(Discounted)</span>` : '';
+          
+          // Calculate discount amount (original rent - actual rent)
+          const discountAmount = month.discount_amount || (month.original_rent ? month.original_rent - month.totalRent : 0);
+          
+          return `
+            <tr>
+              <td class="font-medium">
+                ${month.month} ${month.year}
+                ${proratedBadge}
+                ${discountBadge}
+              </td>
+              <td class="text-right">
+  <div>${formatCurrency(month.totalRent)}</div>
+  ${month.full_monthly_rent && month.full_monthly_rent > month.totalRent ? 
+    `<div style="font-size: 9px; color: #9ca3af; text-decoration: line-through;">Monthly: ${formatCurrency(month.full_monthly_rent)}</div>` : ''}
+  ${month.original_rent && month.original_rent > month.totalRent ? 
+    `<div style="font-size: 9px; color: #d97706;">Prorated: ${formatCurrency(month.original_rent)}</div>` : ''}
+</td>
+              <td class="text-right text-green-600">${formatCurrency(month.totalPaid)}</td>
+              <td class="text-right text-red-500">${formatCurrency(discountAmount)}</td>
+              <td class="text-right text-amber-600">${formatCurrency(month.totalPending)}</td>
+              <td class="text-center"><span class="status-badge ${statusColor}">${statusText}</span></td>
+            </tr>
+          `;
+        }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background: #f1f5f9; font-weight: bold;">
+        <td class="text-right">Total</td>
+        <td class="text-right">${formatCurrency(totalRentExpected)}</td>
+        <td class="text-right text-green-600">${formatCurrency(totalRentPaid)}</td>
+        <td class="text-right text-red-500">${formatCurrency(totalDiscount)}</td>
+        <td class="text-right text-amber-600">${formatCurrency(totalRentPending)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
     
     <!-- All Payment History -->
-    <div class="section-title">Payment History</div>
-    <div class="table-container">
-      <table>
-        <thead>
+<div class="section-title">Payment History</div>
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Period</th>
+        <th>Payment Mode</th>
+        <th>Transaction ID</th>
+        <th class="text-right">Amount (₹)</th>
+        <th class="text-right">Discount (₹)</th>
+        <th>Status</th>
+        <th>Remark</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${payments.length === 0 ? `
+        <tr>
+          <td colspan="9" class="text-center">No payment records found</td>
+        </tr>
+      ` : payments.map(payment => {
+        const discountAmount = payment.discount_amount || 0;
+        const originalAmount = payment.total_amount || payment.amount;
+        const hasDiscount = discountAmount > 0;
+        
+        return `
           <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Period</th>
-            <th>Payment Mode</th>
-            <th>Transaction ID</th>
-            <th class="text-right">Amount (₹)</th>
-            <th>Status</th>
-            <th>Remark</th>
+            <td>${formatDate(payment.payment_date)}</td>
+            <td>${payment.payment_type === 'rent' ? 'Rent' : 'Security Deposit'}</td>
+            <td>${payment.month && payment.year ? `${payment.month} ${payment.year}` : '-'}</td>
+            <td>
+              ${payment.payment_mode}
+              ${payment.bank_name ? `<br><small>${payment.bank_name}</small>` : ''}
+            </td>
+            <td class="font-mono">${payment.transaction_id || '-'}</td>
+            <td class="text-right font-medium">
+              ${hasDiscount ? `<span style="text-decoration: line-through; color: #9ca3af; font-size: 10px;">${formatCurrency(originalAmount)}</span><br>` : ''}
+              ${formatCurrency(payment.amount)}
+            </td>
+            <td class="text-right text-red-500">${formatCurrency(discountAmount)}</td>
+            <td>${getStatusBadge(payment.status)}</td>
+            <td class="max-w-[200px] truncate">${payment.remark || '-'}</td>
           </tr>
-        </thead>
-        <tbody>
-          ${payments.length === 0 ? `
-            <tr>
-              <td colspan="8" class="text-center">No payment records found</td>
-            </tr>
-          ` : payments.map(payment => `
-            <tr>
-              <td>${formatDate(payment.payment_date)}</td>
-              <td>${payment.payment_type === 'rent' ? 'Rent' : 'Security Deposit'}</td>
-              <td>${payment.month && payment.year ? `${payment.month} ${payment.year}` : '-'}</td>
-              <td>
-                ${payment.payment_mode}
-                ${payment.bank_name ? `<br><small>${payment.bank_name}</small>` : ''}
-              </td>
-              <td class="font-mono">${payment.transaction_id || '-'}</td>
-              <td class="text-right font-medium">${formatCurrency(payment.amount)}</td>
-              <td>${getStatusBadge(payment.status)}</td>
-              <td class="max-w-[200px] truncate">${payment.remark || '-'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-        <tfoot>
-          <tr class="bg-slate-100 font-semibold">
-            <td colspan="5" class="text-right">Total</td>
-            <td class="text-right">${formatCurrency(summary.grandTotal)}</td>
-            <td colspan="2"></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+        `;
+      }).join('')}
+    </tbody>
+    <tfoot>
+  <tr style="background: #f1f5f9; font-weight: bold;">
+    <td colspan="5" class="text-right">Total</td>
+    <td class="text-right">${formatCurrency(grandTotal)}</td>
+    <td class="text-right text-red-500">${formatCurrency(summary.totalDiscountAmount || 0)}</td>
+    <td colspan="2"></td>
+  </tr>
+</tfoot>
+  </table>
+</div>
     
     <!-- Security Deposit Summary -->
     <div class="section-title">Security Deposit Summary</div>

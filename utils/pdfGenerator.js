@@ -36,7 +36,7 @@ class PDFGenerator {
         format: 'A4',
         printBackground: true,
         margin: {
-          top: '20mm',
+          top: '7mm',
           bottom: '20mm',
           left: '15mm',
           right: '15mm'
@@ -44,9 +44,7 @@ class PDFGenerator {
         preferCSSPageSize: false,
         displayHeaderFooter: true,
         headerTemplate: `
-          <div style="font-size: 8px; text-align: center; width: 100%; padding: 5px;">
-            <span style="color: #666;">${new Date().toLocaleDateString()}</span>
-          </div>
+          
         `,
         footerTemplate: `
           <div style="font-size: 8px; text-align: center; width: 100%; padding: 5px;">

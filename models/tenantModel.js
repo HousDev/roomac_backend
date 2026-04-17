@@ -101,21 +101,15 @@ const TenantModel = {
       }
 
       // SIMPLIFIED VACATE FILTER
-if (vacate_status === "vacated") {
-  // Only tenants with vacate records
-  where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
-} else if (vacate_status === "active") {
-  // Only tenants with active assignments (currently living)
-  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
-  where.push("EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)");
-} else if (vacate_status === "non_vacated") {
-  // All tenants who have never vacated (including those without assignments)
-  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
-} else {
-  // DEFAULT: When no vacate_status is specified (All Tenants tab)
-  // Show only non-vacated tenants (not vacated)
-  where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
-}
+// Vacate filter logic
+    if (vacate_status === "vacated") {
+      where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+    } else if (vacate_status === "active") {
+      where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+      where.push("EXISTS (SELECT 1 FROM bed_assignments ba WHERE ba.tenant_id = t.id AND ba.is_available = FALSE)");
+    } else if (vacate_status === "non_vacated") {
+      where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+    }
 
       // Existing filters
       if (search) {
@@ -239,6 +233,87 @@ if (vacate_status === "vacated") {
       throw err;
     }
   },
+
+  async findDeletedVacatedTenants({
+  search = "",
+  page = 1,
+  pageSize = 50,
+  gender,
+  occupation_category,
+  city,
+  state,
+}) {
+  try {
+    const offset = (page - 1) * pageSize;
+    const where = [];
+    const params = [];
+
+    // ONLY soft-deleted tenants
+    where.push("t.deleted_at IS NOT NULL");
+    
+    // ONLY vacated tenants
+    where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
+
+    // Add search filters
+    if (search) {
+      where.push(
+        "(t.full_name LIKE ? OR t.email LIKE ? OR t.phone LIKE ?)"
+      );
+      const q = `%${search}%`;
+      params.push(q, q, q);
+    }
+    if (gender) {
+      where.push("t.gender = ?");
+      params.push(gender);
+    }
+    if (occupation_category) {
+      where.push("t.occupation_category = ?");
+      params.push(occupation_category);
+    }
+    if (city) {
+      where.push("t.city LIKE ?");
+      params.push(`%${city}%`);
+    }
+    if (state) {
+      where.push("t.state LIKE ?");
+      params.push(`%${state}%`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const sql = `
+      SELECT 
+        t.*,
+        DATE_FORMAT(t.check_in_date, '%Y-%m-%d') as check_in_date,
+        DATE_FORMAT(t.date_of_birth, '%Y-%m-%d') as date_of_birth,
+        DATE_FORMAT(t.partner_date_of_birth, '%Y-%m-%d') as partner_date_of_birth,
+        DATE_FORMAT(t.deleted_at, '%Y-%m-%d %H:%i:%s') as deleted_at
+      FROM tenants t
+      ${whereSql}
+      ORDER BY t.deleted_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(pageSize, offset);
+    const [rows] = await pool.query(sql, params);
+
+    // Count query
+    const countSql = `
+      SELECT COUNT(DISTINCT t.id) as total 
+      FROM tenants t
+      ${whereSql}
+    `;
+    const countParams = params.slice(0, -2);
+    const [countRows] = await pool.query(countSql, countParams);
+    const total = countRows[0]?.total || 0;
+
+    const processedRows = rows.map(parseTenant);
+    return { rows: processedRows, total };
+  } catch (err) {
+    console.error("TenantModel.findDeletedVacatedTenants error:", err);
+    throw err;
+  }
+},
 
   // Add a separate method to get vacate records for a specific tenant
   async getVacateRecordsByTenantId(tenantId) {
