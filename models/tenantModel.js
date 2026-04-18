@@ -95,13 +95,15 @@ const TenantModel = {
       const where = [];
       const params = [];
 
-      // Add soft delete filter
-      if (!includeDeleted) {
-        where.push("t.deleted_at IS NULL");
-      }
+       // IMPORTANT: For Vacated tab (includeDeleted = false), exclude soft-deleted tenants
+    if (!includeDeleted) {
+      where.push("t.deleted_at IS NULL");
+    } else {
+      // For Deleted tab, show ONLY soft-deleted tenants
+      where.push("t.deleted_at IS NOT NULL");
+    }
 
-      // SIMPLIFIED VACATE FILTER
-// Vacate filter logic
+    // Vacate filter logic
     if (vacate_status === "vacated") {
       where.push("t.id IN (SELECT DISTINCT tenant_id FROM vacate_records)");
     } else if (vacate_status === "active") {
@@ -110,7 +112,6 @@ const TenantModel = {
     } else if (vacate_status === "non_vacated") {
       where.push("t.id NOT IN (SELECT DISTINCT tenant_id FROM vacate_records)");
     }
-
       // Existing filters
       if (search) {
         where.push(
@@ -244,6 +245,7 @@ const TenantModel = {
   state,
 }) {
   try {
+    console.log('🔍 findDeletedVacatedTenants called with:', { search, page, pageSize, gender, occupation_category, city, state });
     const offset = (page - 1) * pageSize;
     const where = [];
     const params = [];
@@ -306,8 +308,8 @@ const TenantModel = {
     const countParams = params.slice(0, -2);
     const [countRows] = await pool.query(countSql, countParams);
     const total = countRows[0]?.total || 0;
-
     const processedRows = rows.map(parseTenant);
+    console.log(`✅ Found ${processedRows.length} deleted vacated tenants`);
     return { rows: processedRows, total };
   } catch (err) {
     console.error("TenantModel.findDeletedVacatedTenants error:", err);

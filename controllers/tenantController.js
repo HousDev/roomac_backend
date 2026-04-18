@@ -67,7 +67,21 @@ const TenantController = {
       // NEW: Vacate status filter
       const vacate_status = req.query.vacate_status || undefined; // 'vacated', 'active', 'all'
 
-      const result = await TenantModel.findAll({
+       let result; // <-- DECLARE result HERE
+
+    if (includeDeleted && vacate_status === "vacated") {
+      result = await TenantModel.findDeletedVacatedTenants({
+        search,
+        page,
+        pageSize,
+        gender,
+        occupation_category,
+        city,
+        state,
+      });
+    } else {
+      // Use regular findAll for other cases
+      result = await TenantModel.findAll({
         search,
         page,
         pageSize,
@@ -83,6 +97,7 @@ const TenantController = {
         includeDeleted,
         vacate_status,
       });
+    }
       const tenantRows = result.rows;
 
       // get bookings, payments and credentials
@@ -898,7 +913,7 @@ const TenantController = {
           const portalUrl = "https://roomac.in/login";
 
           // 🔥 get template
-          const template = await getTemplate("welcome", "email");
+          const template = await getTemplate("credentials", "email");
 
           const emailSubject = replaceVariables(template.subject, {
             property_name: tenantData.property_name,
@@ -954,114 +969,138 @@ const TenantController = {
     }
   },
 
-  async sendCredentials(req, res) {
-    try {
-      const tenantId = req.params.id;
-      const { password } = req.body;
+async sendCredentials(req, res) {
+  try {
+    const tenantId = req.params.id;
+    const { password } = req.body;
 
-      if (!password) {
-        return res.status(400).json({
-          success: false,
-          message: "Password is required",
-        });
-      }
-
-      if (password.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 6 characters",
-        });
-      }
-
-      // Get tenant details
-      const tenant = await TenantModel.findById(tenantId);
-
-      if (!tenant) {
-        return res.status(404).json({
-          success: false,
-          message: "Tenant not found",
-        });
-      }
-
-      // Hash the password
-      const bcrypt = require("bcrypt");
-      const SALT_ROUNDS = 10;
-      const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
-
-      // Check if credentials already exist
-      const credentials = await TenantModel.getCredentialsByTenantIds([
-        tenantId,
-      ]);
-      const hasCredentials = credentials && credentials.length > 0;
-
-      // Save/Update credentials in database
-      if (!hasCredentials) {
-        // Create new credentials
-        await TenantModel.createCredential({
-          tenant_id: tenantId,
-          email: tenant.email,
-          password_hash,
-        });
-        console.log(`✅ Credentials created for tenant ${tenantId}`);
-      } else {
-        // Update existing credentials
-        await TenantModel.updateCredential(tenantId, {
-          password_hash,
-          email: tenant.email,
-        });
-        console.log(`✅ Credentials updated for tenant ${tenantId}`);
-      }
-
-      // Also update portal_access_enabled in tenants table
-      await pool.query(
-        "UPDATE tenants SET portal_access_enabled = 1 WHERE id = ?",
-        [tenantId],
-      );
-
-      // Send email with credentials
-      const portalUrl = "https://roomac.in/login";
-
-      // 🔥 get template
-      const template = await getTemplate("welcome", "email");
-
-      const emailSubject = replaceVariables(template.subject, {
-        property_name: tenantData.property_name,
-      });
-      // 🔥 replace variables
-      const emailBody = replaceVariables(template.content, {
-        tenant_name: tenantData.full_name,
-        property_name: tenantData.property_name,
-        email: tenantData.email,
-        password: body.password,
-        account_status: hasCredentials ? "updated" : "created", // 🔥 MAIN LINE
-        login_url: "https://roomac.in/login",
-      });
-
-      // 🔥 send email
-      await sendEmail(
-        tenantData.email,
-        emailSubject || "Welcome to Roomac",
-        emailBody,
-      );
-
-      console.log(`✅ Credentials email sent to ${tenant.email}`);
-
-      return res.json({
-        success: true,
-        message: "Credentials saved and email sent successfully",
-        data: {
-          email: tenant.email,
-          has_credentials: true,
-        },
-      });
-    } catch (error) {
-      console.error("Error sending credentials email:", error);
-      return res.status(500).json({
+    if (!password) {
+      return res.status(400).json({
         success: false,
-        message: "Failed to send credentials email: " + error.message,
+        message: "Password is required",
       });
     }
-  },
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    // Get tenant details
+    const tenant = await TenantModel.findById(tenantId);
+
+    if (!tenant) {
+      return res.status(404).json({
+        success: false,
+        message: "Tenant not found",
+      });
+    }
+
+    // Get property name
+    let propertyName = "Roomac";
+    if (tenant.property_id) {
+      const [[property]] = await pool.query(
+        "SELECT name FROM properties WHERE id = ?",
+        [tenant.property_id]
+      );
+      if (property && property.name) {
+        propertyName = property.name;
+      }
+    }
+
+    // Get company address from settings
+    const [settings] = await pool.query(
+      "SELECT value FROM app_settings WHERE setting_key = 'site_name'"
+    );
+    const companyAddress = settings.length > 0 ? settings[0].value : "Your Address Here";
+
+    // Hash the password
+    const bcrypt = require("bcrypt");
+    const SALT_ROUNDS = 10;
+    const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    // Check if credentials already exist
+    const credentials = await TenantModel.getCredentialsByTenantIds([tenantId]);
+    const hasCredentials = credentials && credentials.length > 0;
+
+    // Save/Update credentials in database
+    if (!hasCredentials) {
+      // Create new credentials
+      await TenantModel.createCredential({
+        tenant_id: tenantId,
+        email: tenant.email,
+        password_hash,
+      });
+      console.log(`✅ Credentials created for tenant ${tenantId}`);
+    } else {
+      // Update existing credentials
+      await TenantModel.updateCredential(tenantId, {
+        password_hash,
+        email: tenant.email,
+      });
+      console.log(`✅ Credentials updated for tenant ${tenantId}`);
+    }
+
+    // Also update portal_access_enabled in tenants table
+    await pool.query(
+      "UPDATE tenants SET portal_access_enabled = 1 WHERE id = ?",
+      [tenantId]
+    );
+
+    // Get email template for credentials
+    const template = await getTemplate("credentials", "email");
+
+    // Replace variables in subject
+    const emailSubject = replaceVariables(template.subject, {
+      tenant_name: tenant.full_name,
+      property_name: propertyName,
+      account_status: hasCredentials ? "updated" : "created",
+      email: tenant.email,
+      password: password,
+      year: new Date().getFullYear(),
+      company_address: companyAddress,
+      login_link: "https://roomac.in/login"
+    });
+
+    // Replace variables in content
+    const emailBody = replaceVariables(template.content, {
+      tenant_name: tenant.full_name,
+      property_name: propertyName,
+      account_status: hasCredentials ? "updated" : "created",
+      email: tenant.email,
+      password: password,
+      year: new Date().getFullYear(),
+      company_address: companyAddress,
+      login_link: "https://roomac.in/login"
+    });
+
+    // Send email
+    await sendEmail(
+      tenant.email,
+      emailSubject || "Your Roomac Account is Ready",
+      emailBody
+    );
+
+    console.log(`✅ Credentials email sent to ${tenant.email}`);
+
+    return res.json({
+      success: true,
+      message: "Credentials saved and email sent successfully",
+      data: {
+        email: tenant.email,
+        has_credentials: true,
+      },
+    });
+  } catch (error) {
+    console.error("Error sending credentials email:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send credentials email: " + error.message,
+    });
+  }
+},
 
   async update(req, res) {
     try {
@@ -2761,142 +2800,104 @@ const TenantController = {
       });
     }
   },
-  // async sendBirthdayWishes(req, res) {
-  //   try {
-  //     const today = new Date();
-  //     const month = String(today.getMonth() + 1).padStart(2, "0");
-  //     const day = String(today.getDate()).padStart(2, "0");
+  
 
-  //     const todayDate = `${month}-${day}`;
-
-  //     // 🎯 Get today's birthday tenants
-  //     const [tenants] = await pool.query(
-  //       `
-  //     SELECT id, full_name, email, property_id
-  //     FROM tenants
-  //     WHERE DATE_FORMAT(date_of_birth, '%m-%d') = ?
-  //     AND is_active = 1
-  //   `,
-  //       [todayDate],
-  //     );
-
-  //     console.log("🎂 Birthday tenants:", tenants.length);
-
-  //     for (const tenant of tenants) {
-  //       if (tenant.property_id) {
-  //         const [[property]] = await pool.query(
-  //           "SELECT name FROM properties WHERE id = ?",
-  //           [tenant.property_id],
-  //         );
-  //         propertyName = property?.name || "Roomac";
-  //       }
-
-  //       // 👉 template get karo
-  //       const template = await getTemplate("birthday", "email");
-
-  //         const emailSubject = replaceVariables(template.subject, {
-  //           property_name: tenantData.property_name,
-  //         });
-
-  //         // 🔥 replace variables
-  //         const emailBody = replaceVariables(template.content, {
-  //           tenant_name: tenantData.full_name,
-  //           property_name: tenantData.property_name,
-  //         });
-
-  //       // 👉 send email
-  //       await sendEmail(
-  //         tenant.email,
-  //         emailSubject || "Happy Birthday 🎉",
-  //         emailBody,
-  //       );
-
-  //       console.log(`🎉 Birthday email sent to ${tenant.email}`);
-  //     }
-
-  //     return res.json({
-  //       success: true,
-  //       message: "Birthday emails sent successfully",
-  //       count: tenants.length,
-  //     });
-  //   } catch (err) {
-  //     console.error("❌ Birthday error:", err);
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Failed to send birthday emails",
-  //     });
-  //   }
-  // },
-  async sendBirthdayWishes(req, res) {
-    try {
-      const today = new Date();
-      const month = String(today.getMonth() + 1).padStart(2, "0");
-      const day = String(today.getDate()).padStart(2, "0");
-
-      const todayDate = `${month}-${day}`;
-
-      // 🎯 Get today's birthday tenants
-      const [tenants] = await pool.query(
-        `
+async sendBirthdayWishes(req, res) {
+  try {
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const todayDate = `${month}-${day}`;
+    
+    console.log(`🎂 Running birthday cron job for ${today.toLocaleDateString()}`);
+    
+    // 🎯 Get today's birthday tenants
+    const [tenants] = await pool.query(`
       SELECT id, full_name, email, property_id
       FROM tenants
       WHERE DATE_FORMAT(date_of_birth, '%m-%d') = ?
       AND is_active = 1
-      `,
-        [todayDate],
-      );
-
-      console.log("🎂 Birthday tenants:", tenants.length);
-
-      for (const tenant of tenants) {
+      AND deleted_at IS NULL
+      AND email IS NOT NULL
+      AND email != ''
+    `, [todayDate]);
+    
+    console.log(`🎂 Found ${tenants.length} tenants with birthday today`);
+    
+    let sent = 0;
+    let failed = 0;
+    
+    for (const tenant of tenants) {
+      try {
         let propertyName = "Roomac"; // default value
-
+        
         if (tenant.property_id) {
           const [[property]] = await pool.query(
             "SELECT name FROM properties WHERE id = ?",
-            [tenant.property_id],
+            [tenant.property_id]
           );
           if (property && property.name) {
             propertyName = property.name;
           }
         }
-
-        // 👉 template get karo
+        
+        // Get company address from settings
+        const [settings] = await pool.query(
+          "SELECT value FROM app_settings WHERE setting_key = 'company_address'"
+        );
+        const companyAddress = settings.length > 0 ? settings[0].value : "Your Address Here";
+        
+        // Get birthday template - category = 'birthday'
         const template = await getTemplate("birthday", "email");
-
+        
+        // Replace variables (only tenant_name, year, company_address as per your template)
         const emailSubject = replaceVariables(template.subject, {
-          property_name: propertyName,
+          tenant_name: tenant.full_name,
+          year: new Date().getFullYear(),
+          company_address: companyAddress
         });
-
-        // 🔥 replace variables
+        
         const emailBody = replaceVariables(template.content, {
           tenant_name: tenant.full_name,
-          property_name: propertyName,
+          year: new Date().getFullYear(),
+          company_address: companyAddress
         });
-
-        // 👉 send email
+        
+        // Send email
         await sendEmail(
           tenant.email,
-          emailSubject || "Happy Birthday 🎉",
-          emailBody,
+          emailSubject || "Happy Birthday! 🎉",
+          emailBody
         );
-
-        console.log(`🎉 Birthday email sent to ${tenant.email}`);
+        
+        console.log(`🎉 Birthday email sent to ${tenant.email} (${tenant.full_name})`);
+        sent++;
+        
+      } catch (error) {
+        console.error(`❌ Failed to send birthday email to tenant ${tenant.id}:`, error.message);
+        failed++;
       }
-
-      return res.json({
-        success: true,
-        message: "Birthday emails sent successfully",
-        count: tenants.length,
-      });
-    } catch (err) {
-      console.error("❌ Birthday error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to send birthday emails",
-      });
     }
-  },
+    
+    console.log(`📊 Birthday cron completed: ${sent} sent, ${failed} failed`);
+    
+    return res.json({
+      success: true,
+      message: "Birthday emails sent successfully",
+      sent: sent,
+      failed: failed,
+      date: today.toLocaleDateString()
+    });
+    
+  } catch (err) {
+    console.error("❌ Birthday error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send birthday emails: " + err.message,
+    });
+  }
+},
+
 };
 
 module.exports = TenantController;

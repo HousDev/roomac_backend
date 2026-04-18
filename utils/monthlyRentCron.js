@@ -5,9 +5,6 @@ const cron = require('node-cron');
 class MonthlyRentCron {
   
   // Main function to create monthly rent records
-// utils/monthlyRentCron.js - Updated createMonthlyRentRecords function
-
-// utils/monthlyRentCron.js - Updated createMonthlyRentRecords
 
 async createMonthlyRentRecords() {
   const today = new Date();
