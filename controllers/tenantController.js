@@ -36,6 +36,23 @@ const generateNextCoupleId = async () => {
   return `C${nextNumber.toString().padStart(3, "0")}`;
 };
 
+// Helper function to check if tenant has any payments
+const hasTenantPayments = async (tenantId) => {
+  try {
+    const [payments] = await pool.query(
+      `SELECT id FROM payments 
+       WHERE tenant_id = ? 
+       AND status IN ('approved', 'pending', 'paid')
+       LIMIT 1`,
+      [tenantId]
+    );
+    return payments.length > 0;
+  } catch (err) {
+    console.error("Error checking tenant payments:", err);
+    return false;
+  }
+}
+
 const TenantController = {
   async list(req, res) {
     try {
@@ -1103,6 +1120,7 @@ async sendCredentials(req, res) {
 },
 
   async update(req, res) {
+    let connection; 
     try {
       const id = req.params.id;
       const body = req.body || {};
@@ -1127,6 +1145,45 @@ async sendCredentials(req, res) {
           .status(404)
           .json({ success: false, message: "Tenant not found" });
       }
+
+      // ✅ GET DATABASE CONNECTION FOR TRANSACTION
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+        // ✅ CHECK IF CHECK-IN DATE IS BEING CHANGED
+    const oldCheckInDate = existingTenant.check_in_date;
+    const newCheckInDate = body.check_in_date;
+    const isCheckInDateChanging = oldCheckInDate !== newCheckInDate && newCheckInDate;
+
+    if (isCheckInDateChanging) {
+      // Check if tenant has any payments
+      const hasPayments = await hasTenantPayments(id);
+      
+      if (hasPayments) {
+        await connection.rollback();
+        connection.release();
+        
+        // Clean up uploaded files
+        if (req.files) {
+          Object.values(req.files).forEach((fileArray) => {
+            if (fileArray && fileArray.length > 0) {
+              fileArray.forEach((file) => {
+                if (file.path && fs.existsSync(file.path)) {
+                  fs.unlinkSync(file.path);
+                }
+              });
+            }
+          });
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: "Cannot change check-in date. Tenant has existing payment transactions. Please delete all payment transactions first.",
+          hasPayments: true,
+          paymentsExist: true
+        });
+      }
+    }
 
       // Handle file uploads - keep existing if new not provided
       const updateData = {};
@@ -1449,6 +1506,18 @@ async sendCredentials(req, res) {
         }
       }
 
+      // ✅ IF CHECK-IN DATE CHANGED AND NO PAYMENTS, DELETE AND RECREATE MONTHLY RENT
+    if (isCheckInDateChanging) {
+      // Delete all monthly rent records for this tenant
+      await connection.execute(
+        'DELETE FROM monthly_rent WHERE tenant_id = ?',
+        [id]
+      );
+      
+      // Update the check-in date in the updateData
+      updateData.check_in_date = newCheckInDate;
+    }
+
       // Update tenant
       const ok = await TenantModel.update(id, updateData);
       if (!ok) {
@@ -1456,6 +1525,27 @@ async sendCredentials(req, res) {
           .status(404)
           .json({ success: false, message: "Tenant not found or no changes" });
       }
+
+      // ✅ AFTER UPDATE, RECALCULATE MONTHLY RENT IF CHECK-IN DATE CHANGED
+    if (isCheckInDateChanging) {
+      try {
+        const monthlyRentCron = require("../cron/monthlyRentCron");
+        const backfillResult = await monthlyRentCron.backfillTenantMonths(id);
+        
+        if (!backfillResult.success) {
+          console.error(`Failed to recalculate monthly rent for tenant ${id}:`, backfillResult.error);
+          // Don't rollback, just log error - tenant update succeeded
+        } else {
+          console.log(`✅ Monthly rent recalculated for tenant ${id}`);
+        }
+      } catch (cronError) {
+        console.error(`Error recalculating monthly rent for tenant ${id}:`, cronError);
+        // Don't rollback, just log error
+      }
+    }
+
+    await connection.commit();
+    connection.release();
 
       // Handle credentials based on portal access
       const shouldHaveCredentials =

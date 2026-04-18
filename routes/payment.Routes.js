@@ -65,4 +65,6 @@ router.get('/ledger/:tenantId/download', paymentController.generateLedgerPDF);
 // Preview PDF in browser
 router.get('/ledger/:tenantId/preview', paymentController.previewLedgerPDF);
 
+router.get('/payments/tenant/:tenantId/check', paymentController.getTenantPaymentsForCheck);
+
 module.exports = router;
