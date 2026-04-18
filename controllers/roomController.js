@@ -110,6 +110,113 @@ const parsePhotoLabels = (req) => {
   return labels;
 };
 
+async function sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, isCouple) {
+  try {
+    // Get tenant details
+    const [tenant] = await db.query(
+      `SELECT id, full_name, email, check_in_date, property_id 
+       FROM tenants WHERE id = ?`,
+      [tenantId]
+    );
+    
+    if (!tenant.length || !tenant[0].email) {
+      console.log(`Tenant ${tenantId} has no email, skipping welcome email`);
+      return;
+    }
+    
+    const tenantData = tenant[0];
+    
+    // Get room details AND property details including security_deposit
+    const [room] = await db.query(
+      `SELECT r.id, r.room_number, r.rent_per_bed, r.sharing_type,
+              p.id as property_id, p.name as property_name, 
+              p.lockin_period_months, p.notice_period_days,
+              p.security_deposit
+       FROM rooms r
+       JOIN properties p ON r.property_id = p.id
+       WHERE r.id = ?`,
+      [roomId]
+    );
+    
+    if (!room.length) {
+      console.log(`Room ${roomId} not found, skipping welcome email`);
+      return;
+    }
+    
+    const roomData = room[0];
+    
+    // Use tenant_rent from bed_assignments (customRent) or room's rent_per_bed
+    const rentAmount = customRent || roomData.rent_per_bed;
+    
+    // Get deposit amount from property's security_deposit field
+    // If security_deposit is NULL or 0, use 2 months rent as fallback
+    let depositAmount = roomData.security_deposit ? parseFloat(roomData.security_deposit) : rentAmount * 2;
+    
+    // Get company address from settings
+    const [settings] = await db.query(
+      "SELECT value FROM app_settings WHERE setting_key = 'site_name'"
+    );
+    const companyAddress = settings.length > 0 ? settings[0].value : "Your Address Here";
+    
+    // Format move-in date (use check_in_date or today's date)
+    let moveInDate = tenantData.check_in_date || new Date().toISOString().split('T')[0];
+    const formattedMoveInDate = new Date(moveInDate).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    
+    // Get welcome email template
+    const { getTemplate, replaceVariables } = require('../utils/templateService');
+    const { sendEmail } = require('../utils/emailService');
+    
+    const template = await getTemplate("welcome", "email");
+    
+    // Replace variables in subject
+    const emailSubject = replaceVariables(template.subject, {
+      tenant_name: tenantData.full_name,
+      property_name: roomData.property_name,
+      move_in_date: formattedMoveInDate,
+      room_number: roomData.room_number,
+      rent_amount: rentAmount,
+      billing_cycle: "Monthly",
+      deposit_amount: depositAmount,
+      notice_period: roomData.notice_period_days || 30,
+      company_address: companyAddress,
+      year: new Date().getFullYear()
+    });
+    
+    // Replace variables in content
+    const emailBody = replaceVariables(template.content, {
+      tenant_name: tenantData.full_name,
+      property_name: roomData.property_name,
+      move_in_date: formattedMoveInDate,
+      room_number: roomData.room_number,
+      rent_amount: rentAmount,
+      billing_cycle: "Monthly",
+      deposit_amount: depositAmount,
+      notice_period: roomData.notice_period_days || 30,
+      company_address: companyAddress,
+      year: new Date().getFullYear(),
+      dashboard_url: "https://roomac.in/login"
+    });
+    
+    // Send email
+    await sendEmail(
+      tenantData.email,
+      emailSubject || `Welcome to ${roomData.property_name}, ${tenantData.full_name}!`,
+      emailBody
+    );
+    
+    console.log(`✅ Welcome email sent to ${tenantData.email} for room ${roomData.room_number}`);
+    console.log(`   Rent: ₹${rentAmount}, Deposit: ₹${depositAmount}`);
+    
+  } catch (error) {
+    console.error("Error sending welcome email:", error);
+    // Don't throw - just log the error so it doesn't break the assignment
+  }
+}
+
 const RoomController = {
   // Get all rooms - GET /api/rooms
   async getAllRooms(req, res) {
@@ -744,8 +851,7 @@ async assignBed(req, res) {
       partner_organization,
       partner_relationship 
     } = req.body;
-    console.log("adfad",req.body);
-    return;
+    console.log("Assigning bed:", req.body);
     // Validate required fields
     if (!room_id || !bed_number || !tenant_id || !tenant_gender) {
       return res.status(400).json({
@@ -819,6 +925,14 @@ async assignBed(req, res) {
         partner_relationship
       }
     );
+
+    if (result.success) {
+      try {
+        await sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, coupleStatus);
+      } catch (emailErr) {
+        console.error("Failed to send welcome email:", emailErr);
+      }
+    }
     
     res.json({
       success: true,
@@ -844,8 +958,8 @@ async assignBed(req, res) {
 },
 
 
-// controllers/roomController.js - Fix the updateBedAssignment method
-// controllers/roomController.js
+
+
 
 async updateBedAssignment(req, res) {
   console.log("upadate bed assignment", req.body);
@@ -963,9 +1077,33 @@ async updateBedAssignment(req, res) {
     if (partner_relationship !== undefined) {
       processedData.partner_relationship = partner_relationship;
     }
+
     
     // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
+
+    console.log("Update result:", result);
+    // ✅ Send welcome email if a new tenant was assigned (not vacating)
+      if (result.success && processedData.tenant_id && !processedData.is_available) {
+        try {
+          const [bedInfo] = await db.query(
+            `SELECT room_id, bed_number FROM bed_assignments WHERE id = ?`,
+            [id]
+          );
+          
+          if (bedInfo.length > 0) {
+            await sendWelcomeEmail(
+              processedData.tenant_id, 
+              bedInfo[0].room_id, 
+              bedInfo[0].bed_number, 
+              processedData.tenant_rent, 
+              processedData.is_couple || false
+            );
+          }
+        } catch (emailErr) {
+          console.error("Failed to send welcome email on update:", emailErr);
+        }
+      }
     
     res.json({
       success: true,

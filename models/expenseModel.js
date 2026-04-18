@@ -14,50 +14,52 @@ const parseItems = (raw) => {
 
 const ExpenseModel = {
   // ── Get all expenses with optional filters ──────────────────────────────
-  getAll: async (filters = {}) => {
-    try {
-      let query = `SELECT * FROM expenses WHERE 1=1`;
-      const params = [];
+// In getAll method of expenseModel.js, remove description from search
+getAll: async (filters = {}) => {
+  try {
+    let query = `SELECT * FROM expenses WHERE 1=1`;
+    const params = [];
 
-      if (filters.property_id) {
-        query += ` AND property_id = ?`;
-        params.push(filters.property_id);
-      }
-      if (filters.category_id) {
-        query += ` AND category_id = ?`;
-        params.push(filters.category_id);
-      }
-      if (filters.payment_mode) {
-        query += ` AND payment_mode = ?`;
-        params.push(filters.payment_mode);
-      }
-      if (filters.status) {
-        query += ` AND status = ?`;
-        params.push(filters.status);
-      }
-      if (filters.search) {
-        query += ` AND (description LIKE ? OR category_name LIKE ? OR payment_mode LIKE ? OR added_by_name LIKE ?)`;
-        const s = `%${filters.search}%`;
-        params.push(s, s, s, s);
-      }
-      if (filters.from_date) {
-        query += ` AND expense_date >= ?`;
-        params.push(filters.from_date);
-      }
-      if (filters.to_date) {
-        query += ` AND expense_date <= ?`;
-        params.push(filters.to_date);
-      }
-
-      query += ` ORDER BY created_at DESC`;
-
-      const [rows] = await db.query(query, params);
-      return rows.map((r) => ({ ...r, items: parseItems(r.items) }));
-    } catch (err) {
-      console.error("ExpenseModel.getAll Error:", err);
-      throw err;
+    if (filters.property_id) {
+      query += ` AND property_id = ?`;
+      params.push(filters.property_id);
     }
-  },
+    if (filters.category_id) {
+      query += ` AND category_id = ?`;
+      params.push(filters.category_id);
+    }
+    if (filters.payment_mode) {
+      query += ` AND payment_mode = ?`;
+      params.push(filters.payment_mode);
+    }
+    if (filters.status) {
+      query += ` AND status = ?`;
+      params.push(filters.status);
+    }
+    // Remove description from search - only search in category_name, payment_mode, added_by_name
+    if (filters.search) {
+      query += ` AND (category_name LIKE ? OR payment_mode LIKE ? OR added_by_name LIKE ?)`;
+      const s = `%${filters.search}%`;
+      params.push(s, s, s);
+    }
+    if (filters.from_date) {
+      query += ` AND expense_date >= ?`;
+      params.push(filters.from_date);
+    }
+    if (filters.to_date) {
+      query += ` AND expense_date <= ?`;
+      params.push(filters.to_date);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const [rows] = await db.query(query, params);
+    return rows.map((r) => ({ ...r, items: parseItems(r.items) }));
+  } catch (err) {
+    console.error("ExpenseModel.getAll Error:", err);
+    throw err;
+  }
+},
 
   // ── Get single expense by ID ────────────────────────────────────────────
   getById: async (id) => {
@@ -72,52 +74,52 @@ const ExpenseModel = {
   },
 
   // ── Create expense ──────────────────────────────────────────────────────
-  create: async (data) => {
-    try {
-      const {
-        property_id, property_name,
-        category_id, category_name,
-        description, amount,
-        payment_mode,
-        receipt_url, receipt_name,
-        expense_date, status,
-        added_by_name, notes,
-        items = [],
-      } = data;
+// ── Create expense ──────────────────────────────────────────────────────
+create: async (data) => {
+  try {
+    const {
+      property_id, property_name,
+      category_id, category_name,
+      amount,
+      payment_mode,
+      receipt_url, receipt_name,
+      expense_date, status,
+      added_by_name, notes,
+      items = [],
+    } = data;
 
-      const itemsJson = items.length ? JSON.stringify(items) : null;
+    const itemsJson = items.length ? JSON.stringify(items) : null;
 
-      const [result] = await db.query(
-        `INSERT INTO expenses
-           (property_id, property_name, category_id, category_name,
-            description, amount, payment_mode,
-            receipt_url, receipt_name, expense_date, status,
-            added_by_name, notes, items)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          parseInt(property_id),
-          property_name,
-          parseInt(category_id) || 0,
-          category_name,
-          description,
-          parseFloat(amount) || 0,
-          payment_mode || "Cash",
-          receipt_url || null,
-          receipt_name || null,
-          expense_date,
-          status || "Pending",
-          added_by_name,
-          notes || null,
-          itemsJson,
-        ]
-      );
+    const [result] = await db.query(
+      `INSERT INTO expenses
+         (property_id, property_name, category_id, category_name,
+          amount, payment_mode,
+          receipt_url, receipt_name, expense_date, status,
+          added_by_name, notes, items)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,  // Changed from 14 to 13 placeholders
+      [
+        parseInt(property_id),
+        property_name,
+        parseInt(category_id) || 0,
+        category_name,
+        parseFloat(amount) || 0,
+        payment_mode || "Cash",
+        receipt_url || null,
+        receipt_name || null,
+        expense_date,
+        status || "Pending",
+        added_by_name,
+        notes || null,
+        itemsJson,  // This is the 13th value
+      ]
+    );
 
-      return { id: result.insertId };
-    } catch (err) {
-      console.error("ExpenseModel.create Error:", err);
-      throw err;
-    }
-  },
+    return { id: result.insertId };
+  } catch (err) {
+    console.error("ExpenseModel.create Error:", err);
+    throw err;
+  }
+},
 
   // ── Update expense ──────────────────────────────────────────────────────
   update: async (id, data) => {
@@ -125,7 +127,7 @@ const ExpenseModel = {
       const allowed = [
         "property_id", "property_name",
         "category_id", "category_name",
-        "description", "amount",
+         "amount",
         "payment_mode",
         "receipt_url", "receipt_name",
         "expense_date", "status",

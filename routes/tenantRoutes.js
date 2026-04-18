@@ -46,7 +46,7 @@ router.post("/", tenantDocumentUploadFlexible, handleUploadError, TenantControll
 router.put("/:id", tenantDocumentUploadFlexible, handleUploadError, TenantController.update);
 router.post("/:id/send-credentials", TenantController.sendCredentials);
 
-router.get("/birthday-wish", TenantController.sendBirthdayWishes);
+router.post("/birthday-wish", TenantController.sendBirthdayWishes);
 
 // Other routes without file upload
 router.get("/:id", TenantController.getById);
@@ -293,6 +293,44 @@ router.get("/filter", async (req, res) => {
   } catch (error) {
     console.error("Error in filter endpoint:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// routes/tenantRoutes.js - Add this route for manual testing
+router.post("/birthday-cron/run", async (req, res) => {
+  try {
+    const birthdayCron = require("../utils/birthdayCron");
+    const result = await birthdayCron.sendBirthdayEmails();
+    
+    return res.json({
+      success: result.success,
+      message: result.success ? "Birthday emails sent successfully" : "Failed to send birthday emails",
+      data: result
+    });
+  } catch (error) {
+    console.error("Manual birthday cron error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Optional: Check birthdays for a specific date
+router.get("/birthday-check/:date", async (req, res) => {
+  try {
+    const birthdayCron = require("../utils/birthdayCron");
+    const tenants = await birthdayCron.checkBirthdaysForDate(req.params.date);
+    
+    return res.json({
+      success: true,
+      data: tenants
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 });
 

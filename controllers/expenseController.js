@@ -62,11 +62,14 @@ const getExpenseById = async (req, res) => {
 // POST /api/expenses
 const createExpense = async (req, res) => {
   try {
-    const { property_id, category_id, description, payment_mode, expense_date } = req.body;
-    if (!property_id || !category_id || !description || !payment_mode || !expense_date) {
+    // Remove 'description' from destructuring
+    const { property_id, category_id, payment_mode, expense_date } = req.body;
+    
+    // Remove description from validation
+    if (!property_id || !category_id || !payment_mode || !expense_date) {
       return res.status(400).json({
         success: false,
-        message: "property_id, category_id, description, payment_mode and expense_date are required",
+        message: "property_id, category_id, payment_mode and expense_date are required",
       });
     }
 
@@ -85,7 +88,7 @@ const createExpense = async (req, res) => {
       property_name: req.body.property_name,
       category_id: req.body.category_id,
       category_name: req.body.category_name,
-      description: req.body.description,
+      // description field removed
       amount: req.body.amount,
       payment_mode: req.body.payment_mode || "Cash",
       receipt_url: receipt.url,
@@ -126,7 +129,7 @@ const updateExpense = async (req, res) => {
       property_name: req.body.property_name,
       category_id: req.body.category_id,
       category_name: req.body.category_name,
-      description: req.body.description,
+    
       amount: req.body.amount,
       payment_mode: req.body.payment_mode || "Cash",
       receipt_url: receipt.url,
