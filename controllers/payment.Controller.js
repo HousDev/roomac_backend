@@ -548,47 +548,46 @@ async createPayment(req, res) {
       await connection.commit();
       connection.release();
 
-       // ✅ Send email to property manager after successful payment
-      try {
-        
-        // Fetch tenant details
-        // Fetch tenant details
-        const [tenantRows] = await db.execute(
-          `SELECT id, full_name, email, phone FROM tenants WHERE id = ?`,
-          [paymentData.tenant_id]
+        // ✅ Send email to property manager ONLY if payment is from tenant dashboard
+  if (paymentData.source === 'tenant') {
+    try {
+      // Fetch tenant details
+      const [tenantRows] = await db.execute(
+        `SELECT id, full_name, email, phone FROM tenants WHERE id = ?`,
+        [paymentData.tenant_id]
+      );
+      const tenant = tenantRows[0];
+      
+      // Fetch property details from bed assignment
+      const [propertyRows] = await db.execute(`
+        SELECT 
+          p.id, p.name, p.address, p.property_manager_name, p.property_manager_email, p.property_manager_phone,
+          r.room_number,
+          ba.bed_number
+        FROM bed_assignments ba
+        JOIN rooms r ON ba.room_id = r.id
+        JOIN properties p ON r.property_id = p.id
+        WHERE ba.tenant_id = ? AND ba.is_available = 0
+      `, [paymentData.tenant_id]);
+      
+      const propertyInfo = propertyRows[0];
+      
+      if (propertyInfo && propertyInfo.property_manager_email) {
+        await paymentController.sendPropertyManagerPaymentEmail(
+          paymentData,
+          tenant,
+          propertyInfo,
+          { bed_number: propertyInfo.bed_number, room_number: propertyInfo.room_number }
         );
-        const tenant = tenantRows[0];
-
-        
-        // Fetch property details from bed assignment
-        const [propertyRows] = await db.execute(`
-          SELECT 
-            p.id, p.name, p.address, p.property_manager_name, p.property_manager_email, p.property_manager_phone,
-            r.room_number,
-            ba.bed_number
-          FROM bed_assignments ba
-          JOIN rooms r ON ba.room_id = r.id
-          JOIN properties p ON r.property_id = p.id
-          WHERE ba.tenant_id = ? AND ba.is_available = 0
-        `, [paymentData.tenant_id]);
-        
-        const propertyInfo = propertyRows[0];
-
-        
-        
-        if (propertyInfo && propertyInfo.property_manager_email) {
-          
-          await paymentController.sendPropertyManagerPaymentEmail(
-            paymentData,
-            tenant,
-            propertyInfo,
-            { bed_number: propertyInfo.bed_number, room_number: propertyInfo.room_number }
-          );
-        }
-      } catch (emailError) {
-        console.error("Failed to send property manager email:", emailError);
-        // Don't block the response
       }
+    } catch (emailError) {
+      console.error("Failed to send property manager email:", emailError);
+      // Don't block the response
+    }
+  } else {
+    console.log(`📧 Skipping email - Payment source is: ${paymentData.source} (not tenant)`);
+  }
+
 
       return res.status(201).json({
         success: true,
@@ -737,41 +736,45 @@ async createPayment(req, res) {
     await connection.commit();
     connection.release();
 
-    // ✅ Send email to property manager after successful rent payment
-    try {
-      // Fetch tenant details
-      const [tenantRows] = await db.execute(
-        `SELECT id, full_name, email, phone FROM tenants WHERE id = ?`,
-        [paymentData.tenant_id]
+   // ✅ Send email to property manager ONLY if payment is from tenant dashboard
+if (paymentData.source === 'tenant') {
+  try {
+    // Fetch tenant details
+    const [tenantRows] = await db.execute(
+      `SELECT id, full_name, email, phone FROM tenants WHERE id = ?`,
+      [paymentData.tenant_id]
+    );
+    const tenant = tenantRows[0];
+    
+    // Fetch property details from bed assignment
+    const [propertyRows] = await db.execute(`
+      SELECT 
+        p.id, p.name, p.address, p.property_manager_name, p.property_manager_email, p.property_manager_phone,
+        r.room_number,
+        ba.bed_number
+      FROM bed_assignments ba
+      JOIN rooms r ON ba.room_id = r.id
+      JOIN properties p ON r.property_id = p.id
+      WHERE ba.tenant_id = ? AND ba.is_available = 0
+    `, [paymentData.tenant_id]);
+    
+    const propertyInfo = propertyRows[0];
+    
+    if (propertyInfo && propertyInfo.property_manager_email) {
+      await paymentController.sendPropertyManagerPaymentEmail(
+        paymentData,
+        tenant,
+        propertyInfo,
+        { bed_number: propertyInfo.bed_number, room_number: propertyInfo.room_number }
       );
-      const tenant = tenantRows[0];
-      
-      // Fetch property details from bed assignment
-      const [propertyRows] = await db.execute(`
-        SELECT 
-          p.id, p.name, p.address, p.property_manager_name, p.property_manager_email, p.property_manager_phone,
-          r.room_number,
-          ba.bed_number
-        FROM bed_assignments ba
-        JOIN rooms r ON ba.room_id = r.id
-        JOIN properties p ON r.property_id = p.id
-        WHERE ba.tenant_id = ? AND ba.is_available = 0
-      `, [paymentData.tenant_id]);
-      
-      const propertyInfo = propertyRows[0];
-      
-      if (propertyInfo && propertyInfo.property_manager_email) {
-        await paymentController.sendPropertyManagerPaymentEmail(
-          paymentData,
-          tenant,
-          propertyInfo,
-          { bed_number: propertyInfo.bed_number, room_number: propertyInfo.room_number }
-        );
-      }
-    } catch (emailError) {
-      console.error("Failed to send property manager email:", emailError);
-      // Don't block the response
     }
+  } catch (emailError) {
+    console.error("Failed to send property manager email:", emailError);
+    // Don't block the response
+  }
+} else {
+  console.log(`📧 Skipping email - Payment source is: ${paymentData.source} (not tenant)`);
+}
 
     res.status(201).json({
       success: true,
@@ -827,6 +830,34 @@ async createPayment(req, res) {
       });
     }
   },
+
+  async getTenantPaymentsForCheck(req, res) {
+  try {
+    const { tenantId } = req.params;
+    
+    const [payments] = await db.execute(`
+      SELECT id, amount, status, payment_type, payment_date
+      FROM payments 
+      WHERE tenant_id = ? 
+      AND status IN ('approved', 'pending', 'paid')
+      ORDER BY payment_date DESC
+    `, [tenantId]);
+    
+    res.status(200).json({
+      success: true,
+      data: payments,
+      hasPayments: payments.length > 0,
+      count: payments.length
+    });
+  } catch (error) {
+    console.error("Error fetching tenant payments:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch tenant payments",
+      error: error.message
+    });
+  }
+},
 
   // Get payment by ID
   async getPayment(req, res) {
@@ -1689,43 +1720,73 @@ async createPayment(req, res) {
   },
 
   // Delete payment
-  async deletePayment(req, res) {
-    try {
-      const { id } = req.params;
+async deletePayment(req, res) {
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+  
+  try {
+    const { id } = req.params;
 
-      const payment = await Payment.findById(id);
-      if (!payment) {
-        return res.status(404).json({
-          success: false,
-          message: "Payment not found",
-        });
-      }
-
-      // Optional: Add permission check here
-      // Only allow admins to delete approved payments, or anyone to delete pending/rejected
-
-      const deleted = await Payment.deletePayment(id);
-
-      if (deleted) {
-        res.status(200).json({
-          success: true,
-          message: "Payment deleted successfully",
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: "Failed to delete payment",
-        });
-      }
-    } catch (error) {
-      console.error("Error deleting payment:", error);
-      res.status(500).json({
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({
         success: false,
-        message: "Failed to delete payment",
-        error: error.message,
+        message: "Payment not found",
       });
     }
-  },
+
+    // ✅ Remove the restriction - allow deleting any payment regardless of status
+    // Just delete the payment record
+    
+    // If it's an approved payment, also update monthly_rent
+    if (payment.status === 'approved' || payment.status === 'paid') {
+      // Update monthly_rent to subtract this payment
+      await connection.execute(`
+        UPDATE monthly_rent 
+        SET paid = paid - ?, 
+            balance = balance + ?,
+            status = CASE 
+              WHEN (paid - ?) >= rent THEN 'paid'
+              WHEN (paid - ?) > 0 THEN 'partial'
+              ELSE 'pending'
+            END
+        WHERE tenant_id = ? AND month = ? AND year = ?
+      `, [payment.amount, payment.amount, payment.amount, payment.amount, 
+          payment.tenant_id, payment.month, payment.year]);
+    }
+    
+    // Delete the payment
+    const deleted = await Payment.deletePayment(id);
+    
+    if (deleted) {
+      await connection.commit();
+      connection.release();
+      
+      res.status(200).json({
+        success: true,
+        message: "Payment deleted successfully",
+      });
+    } else {
+      await connection.rollback();
+      connection.release();
+      res.status(400).json({
+        success: false,
+        message: "Failed to delete payment",
+      });
+    }
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error("Error deleting payment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete payment",
+      error: error.message,
+    });
+  }
+},
 
   // Get security deposit info
   async getSecurityDepositInfo(req, res) {
