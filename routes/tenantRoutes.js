@@ -93,13 +93,14 @@ router.get("/property/:id/details", async (req, res) => {
       });
     }
 
-    // Return only the needed fields
+    // Return the needed fields INCLUDING security_deposit
     const propertyDetails = {
       id: property.id,
       name: property.name,
       address: property.address,
       city: property.city,
       state: property.state,
+      security_deposit: property.security_deposit || 0,  // IMPORTANT: Include this
       lockin_period_months: property.lockin_period_months || 0,
       lockin_penalty_amount: property.lockin_penalty_amount || 0,
       lockin_penalty_type: property.lockin_penalty_type || 'fixed',
@@ -333,5 +334,7 @@ router.get("/birthday-check/:date", async (req, res) => {
     });
   }
 });
+
+router.get('/couple/:coupleId/primary', TenantController.getPrimaryTenantByCoupleId);
 
 module.exports = router;

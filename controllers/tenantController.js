@@ -203,82 +203,75 @@ const TenantController = {
     }
   },
 
-  async getById(req, res) {
-    try {
-      const id = req.params.id;
-      const tenant = await TenantModel.findById(id);
+async getById(req, res) {
+  try {
+    const id = req.params.id;
+    // Use getTenantWithPartner instead of findById
+    const tenant = await TenantModel.getTenantWithPartner(id);
 
-      if (!tenant) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Tenant not found" });
-      }
-
-      // Get property details if property_id exists
-      let propertyDetails = null;
-      if (tenant.property_id) {
-        try {
-          const [propRows] = await pool.query(
-            "SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?",
-            [tenant.property_id],
-          );
-          propertyDetails = propRows[0] || null;
-        } catch (propErr) {
-          console.error("Failed to fetch property details:", propErr);
-        }
-      }
-
-      const bookings = await TenantModel.getBookingsForTenantIds([tenant.id]);
-      const payments = await TenantModel.getPaymentsForTenantIds([tenant.id]);
-      const credentials = await TenantModel.getCredentialsByTenantIds([
-        tenant.id,
-      ]);
-
-      // NEW: Get vacate records for this tenant
-      const vacateRecords = await TenantModel.getVacateRecordsByTenantId(
-        tenant.id,
-      );
-      const hasVacated = vacateRecords.length > 0;
-
-      // Format bookings
-      const formattedBookings = bookings.map((b) => ({
-        id: b.id,
-        status: b.status,
-        monthly_rent: Number(b.monthly_rent || 0),
-        properties: {
-          name: b.property_name || null,
-          city: b.property_city || null,
-          state: b.property_state || null,
-        },
-        room: {
-          room_number: b.room_number,
-          room_type: b.room_type,
-          sharing_type: b.sharing_type,
-          floor: b.floor,
-        },
-      }));
-
-      return res.json({
-        success: true,
-        data: {
-          ...tenant,
-          property_details: propertyDetails,
-          bookings: formattedBookings || [],
-          payments: payments || [],
-          has_credentials: credentials && credentials.length ? true : false,
-          credential_email:
-            credentials && credentials[0] ? credentials[0].email : null,
-          has_vacated: hasVacated, // Add this flag
-          vacate_records: vacateRecords, // Add vacate records
-        },
-      });
-    } catch (err) {
-      console.error("TenantController.getById error:", err);
+    if (!tenant) {
       return res
-        .status(500)
-        .json({ success: false, message: "Failed to fetch tenant" });
+        .status(404)
+        .json({ success: false, message: "Tenant not found" });
     }
-  },
+
+    // Get property details if property_id exists
+    let propertyDetails = null;
+    if (tenant.property_id) {
+      try {
+        const [propRows] = await pool.query(
+          "SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?",
+          [tenant.property_id],
+        );
+        propertyDetails = propRows[0] || null;
+      } catch (propErr) {
+        console.error("Failed to fetch property details:", propErr);
+      }
+    }
+
+    const bookings = await TenantModel.getBookingsForTenantIds([tenant.id]);
+    const payments = await TenantModel.getPaymentsForTenantIds([tenant.id]);
+    const credentials = await TenantModel.getCredentialsByTenantIds([tenant.id]);
+    const vacateRecords = await TenantModel.getVacateRecordsByTenantId(tenant.id);
+    const hasVacated = vacateRecords.length > 0;
+
+    const formattedBookings = bookings.map((b) => ({
+      id: b.id,
+      status: b.status,
+      monthly_rent: Number(b.monthly_rent || 0),
+      properties: {
+        name: b.property_name || null,
+        city: b.property_city || null,
+        state: b.property_state || null,
+      },
+      room: {
+        room_number: b.room_number,
+        room_type: b.room_type,
+        sharing_type: b.sharing_type,
+        floor: b.floor,
+      },
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        ...tenant,
+        property_details: propertyDetails,
+        bookings: formattedBookings || [],
+        payments: payments || [],
+        has_credentials: credentials && credentials.length ? true : false,
+        credential_email: credentials && credentials[0] ? credentials[0].email : null,
+        has_vacated: hasVacated,
+        vacate_records: vacateRecords,
+      },
+    });
+  } catch (err) {
+    console.error("TenantController.getById error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch tenant" });
+  }
+},
 
   async checkExistence(req, res) {
     try {
@@ -389,602 +382,440 @@ const TenantController = {
     }
   },
 
-  async create(req, res) {
-    try {
-      const body = req.body || {};
-      const files = req.files || {};
+async create(req, res) {
+  try {
+    const body = req.body || {};
+    const files = req.files || {};
 
-      // Process uploaded files
-      const uploadedFiles = {};
+    // Process uploaded files
+    const uploadedFiles = {};
 
-      // Process main documents
-      const processMainDocument = (fieldName, folder) => {
-        if (files[fieldName] && files[fieldName][0]) {
-          const file = files[fieldName][0];
-          uploadedFiles[fieldName] = `/uploads/${folder}/${file.filename}`;
-          return true;
-        }
-        return false;
-      };
-
-      processMainDocument("id_proof_url", "id_proofs");
-      processMainDocument("address_proof_url", "address_proofs");
-      processMainDocument("photo_url", "photos");
-
-      // Process additional documents
-      let additionalDocs = [];
-
-      if (files["additional_documents[]"]) {
-        const additionalFiles = Array.isArray(files["additional_documents[]"])
-          ? files["additional_documents[]"]
-          : [files["additional_documents[]"]];
-
-        additionalDocs = additionalFiles.map((file) => ({
-          filename: file.originalname,
-          url: `/uploads/additional_docs/${file.filename}`,
-          uploaded_at: new Date().toISOString(),
-          document_type: "Additional",
-          file_size: file.size,
-          file_mimetype: file.mimetype,
-        }));
+    const processMainDocument = (fieldName, folder) => {
+      if (files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        uploadedFiles[fieldName] = `/uploads/${folder}/${file.filename}`;
+        return true;
       }
+      return false;
+    };
 
-      // Also check for other patterns
-      Object.keys(files).forEach((field) => {
-        if (
-          field.startsWith("additional_documents") &&
-          field !== "additional_documents[]"
-        ) {
-          const fileArray = Array.isArray(files[field])
-            ? files[field]
-            : [files[field]];
+    processMainDocument("id_proof_url", "id_proofs");
+    processMainDocument("address_proof_url", "address_proofs");
+    processMainDocument("photo_url", "photos");
 
-          fileArray.forEach((file) => {
-            if (file && file.originalname) {
-              // Check if this file already exists
-              const exists = additionalDocs.some(
-                (doc) => doc.filename === file.originalname,
-              );
-              if (!exists) {
-                additionalDocs.push({
-                  filename: file.originalname,
-                  url: `/uploads/additional_docs/${file.filename}`,
-                  uploaded_at: new Date().toISOString(),
-                  document_type: "Additional",
-                  file_size: file.size,
-                  file_mimetype: file.mimetype,
-                });
-              }
-            }
-          });
-        }
-      });
+    // Process additional documents
+    let additionalDocs = [];
 
-      // Process partner documents
-      const partnerUploadedFiles = {};
-      const processPartnerDocument = (fieldName, folder) => {
-        if (files[fieldName] && files[fieldName][0]) {
-          const file = files[fieldName][0];
-          partnerUploadedFiles[fieldName] =
-            `/uploads/${folder}/${file.filename}`;
-          return true;
-        }
-        return false;
-      };
+    if (files["additional_documents[]"]) {
+      const additionalFiles = Array.isArray(files["additional_documents[]"])
+        ? files["additional_documents[]"]
+        : [files["additional_documents[]"]];
 
-      processPartnerDocument("partner_id_proof_url", "partner_id_proofs");
-      processPartnerDocument(
-        "partner_address_proof_url",
-        "partner_address_proofs",
-      );
-      processPartnerDocument("partner_photo_url", "partner_photos");
+      additionalDocs = additionalFiles.map((file) => ({
+        filename: file.originalname,
+        url: `/uploads/additional_docs/${file.filename}`,
+        uploaded_at: new Date().toISOString(),
+        document_type: "Additional",
+        file_size: file.size,
+        file_mimetype: file.mimetype,
+      }));
+    }
 
-      // Generate couple_id if partner details exist
-      let coupleId = null;
-      let isCoupleBooking = false;
-
-      if (body.partner_full_name) {
-        isCoupleBooking = true;
-        // Generate simple auto-increment couple ID
-        coupleId = await generateNextCoupleId();
-      }
-
-      // Parse numeric fields
-      const parseNumber = (value, defaultValue = 0) => {
-        if (value === undefined || value === null || value === "")
-          return defaultValue;
-        const num = parseFloat(value);
-        return isNaN(num) ? defaultValue : num;
-      };
-
-      // Parse integer fields
-      const parseIntValue = (value, defaultValue = null) => {
-        if (value === undefined || value === null || value === "")
-          return defaultValue;
-        const num = parseInt(value);
-        return isNaN(num) ? defaultValue : num;
-      };
-      let propertyName = "";
-      if (body.property_id) {
-        const [[propertyData]] = await pool.query(
-          "select * from properties where id=?",
-          [body.property_id],
-        );
-        propertyName = propertyData.name;
-      }
-      // Create a clean tenant data object with all fields
-      const tenantData = {
-        // Personal info
-        salutation: body.salutation || null,
-        full_name: body.full_name,
-        email: body.email,
-        phone: body.phone,
-        country_code: body.country_code || "+91",
-        gender: body.gender,
-        date_of_birth: body.date_of_birth || null,
-
-        // Occupation fields - ALL of them
-        occupation_category: body.occupation_category || null,
-        exact_occupation: body.exact_occupation || null,
-        occupation: body.occupation || null,
-        organization: body.organization || null,
-        years_of_experience: body.years_of_experience
-          ? parseIntValue(body.years_of_experience)
-          : null,
-        monthly_income: body.monthly_income
-          ? parseNumber(body.monthly_income)
-          : null,
-        course_duration: body.course_duration || null,
-        student_id: body.student_id || null,
-        employee_id: body.employee_id || null,
-        portfolio_url: body.portfolio_url || null,
-        work_mode: body.work_mode || null,
-        shift_timing: body.shift_timing || null,
-
-        // Status
-        portal_access_enabled:
-          body.portal_access_enabled === "true" ||
-          body.portal_access_enabled === true ||
-          false,
-        is_active:
-          body.is_active === undefined || body.is_active === ""
-            ? true
-            : body.is_active === "true" ||
-              body.is_active === true ||
-              body.is_active === "1",
-
-        // Address
-        address: body.address || null,
-        city: body.city || null,
-        state: body.state || null,
-        pincode: body.pincode || null,
-
-        // Preferences
-        preferred_sharing: body.preferred_sharing || null,
-        preferred_room_type: body.preferred_room_type || null,
-        preferred_property_id: body.preferred_property_id
-          ? parseIntValue(body.preferred_property_id)
-          : null,
-        property_id: body.property_id ? parseIntValue(body.property_id) : null,
-        property_name: propertyName || null, // Add property_name to tenantData for email template
-        check_in_date: body.check_in_date || null,
-
-        // Emergency contacts
-        emergency_contact_name: body.emergency_contact_name || null,
-        emergency_contact_phone: body.emergency_contact_phone || null,
-        emergency_contact_relation: body.emergency_contact_relation || null,
-        emergency_contact_email: body.emergency_contact_email || null, // ADD THIS
-
-        // Lock-in period fields
-        lockin_period_months: body.lockin_period_months
-          ? parseIntValue(body.lockin_period_months)
-          : 0,
-        lockin_penalty_amount: body.lockin_penalty_amount
-          ? parseNumber(body.lockin_penalty_amount)
-          : 0,
-        lockin_penalty_type: body.lockin_penalty_type || "fixed",
-
-        // Notice period fields
-        notice_period_days: body.notice_period_days
-          ? parseIntValue(body.notice_period_days)
-          : 0,
-        notice_penalty_amount: body.notice_penalty_amount
-          ? parseNumber(body.notice_penalty_amount)
-          : 0,
-        notice_penalty_type: body.notice_penalty_type || "fixed",
-
-        // NEW: Aadhar and PAN fields
-        aadhar_number: body.aadhar_number || null,
-        pan_number: body.pan_number || null,
-        id_proof_type: body.id_proof_type || null,
-        address_proof_type: body.address_proof_type || null,
-        id_proof_number: body.id_proof_number || null,
-        address_proof_number: body.address_proof_number || null,
-
-        // NEW: Partner Details
-        partner_full_name: body.partner_full_name || null,
-        partner_salutation: body.partner_salutation || null, // ADD THIS
-
-        partner_phone: body.partner_phone || null,
-        partner_country_code: body.partner_country_code || "+91", // ADD THIS
-        partner_email: body.partner_email || null,
-        partner_gender: body.partner_gender || null,
-        partner_date_of_birth: body.partner_date_of_birth || null,
-        partner_address: body.partner_address || null,
-        partner_occupation: body.partner_occupation || null,
-        partner_organization: body.partner_organization || null,
-        partner_relationship: body.partner_relationship || null,
-        partner_id_proof_type: body.partner_id_proof_type || null,
-        partner_id_proof_number: body.partner_id_proof_number || null,
-        partner_address_proof_type: body.partner_address_proof_type || null,
-        partner_address_proof_number: body.partner_address_proof_number || null,
-
-        // Partner documents URLs
-        partner_id_proof_url: partnerUploadedFiles.partner_id_proof_url || null,
-        partner_address_proof_url:
-          partnerUploadedFiles.partner_address_proof_url || null,
-        partner_photo_url: partnerUploadedFiles.partner_photo_url || null,
-
-        is_couple_booking: body.partner_full_name ? true : false,
-        couple_id: coupleId,
-
-        // Files
-        ...uploadedFiles,
-        additional_documents: additionalDocs,
-      };
-
-      // Validate required fields
-      const required = ["full_name", "email", "phone"];
-      const missing = required.filter((field) => !tenantData[field]);
-      if (missing.length > 0) {
-        // Clean up uploaded files
-        if (req.files) {
-          Object.values(req.files).forEach((fileArray) => {
-            if (fileArray && fileArray.length > 0) {
-              fileArray.forEach((file) => {
-                if (file.path && fs.existsSync(file.path)) {
-                  fs.unlinkSync(file.path);
-                }
-              });
-            }
-          });
-        }
-
-        return res.status(400).json({
-          success: false,
-          message: `Missing required fields: ${missing.join(", ")}`,
-        });
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(tenantData.email)) {
-        // Clean up uploaded files
-        if (req.files) {
-          Object.values(req.files).forEach((fileArray) => {
-            if (fileArray && fileArray.length > 0) {
-              fileArray.forEach((file) => {
-                if (file.path && fs.existsSync(file.path)) {
-                  fs.unlinkSync(file.path);
-                }
-              });
-            }
-          });
-        }
-
-        return res.status(400).json({
-          success: false,
-          message: "Invalid email format",
-        });
-      }
-
-      // Validate phone (Indian format)
-      if (tenantData.phone) {
-        const phoneRegex = /^[6-9]\d{9}$/;
-        if (!phoneRegex.test(tenantData.phone.replace(/\D/g, ""))) {
-          // Clean up uploaded files
-          if (req.files) {
-            Object.values(req.files).forEach((fileArray) => {
-              if (fileArray && fileArray.length > 0) {
-                fileArray.forEach((file) => {
-                  if (file.path && fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                  }
-                });
-              }
-            });
-          }
-
-          return res.status(400).json({
-            success: false,
-            message:
-              "Invalid Indian mobile number (must be 10 digits starting with 6-9)",
-          });
-        }
-      }
-
-      // Validate emergency contact phone if provided
-      if (tenantData.emergency_contact_phone) {
-        const phoneRegex = /^[6-9]\d{9}$/;
-        if (
-          !phoneRegex.test(
-            tenantData.emergency_contact_phone.replace(/\D/g, ""),
-          )
-        ) {
-          // Clean up uploaded files
-          if (req.files) {
-            Object.values(req.files).forEach((fileArray) => {
-              if (fileArray && fileArray.length > 0) {
-                fileArray.forEach((file) => {
-                  if (file.path && fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                  }
-                });
-              }
-            });
-          }
-
-          return res.status(400).json({
-            success: false,
-            message: "Invalid emergency contact phone number",
-          });
-        }
-      }
-
-      // Validate date of birth (must be 18+)
-      if (tenantData.date_of_birth) {
-        const dob = new Date(tenantData.date_of_birth);
-        const today = new Date();
-        let age = today.getFullYear() - dob.getFullYear();
-        const monthDiff = today.getMonth() - dob.getMonth();
-        if (
-          monthDiff < 0 ||
-          (monthDiff === 0 && today.getDate() < dob.getDate())
-        ) {
-          age--;
-        }
-
-        if (age < 18) {
-          // Clean up uploaded files
-          if (req.files) {
-            Object.values(req.files).forEach((fileArray) => {
-              if (fileArray && fileArray.length > 0) {
-                fileArray.forEach((file) => {
-                  if (file.path && fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                  }
-                });
-              }
-            });
-          }
-
-          return res.status(400).json({
-            success: false,
-            message: "Tenant must be at least 18 years old",
-          });
-        }
-      }
-
-
-      // --- IMPORTANT PART: Check for existing soft-deleted tenant ---
-      // Check if tenant with same email or phone already exists (including soft-deleted)
-      const existingTenant = await TenantModel.findByEmailOrPhone(
-        tenantData.email,
-        tenantData.phone,
-        true, // include deleted records
-      );
-
-      if (existingTenant) {
-        if (existingTenant.deleted_at) {
-          // Tenant is soft-deleted - restore and update instead of creating new
-
-          // Restore the tenant (set deleted_at to NULL)
-          await TenantModel.restore(existingTenant.id);
-
-          // Prepare update data (exclude files that need special handling)
-          const updateData = { ...tenantData };
-
-          // Don't overwrite existing files if new ones weren't uploaded
-          if (!uploadedFiles.id_proof_url) {
-            delete updateData.id_proof_url;
-          }
-          if (!uploadedFiles.address_proof_url) {
-            delete updateData.address_proof_url;
-          }
-          if (!uploadedFiles.photo_url) {
-            delete updateData.photo_url;
-          }
-
-          // Handle additional documents - merge with existing
-          if (additionalDocs.length > 0) {
-            // Get existing additional docs
-            let existingDocs = [];
-            try {
-              if (existingTenant.additional_documents) {
-                if (typeof existingTenant.additional_documents === "string") {
-                  existingDocs = JSON.parse(
-                    existingTenant.additional_documents,
-                  );
-                } else if (Array.isArray(existingTenant.additional_documents)) {
-                  existingDocs = existingTenant.additional_documents;
-                }
-              }
-            } catch (e) {
-              console.error("Error parsing existing additional_documents:", e);
-            }
-
-            // Merge existing and new docs (avoid duplicates)
-            const allDocs = [...existingDocs, ...additionalDocs];
-            // Remove duplicates based on filename
-            const uniqueDocs = allDocs.filter(
-              (doc, index, self) =>
-                index === self.findIndex((d) => d.filename === doc.filename),
-            );
-
-            updateData.additional_documents = uniqueDocs;
-          }
-
-          // Update the restored tenant
-          await TenantModel.update(existingTenant.id, updateData);
-
-          // Create credentials if password is provided
-          if (
-            body.password &&
-            (body.create_credentials === "true" ||
-              body.create_credentials === true)
-          ) {
-            try {
-              // Check if credentials already exist
-              const credentials = await TenantModel.getCredentialsByTenantIds([
-                existingTenant.id,
-              ]);
-
-              const password_hash = await bcrypt.hash(
-                body.password,
-                SALT_ROUNDS,
-              );
-
-              if (credentials && credentials.length > 0) {
-                // Update existing credentials
-                await TenantModel.updateCredential(existingTenant.id, {
-                  password_hash,
-                });
-              } else {
-                // Create new credentials
-                await TenantModel.createCredential({
-                  tenant_id: existingTenant.id,
-                  email: body.email,
-                  password_hash,
-                });
-              }
-            } catch (credErr) {
-              console.error(
-                "Failed to create/update credentials for restored tenant:",
-                credErr,
-              );
-              // Continue even if credential creation fails
-            }
-          }
-
-          return res.status(200).json({
-            success: true,
-            message:
-              "Existing deleted tenant restored and updated successfully",
-            tenant_id: existingTenant.id,
-            restored: true,
-            additional_documents: updateData.additional_documents || [],
-          });
-        } else {
-          // Tenant exists and is not deleted - show error
-          // Clean up uploaded files
-          if (req.files) {
-            Object.values(req.files).forEach((fileArray) => {
-              if (fileArray && fileArray.length > 0) {
-                fileArray.forEach((file) => {
-                  if (file.path && fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                  }
-                });
-              }
-            });
-          }
-
-          return res.status(400).json({
-            success: false,
-            message: "Tenant with this email or phone already exists",
-          });
-        }
-      }
-
-      // --- Normal flow: No existing tenant found ---
-      // Create new tenant
-      const tenantId = await TenantModel.create(tenantData);
-
-      // Create credentials if password is provided
+    Object.keys(files).forEach((field) => {
       if (
-        body.password &&
-        (body.create_credentials === "true" || body.create_credentials === true)
+        field.startsWith("additional_documents") &&
+        field !== "additional_documents[]"
       ) {
+        const fileArray = Array.isArray(files[field])
+          ? files[field]
+          : [files[field]];
+
+        fileArray.forEach((file) => {
+          if (file && file.originalname) {
+            const exists = additionalDocs.some(
+              (doc) => doc.filename === file.originalname,
+            );
+            if (!exists) {
+              additionalDocs.push({
+                filename: file.originalname,
+                url: `/uploads/additional_docs/${file.filename}`,
+                uploaded_at: new Date().toISOString(),
+                document_type: "Additional",
+                file_size: file.size,
+                file_mimetype: file.mimetype,
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // Parse numeric fields
+    const parseNumber = (value, defaultValue = 0) => {
+      if (value === undefined || value === null || value === "")
+        return defaultValue;
+      const num = parseFloat(value);
+      return isNaN(num) ? defaultValue : num;
+    };
+
+    const parseIntValue = (value, defaultValue = null) => {
+      if (value === undefined || value === null || value === "")
+        return defaultValue;
+      const num = parseInt(value);
+      return isNaN(num) ? defaultValue : num;
+    };
+
+
+    // Check if this is a couple booking (partner_full_name exists in request)
+    const isCoupleBooking = body.partner_full_name && body.partner_full_name.trim() !== "";
+
+    // If couple booking, create two separate tenant records
+    if (isCoupleBooking) {
+      // Primary tenant data
+      // Primary tenant data (remove property_name)
+const primaryTenantData = {
+  salutation: body.salutation || null,
+  full_name: body.full_name,
+  email: body.email,
+  phone: body.phone,
+  country_code: body.country_code || "+91",
+  gender: body.gender,
+  date_of_birth: body.date_of_birth || null,
+  occupation_category: body.occupation_category || null,
+  exact_occupation: body.exact_occupation || null,
+  occupation: body.occupation || null,
+  organization: body.organization || null,
+  years_of_experience: body.years_of_experience ? parseIntValue(body.years_of_experience) : null,
+  monthly_income: body.monthly_income ? parseNumber(body.monthly_income) : null,
+  course_duration: body.course_duration || null,
+  student_id: body.student_id || null,
+  employee_id: body.employee_id || null,
+  portfolio_url: body.portfolio_url || null,
+  work_mode: body.work_mode || null,
+  shift_timing: body.shift_timing || null,
+  portal_access_enabled: body.portal_access_enabled === "true" || body.portal_access_enabled === true || false,
+  is_active: body.is_active === undefined || body.is_active === "" ? true : body.is_active === "true" || body.is_active === true || body.is_active === "1",
+  address: body.address || null,
+  city: body.city || null,
+  state: body.state || null,
+  pincode: body.pincode || null,
+  preferred_sharing: body.preferred_sharing || null,
+  preferred_room_type: body.preferred_room_type || null,
+  preferred_property_id: body.preferred_property_id ? parseIntValue(body.preferred_property_id) : null,
+  property_id: body.property_id ? parseIntValue(body.property_id) : null,
+  check_in_date: body.check_in_date || null,
+  emergency_contact_name: body.emergency_contact_name || null,
+  emergency_contact_phone: body.emergency_contact_phone || null,
+  emergency_contact_relation: body.emergency_contact_relation || null,
+  emergency_contact_email: body.emergency_contact_email || null,
+  lockin_period_months: body.lockin_period_months ? parseIntValue(body.lockin_period_months) : 0,
+  lockin_penalty_amount: body.lockin_penalty_amount ? parseNumber(body.lockin_penalty_amount) : 0,
+  lockin_penalty_type: body.lockin_penalty_type || "fixed",
+  notice_period_days: body.notice_period_days ? parseIntValue(body.notice_period_days) : 0,
+  notice_penalty_amount: body.notice_penalty_amount ? parseNumber(body.notice_penalty_amount) : 0,
+  notice_penalty_type: body.notice_penalty_type || "fixed",
+  aadhar_number: body.aadhar_number || null,
+  pan_number: body.pan_number || null,
+  id_proof_type: body.id_proof_type || null,
+  address_proof_type: body.address_proof_type || null,
+  id_proof_number: body.id_proof_number || null,
+  address_proof_number: body.address_proof_number || null,
+  id_proof_url: uploadedFiles.id_proof_url || null,
+  address_proof_url: uploadedFiles.address_proof_url || null,
+  photo_url: uploadedFiles.photo_url || null,
+  additional_documents: additionalDocs,
+  // property_name: propertyName,  // ← REMOVE THIS LINE
+  is_primary_tenant: true,
+};
+
+      // Partner tenant data
+      // Prepare partner tenant data - COPY relevant fields from primary tenant
+const partnerTenantData = {
+  // Personal info (from partner form)
+  salutation: body.partner_salutation || null,
+  full_name: body.partner_full_name,
+  email: body.partner_email || null,
+  phone: body.partner_phone || null,
+  country_code: body.partner_country_code || "+91",
+  gender: body.partner_gender || null,
+  date_of_birth: body.partner_date_of_birth || null,
+  
+  // Occupation fields (from partner form)
+  occupation_category: body.partner_occupation_category || null,
+  occupation: body.partner_occupation || null,
+  organization: body.partner_organization || null,
+  
+  // Address - COPY FROM PRIMARY TENANT (same address)
+  address: body.address || null,  // ← Same as primary tenant
+  city: body.city || null,        // ← Same as primary tenant
+  state: body.state || null,      // ← Same as primary tenant
+  pincode: body.pincode || null,  // ← Same as primary tenant
+  
+  // Property Assignment - COPY FROM PRIMARY TENANT
+  property_id: body.property_id ? parseIntValue(body.property_id) : null,  // ← Same property
+  check_in_date: body.check_in_date || null,  // ← Same check-in date
+  
+  // Rental Terms - COPY FROM PRIMARY TENANT
+  lockin_period_months: body.lockin_period_months ? parseIntValue(body.lockin_period_months) : 0,
+  lockin_penalty_amount: body.lockin_penalty_amount ? parseNumber(body.lockin_penalty_amount) : 0,
+  lockin_penalty_type: body.lockin_penalty_type || "fixed",
+  notice_period_days: body.notice_period_days ? parseIntValue(body.notice_period_days) : 0,
+  notice_penalty_amount: body.notice_penalty_amount ? parseNumber(body.notice_penalty_amount) : 0,
+  notice_penalty_type: body.notice_penalty_type || "fixed",
+  
+  // Status
+  portal_access_enabled: false,  // Partners don't get portal access by default
+  is_active: true,
+  
+  // Emergency Contact (optional - can be same or different)
+  emergency_contact_name: body.emergency_contact_name || null,
+  emergency_contact_phone: body.emergency_contact_phone || null,
+  emergency_contact_relation: body.emergency_contact_relation || null,
+  emergency_contact_email: body.emergency_contact_email || null,
+  
+  // Documents (separate for partner)
+  id_proof_url: null,
+  address_proof_url: null,
+  photo_url: null,
+  id_proof_type: body.partner_id_proof_type || null,
+  id_proof_number: body.partner_id_proof_number || null,
+  address_proof_type: body.partner_address_proof_type || null,
+  address_proof_number: body.partner_address_proof_number || null,
+  is_primary_tenant: false,
+};
+
+      // Handle partner document uploads if any
+      if (files.partner_id_proof_url && files.partner_id_proof_url[0]) {
+        partnerTenantData.id_proof_url = `/uploads/partner_id_proofs/${files.partner_id_proof_url[0].filename}`;
+      }
+      if (files.partner_address_proof_url && files.partner_address_proof_url[0]) {
+        partnerTenantData.address_proof_url = `/uploads/partner_address_proofs/${files.partner_address_proof_url[0].filename}`;
+      }
+      if (files.partner_photo_url && files.partner_photo_url[0]) {
+        partnerTenantData.photo_url = `/uploads/partner_photos/${files.partner_photo_url[0].filename}`;
+      }
+
+      // Create both tenants with couple linking
+      const coupleResult = await TenantModel.createCoupleTenants(primaryTenantData, partnerTenantData);
+
+      // Create credentials for primary tenant if password provided
+      if (body.password && (body.create_credentials === "true" || body.create_credentials === true)) {
         try {
           const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
           await TenantModel.createCredential({
-            tenant_id: tenantId,
+            tenant_id: coupleResult.primary_tenant_id,
             email: body.email,
             password_hash,
           });
-          console.log("Credentials created for new tenant:", tenantId);
         } catch (credErr) {
           console.error("Failed to create credentials:", credErr);
-          // Continue even if credential creation fails
         }
       }
 
-      // Send welcome email if credentials created
-      if (
-        body.password &&
-        (body.create_credentials === "true" ||
-          body.create_credentials === true ||
-          tenantData.portal_access_enabled === true)
-      ) {
+      // Send welcome email
+      if (body.password && (body.create_credentials === "true" || body.create_credentials === true || primaryTenantData.portal_access_enabled === true)) {
         try {
-          const portalUrl = "https://roomac.in/login";
-
-          // 🔥 get template
           const template = await getTemplate("credentials", "email");
-
-          const emailSubject = replaceVariables(template.subject, {
-            property_name: tenantData.property_name,
-          });
-
-          // 🔥 replace variables
+          const emailSubject = replaceVariables(template.subject, { property_name: propertyName });
           const emailBody = replaceVariables(template.content, {
-            tenant_name: tenantData.full_name,
-            property_name: tenantData.property_name,
-            email: tenantData.email,
+            tenant_name: primaryTenantData.full_name,
+            property_name: propertyName,
+            email: body.email,
             password: body.password,
-            account_status: "created", // 🔥 MAIN LINE
+            account_status: "created",
             login_url: "https://roomac.in/login",
           });
-
-          // 🔥 send email
-          await sendEmail(
-            tenantData.email,
-            emailSubject || "Welcome to Roomac",
-            emailBody,
-          );
+          await sendEmail(body.email, emailSubject || "Welcome to Roomac", emailBody);
         } catch (emailErr) {
-          console.error("❌ Failed to send welcome email:", emailErr);
+          console.error("Failed to send welcome email:", emailErr);
         }
       }
 
       return res.status(201).json({
         success: true,
-        message: "Tenant created successfully",
-        tenant_id: tenantId,
+        message: "Couple tenants created successfully",
+        tenant_id: coupleResult.primary_tenant_id,
+        partner_tenant_id: coupleResult.partner_tenant_id,
+        couple_id: coupleResult.couple_id,
         additional_documents: additionalDocs,
       });
-    } catch (err) {
-      console.error("TenantController.create error:", err);
+    }
 
-      // Clean up uploaded files on error
+    // ========== NON-COUPLE BOOKING (Single Tenant) ==========
+    const tenantData = {
+      salutation: body.salutation || null,
+      full_name: body.full_name,
+      email: body.email,
+      phone: body.phone,
+      country_code: body.country_code || "+91",
+      gender: body.gender,
+      date_of_birth: body.date_of_birth || null,
+      occupation_category: body.occupation_category || null,
+      exact_occupation: body.exact_occupation || null,
+      occupation: body.occupation || null,
+      organization: body.organization || null,
+      years_of_experience: body.years_of_experience ? parseIntValue(body.years_of_experience) : null,
+      monthly_income: body.monthly_income ? parseNumber(body.monthly_income) : null,
+      course_duration: body.course_duration || null,
+      student_id: body.student_id || null,
+      employee_id: body.employee_id || null,
+      portfolio_url: body.portfolio_url || null,
+      work_mode: body.work_mode || null,
+      shift_timing: body.shift_timing || null,
+      portal_access_enabled: body.portal_access_enabled === "true" || body.portal_access_enabled === true || false,
+      is_active: body.is_active === undefined || body.is_active === "" ? true : body.is_active === "true" || body.is_active === true || body.is_active === "1",
+      address: body.address || null,
+      city: body.city || null,
+      state: body.state || null,
+      pincode: body.pincode || null,
+      preferred_sharing: body.preferred_sharing || null,
+      preferred_room_type: body.preferred_room_type || null,
+      preferred_property_id: body.preferred_property_id ? parseIntValue(body.preferred_property_id) : null,
+      property_id: body.property_id ? parseIntValue(body.property_id) : null,
+      property_name: propertyName || null,
+      check_in_date: body.check_in_date || null,
+      emergency_contact_name: body.emergency_contact_name || null,
+      emergency_contact_phone: body.emergency_contact_phone || null,
+      emergency_contact_relation: body.emergency_contact_relation || null,
+      emergency_contact_email: body.emergency_contact_email || null,
+      lockin_period_months: body.lockin_period_months ? parseIntValue(body.lockin_period_months) : 0,
+      lockin_penalty_amount: body.lockin_penalty_amount ? parseNumber(body.lockin_penalty_amount) : 0,
+      lockin_penalty_type: body.lockin_penalty_type || "fixed",
+      notice_period_days: body.notice_period_days ? parseIntValue(body.notice_period_days) : 0,
+      notice_penalty_amount: body.notice_penalty_amount ? parseNumber(body.notice_penalty_amount) : 0,
+      notice_penalty_type: body.notice_penalty_type || "fixed",
+      aadhar_number: body.aadhar_number || null,
+      pan_number: body.pan_number || null,
+      id_proof_type: body.id_proof_type || null,
+      address_proof_type: body.address_proof_type || null,
+      id_proof_number: body.id_proof_number || null,
+      address_proof_number: body.address_proof_number || null,
+      ...uploadedFiles,
+      additional_documents: additionalDocs,
+      is_couple_booking: false,
+      is_primary_tenant: false
+    };
+
+    // Validate required fields
+    const required = ["full_name", "email", "phone"];
+    const missing = required.filter((field) => !tenantData[field]);
+    if (missing.length > 0) {
       if (req.files) {
         Object.values(req.files).forEach((fileArray) => {
           if (fileArray && fileArray.length > 0) {
             fileArray.forEach((file) => {
-              if (file.path && fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
-              }
+              if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
             });
           }
         });
       }
-
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
-        message: "Failed to create tenant: " + err.message,
+        message: `Missing required fields: ${missing.join(", ")}`,
       });
     }
-  },
+
+    // Check for existing tenant
+    const existingTenant = await TenantModel.findByEmailOrPhone(
+      tenantData.email,
+      tenantData.phone,
+      true
+    );
+
+    if (existingTenant) {
+      if (existingTenant.deleted_at) {
+        await TenantModel.restore(existingTenant.id);
+        const updateData = { ...tenantData };
+        delete updateData.id_proof_url;
+        delete updateData.address_proof_url;
+        delete updateData.photo_url;
+        await TenantModel.update(existingTenant.id, updateData);
+        
+        if (body.password && (body.create_credentials === "true" || body.create_credentials === true)) {
+          const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
+          await TenantModel.createCredential({
+            tenant_id: existingTenant.id,
+            email: body.email,
+            password_hash,
+          });
+        }
+        
+        return res.status(200).json({
+          success: true,
+          message: "Existing deleted tenant restored and updated successfully",
+          tenant_id: existingTenant.id,
+          restored: true,
+        });
+      } else {
+        if (req.files) {
+          Object.values(req.files).forEach((fileArray) => {
+            if (fileArray && fileArray.length > 0) {
+              fileArray.forEach((file) => {
+                if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+              });
+            }
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          message: "Tenant with this email or phone already exists",
+        });
+      }
+    }
+
+    // Create single tenant
+    const tenantId = await TenantModel.create(tenantData);
+
+    if (body.password && (body.create_credentials === "true" || body.create_credentials === true)) {
+      const password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
+      await TenantModel.createCredential({
+        tenant_id: tenantId,
+        email: body.email,
+        password_hash,
+      });
+    }
+
+    if (body.password && (body.create_credentials === "true" || body.create_credentials === true || tenantData.portal_access_enabled === true)) {
+      try {
+        const template = await getTemplate("credentials", "email");
+        const emailSubject = replaceVariables(template.subject, { property_name: propertyName });
+        const emailBody = replaceVariables(template.content, {
+          tenant_name: tenantData.full_name,
+          property_name: propertyName,
+          email: body.email,
+          password: body.password,
+          account_status: "created",
+          login_url: "https://roomac.in/login",
+        });
+        await sendEmail(body.email, emailSubject || "Welcome to Roomac", emailBody);
+      } catch (emailErr) {
+        console.error("Failed to send welcome email:", emailErr);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Tenant created successfully",
+      tenant_id: tenantId,
+      additional_documents: additionalDocs,
+    });
+  } catch (err) {
+    console.error("TenantController.create error:", err);
+    if (req.files) {
+      Object.values(req.files).forEach((fileArray) => {
+        if (fileArray && fileArray.length > 0) {
+          fileArray.forEach((file) => {
+            if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          });
+        }
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create tenant: " + err.message,
+    });
+  }
+},
 
 async sendCredentials(req, res) {
   try {
@@ -1119,543 +950,296 @@ async sendCredentials(req, res) {
   }
 },
 
-  async update(req, res) {
-    let connection; 
-    try {
-      const id = req.params.id;
-      const body = req.body || {};
-      const files = req.files || {};
+async update(req, res) {
+  let connection; 
+  try {
+    const requestedId = req.params.id;
+    const body = req.body || {};
+    const files = req.files || {};
 
-      // Get existing tenant to preserve existing files
-      const existingTenant = await TenantModel.findById(id);
-      if (!existingTenant) {
-        // Clean up uploaded files if tenant not found
-        if (req.files) {
-          Object.values(req.files).forEach((fileArray) => {
-            if (fileArray && fileArray.length > 0) {
-              fileArray.forEach((file) => {
-                if (file.path && fs.existsSync(file.path)) {
-                  fs.unlinkSync(file.path);
-                }
-              });
-            }
-          });
+    // First, get the tenant with partner details to understand which tenant we're editing
+    const tenantWithPartner = await TenantModel.getTenantWithPartner(requestedId);
+    
+    // Determine which tenant ID we should actually update
+    let actualTenantId = requestedId;
+    let isUpdatingPrimary = false;
+    let isUpdatingPartner = false;
+    
+    if (tenantWithPartner && tenantWithPartner.is_couple_booking) {
+      // Check if the form is updating the partner section vs main section
+      const hasPartnerData = body.partner_full_name || body.partner_phone || body.partner_email;
+      
+      // The tenant we're actually editing (the one we clicked Edit on)
+      const isEditingPrimary = tenantWithPartner.is_editing_primary === true;
+      const isEditingPartner = tenantWithPartner.is_editing_partner === true;
+      
+      console.log('isEditingPrimary:', isEditingPrimary);
+      console.log('isEditingPartner:', isEditingPartner);
+      console.log('hasPartnerData:', hasPartnerData);
+      
+      if (isEditingPrimary) {
+        // We clicked Edit on PRIMARY tenant
+        if (hasPartnerData) {
+          // User modified partner section -> update the PARTNER tenant
+          actualTenantId = tenantWithPartner.partner_id;
+          isUpdatingPartner = true;
+          console.log('Editing PRIMARY, updating PARTNER tenant:', actualTenantId);
+        } else {
+          // User modified main section -> update the PRIMARY tenant
+          actualTenantId = tenantWithPartner.id;
+          isUpdatingPrimary = true;
+          console.log('Editing PRIMARY, updating PRIMARY tenant:', actualTenantId);
         }
-        return res
-          .status(404)
-          .json({ success: false, message: "Tenant not found" });
+      } else if (isEditingPartner) {
+        // We clicked Edit on PARTNER tenant
+        if (hasPartnerData) {
+          // User modified partner section -> update the PRIMARY tenant (because partner section holds primary data)
+          actualTenantId = tenantWithPartner.id;
+          isUpdatingPrimary = true;
+          console.log('Editing PARTNER, updating PRIMARY tenant:', actualTenantId);
+        } else {
+          // User modified main section -> update the PARTNER tenant (because main section holds partner data when editing partner)
+          actualTenantId = tenantWithPartner.partner_id;
+          isUpdatingPartner = true;
+          console.log('Editing PARTNER, updating PARTNER tenant:', actualTenantId);
+        }
+      } else {
+        // Fallback: use the requested ID
+        actualTenantId = requestedId;
+        console.log('Fallback, updating tenant:', actualTenantId);
       }
+    }
 
-      // ✅ GET DATABASE CONNECTION FOR TRANSACTION
+    // Get existing tenant using the determined actualTenantId
+    const existingTenant = await TenantModel.findById(actualTenantId);
+    if (!existingTenant) {
+      if (req.files) {
+        Object.values(req.files).forEach((fileArray) => {
+          if (fileArray && fileArray.length > 0) {
+            fileArray.forEach((file) => {
+              if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+            });
+          }
+        });
+      }
+      return res.status(404).json({ success: false, message: "Tenant not found" });
+    }
+
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-        // ✅ CHECK IF CHECK-IN DATE IS BEING CHANGED
+    // Check if check-in date is being changed
     const oldCheckInDate = existingTenant.check_in_date;
     const newCheckInDate = body.check_in_date;
     const isCheckInDateChanging = oldCheckInDate !== newCheckInDate && newCheckInDate;
 
     if (isCheckInDateChanging) {
-      // Check if tenant has any payments
-      const hasPayments = await hasTenantPayments(id);
-      
+      const hasPayments = await hasTenantPayments(actualTenantId);
       if (hasPayments) {
         await connection.rollback();
         connection.release();
-        
-        // Clean up uploaded files
         if (req.files) {
           Object.values(req.files).forEach((fileArray) => {
             if (fileArray && fileArray.length > 0) {
               fileArray.forEach((file) => {
-                if (file.path && fs.existsSync(file.path)) {
-                  fs.unlinkSync(file.path);
-                }
+                if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
               });
             }
           });
         }
-        
         return res.status(400).json({
           success: false,
-          message: "Cannot change check-in date. Tenant has existing payment transactions. Please delete all payment transactions first.",
+          message: "Cannot change check-in date. Tenant has existing payment transactions.",
           hasPayments: true,
           paymentsExist: true
         });
       }
     }
 
-      // Handle file uploads - keep existing if new not provided
-      const updateData = {};
+    // Handle file uploads
+    const updateData = {};
 
-      // Process main documents
-      const processMainDocument = (fieldName, folder, existingUrl) => {
-        if (files[fieldName] && files[fieldName][0]) {
-          const file = files[fieldName][0];
-          updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
-          // Delete old file if exists
-          if (existingUrl) {
-            const oldPath = existingUrl.replace("/uploads/", "uploads/");
-            if (fs.existsSync(oldPath)) {
-              try {
-                fs.unlinkSync(oldPath);
-              } catch (unlinkErr) {
-                console.error(`Failed to delete old ${fieldName}:`, unlinkErr);
-              }
+    // Process main documents
+    const processMainDocument = (fieldName, folder, existingUrl) => {
+      if (files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
+        if (existingUrl) {
+          const oldPath = existingUrl.replace("/uploads/", "uploads/");
+          if (fs.existsSync(oldPath)) {
+            try { fs.unlinkSync(oldPath); } catch (unlinkErr) {}
+          }
+        }
+        return true;
+      }
+      return false;
+    };
+
+    processMainDocument("id_proof_url", "id_proofs", existingTenant.id_proof_url);
+    processMainDocument("address_proof_url", "address_proofs", existingTenant.address_proof_url);
+    processMainDocument("photo_url", "photos", existingTenant.photo_url);
+
+    // Process partner documents
+    const processPartnerDocument = (fieldName, folder, existingUrl) => {
+      if (files[fieldName] && files[fieldName][0]) {
+        const file = files[fieldName][0];
+        updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
+        if (existingUrl) {
+          const oldPath = existingUrl.replace("/uploads/", "uploads/");
+          if (fs.existsSync(oldPath)) {
+            try { fs.unlinkSync(oldPath); } catch (unlinkErr) {}
+          }
+        }
+        return true;
+      }
+      return false;
+    };
+
+    processPartnerDocument("partner_id_proof_url", "partner_id_proofs", existingTenant.partner_id_proof_url);
+    processPartnerDocument("partner_address_proof_url", "partner_address_proofs", existingTenant.partner_address_proof_url);
+    processPartnerDocument("partner_photo_url", "partner_photos", existingTenant.partner_photo_url);
+
+    // Process additional documents
+    let additionalDocs = existingTenant.additional_documents || [];
+    const uniqueFiles = new Map();
+    const fileFields = Object.keys(files);
+
+    fileFields.forEach((field) => {
+      if (field.includes("additional_documents") || field.includes("additional_docs") || field.includes("additional")) {
+        const fileArray = Array.isArray(files[field]) ? files[field] : [files[field]];
+        fileArray.forEach((file) => {
+          if (file && file.filename && file.originalname) {
+            const fileKey = `${file.originalname}_${file.size}`;
+            if (!uniqueFiles.has(fileKey)) {
+              uniqueFiles.set(fileKey, file);
             }
           }
-          return true;
-        }
-        return false;
-      };
-
-      processMainDocument(
-        "id_proof_url",
-        "id_proofs",
-        existingTenant.id_proof_url,
-      );
-      processMainDocument(
-        "address_proof_url",
-        "address_proofs",
-        existingTenant.address_proof_url,
-      );
-      processMainDocument("photo_url", "photos", existingTenant.photo_url);
-
-      const processPartnerDocument = (fieldName, folder, existingUrl) => {
-        if (files[fieldName] && files[fieldName][0]) {
-          const file = files[fieldName][0];
-          updateData[fieldName] = `/uploads/${folder}/${file.filename}`;
-          if (existingUrl) {
-            const oldPath = existingUrl.replace("/uploads/", "uploads/");
-            if (fs.existsSync(oldPath)) {
-              try {
-                fs.unlinkSync(oldPath);
-              } catch (unlinkErr) {
-                console.error(`Failed to delete old ${fieldName}:`, unlinkErr);
-              }
-            }
-          }
-          return true;
-        }
-        return false;
-      };
-
-      // Process partner documents
-      processPartnerDocument(
-        "partner_id_proof_url",
-        "partner_id_proofs",
-        existingTenant.partner_id_proof_url,
-      );
-      processPartnerDocument(
-        "partner_address_proof_url",
-        "partner_address_proofs",
-        existingTenant.partner_address_proof_url,
-      );
-      processPartnerDocument(
-        "partner_photo_url",
-        "partner_photos",
-        existingTenant.partner_photo_url,
-      );
-
-      // Process additional documents - FIXED TO PREVENT DUPLICATES
-      let additionalDocs = existingTenant.additional_documents || [];
-
-      // Track unique files by filename to prevent duplicates
-      const uniqueFiles = new Map();
-
-      // Collect all files from different field patterns
-      const fileFields = Object.keys(files);
-
-      fileFields.forEach((field) => {
-        if (
-          field.includes("additional_documents") ||
-          field.includes("additional_docs") ||
-          field.includes("additional")
-        ) {
-          const fileArray = Array.isArray(files[field])
-            ? files[field]
-            : [files[field]];
-
-          fileArray.forEach((file) => {
-            if (file && file.filename && file.originalname) {
-              const fileKey = `${file.originalname}_${file.size}`;
-
-              if (!uniqueFiles.has(fileKey)) {
-                uniqueFiles.set(fileKey, file);
-              }
-            }
-          });
-        }
-      });
-
-      const uniqueFileArray = Array.from(uniqueFiles.values());
-
-      if (uniqueFileArray.length > 0) {
-        const newDocs = uniqueFileArray.map((file) => ({
-          filename: file.originalname,
-          url: `/uploads/additional_docs/${file.filename}`,
-          uploaded_at: new Date().toISOString(),
-          document_type: "Additional",
-          file_size: file.size,
-          file_mimetype: file.mimetype,
-        }));
-
-        const existingFilenames = new Set(
-          additionalDocs.map((doc) => doc.filename),
-        );
-        const uniqueNewDocs = newDocs.filter(
-          (doc) => !existingFilenames.has(doc.filename),
-        );
-
-        additionalDocs = [...additionalDocs, ...uniqueNewDocs];
-        updateData.additional_documents = additionalDocs;
+        });
       }
+    });
 
-      // Check if additional_documents was sent as JSON in body
-      if (body.additional_documents) {
-        try {
-          let parsedDocs = [];
-          if (typeof body.additional_documents === "string") {
-            parsedDocs = JSON.parse(body.additional_documents);
-          } else if (Array.isArray(body.additional_documents)) {
-            parsedDocs = body.additional_documents;
-          }
+    const uniqueFileArray = Array.from(uniqueFiles.values());
+    if (uniqueFileArray.length > 0) {
+      const newDocs = uniqueFileArray.map((file) => ({
+        filename: file.originalname,
+        url: `/uploads/additional_docs/${file.filename}`,
+        uploaded_at: new Date().toISOString(),
+        document_type: "Additional",
+        file_size: file.size,
+        file_mimetype: file.mimetype,
+      }));
+      const existingFilenames = new Set(additionalDocs.map((doc) => doc.filename));
+      const uniqueNewDocs = newDocs.filter((doc) => !existingFilenames.has(doc.filename));
+      additionalDocs = [...additionalDocs, ...uniqueNewDocs];
+      updateData.additional_documents = additionalDocs;
+    }
 
-          if (Array.isArray(parsedDocs) && parsedDocs.length > 0) {
-            const existingUrls = new Set(additionalDocs.map((doc) => doc.url));
-            const uniqueBodyDocs = parsedDocs.filter(
-              (doc) => !existingUrls.has(doc.url),
-            );
+    // Parse number fields
+    const parseNumber = (value, defaultValue = 0) => {
+      if (value === undefined || value === null || value === "") return undefined;
+      const num = parseFloat(value);
+      return isNaN(num) ? defaultValue : num;
+    };
 
-            if (uniqueBodyDocs.length > 0) {
-              additionalDocs = [...additionalDocs, ...uniqueBodyDocs];
-              updateData.additional_documents = additionalDocs;
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing additional_documents from body:", e);
-        }
+    const parseIntValue = (value, defaultValue = null) => {
+      if (value === undefined || value === null || value === "") return defaultValue;
+      const num = parseInt(value);
+      return isNaN(num) ? defaultValue : num;
+    };
+
+    // Add lock-in period fields
+    if (body.lockin_period_months !== undefined) {
+      updateData.lockin_period_months = parseIntValue(body.lockin_period_months) || 0;
+    }
+    if (body.lockin_penalty_amount !== undefined) {
+      updateData.lockin_penalty_amount = parseNumber(body.lockin_penalty_amount) || 0;
+    }
+    if (body.lockin_penalty_type !== undefined) {
+      updateData.lockin_penalty_type = body.lockin_penalty_type;
+    }
+    if (body.notice_period_days !== undefined) {
+      updateData.notice_period_days = parseIntValue(body.notice_period_days) || 0;
+    }
+    if (body.notice_penalty_amount !== undefined) {
+      updateData.notice_penalty_amount = parseNumber(body.notice_penalty_amount) || 0;
+    }
+    if (body.notice_penalty_type !== undefined) {
+      updateData.notice_penalty_type = body.notice_penalty_type;
+    }
+    if (body.property_id !== undefined) {
+      updateData.property_id = body.property_id || null;
+    }
+    if (body.portal_access_enabled !== undefined) {
+      updateData.portal_access_enabled = body.portal_access_enabled === "true" || body.portal_access_enabled === true || body.portal_access_enabled === "1";
+    }
+    
+
+    // Independent fields (personal info for current tenant)
+    const independentFields = [
+      "salutation", "full_name", "email", "phone", "country_code", "gender", "date_of_birth",
+      "occupation_category", "exact_occupation", "occupation", "organization",
+      "years_of_experience", "monthly_income", "course_duration", "student_id",
+      "employee_id", "portfolio_url", "work_mode", "shift_timing",
+      "address", "city", "state", "pincode",
+      "preferred_sharing", "preferred_room_type", "preferred_property_id",
+      "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relation", "emergency_contact_email",
+      "aadhar_number", "pan_number", "id_proof_type", "address_proof_type", "id_proof_number", "address_proof_number",
+      "is_active"
+    ];
+
+    independentFields.forEach((field) => {
+      if (body[field] !== undefined) {
+        updateData[field] = body[field] === "" ? null : body[field];
       }
+    });
 
-      // Parse number fields
-      const parseNumber = (value, defaultValue = 0) => {
-        if (value === undefined || value === null || value === "")
-          return undefined;
-        const num = parseFloat(value);
-        return isNaN(num) ? defaultValue : num;
-      };
-
-      const parseIntValue = (value, defaultValue = null) => {
-        if (value === undefined || value === null || value === "")
-          return defaultValue;
-        const num = parseInt(value);
-        return isNaN(num) ? defaultValue : num;
-      };
-
-      // Add lock-in period fields if provided
-      if (body.lockin_period_months !== undefined) {
-        updateData.lockin_period_months =
-          parseIntValue(body.lockin_period_months) || 0;
-      }
-      if (body.lockin_penalty_amount !== undefined) {
-        updateData.lockin_penalty_amount =
-          parseNumber(body.lockin_penalty_amount) || 0;
-      }
-      if (body.lockin_penalty_type !== undefined) {
-        updateData.lockin_penalty_type = body.lockin_penalty_type;
-      }
-
-      if (body.notice_period_days !== undefined) {
-        updateData.notice_period_days =
-          parseIntValue(body.notice_period_days) || 0;
-      }
-      if (body.notice_penalty_amount !== undefined) {
-        updateData.notice_penalty_amount =
-          parseNumber(body.notice_penalty_amount) || 0;
-      }
-      if (body.notice_penalty_type !== undefined) {
-        updateData.notice_penalty_type = body.notice_penalty_type;
-      }
-
-      if (body.property_id !== undefined) {
-        updateData.property_id = body.property_id || null;
-      }
-
-      // IMPORTANT: Handle portal_access_enabled explicitly
-      if (body.portal_access_enabled !== undefined) {
-        updateData.portal_access_enabled =
-          body.portal_access_enabled === "true" ||
-          body.portal_access_enabled === true ||
-          body.portal_access_enabled === "1";
-      }
-
-      // Add other fields
-      const fields = [
-        "salutation",
-        "full_name",
-        "email",
-        "phone",
-        "country_code",
-        "gender",
-        "date_of_birth",
-        "occupation_category",
-        "exact_occupation",
-        "occupation",
-        "organization",
-        "years_of_experience",
-        "monthly_income",
-        "course_duration",
-        "student_id",
-        "employee_id",
-        "portfolio_url",
-        "work_mode",
-        "shift_timing",
-        "address",
-        "city",
-        "state",
-        "pincode",
-        "preferred_sharing",
-        "preferred_room_type",
-        "preferred_property_id",
-        "check_in_date",
-        "emergency_contact_name",
-        "emergency_contact_phone",
-        "emergency_contact_relation",
-        "emergency_contact_email",
-        "aadhar_number",
-        "pan_number",
-        "id_proof_type",
-        "address_proof_type",
-        "id_proof_type",
-        "id_proof_number",
-        "address_proof_type",
-        "address_proof_number",
-      ];
-
-      fields.forEach((field) => {
-        if (body[field] !== undefined) {
-          if (field === "years_of_experience") {
-            updateData[field] = body[field] ? parseIntValue(body[field]) : null;
-          } else if (field === "monthly_income") {
-            updateData[field] = body[field] ? parseNumber(body[field]) : null;
-          } else {
-            // For aadhar_number and pan_number, we want to allow empty strings to clear the value
-            updateData[field] = body[field] === "" ? null : body[field];
-          }
-        }
-      });
-
-      // Handle is_active boolean
-      if (typeof body.is_active !== "undefined") {
-        updateData.is_active =
-          body.is_active === "true" ||
-          body.is_active === "1" ||
-          body.is_active === true;
-      }
-
-      // Validate phone if provided
-      if (body.phone) {
-        const phoneRegex = /^[6-9]\d{9}$/;
-        if (!phoneRegex.test(body.phone.replace(/\D/g, ""))) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid Indian mobile number" });
-        }
-      }
-
-      if (body.emergency_contact_phone) {
-        const phoneRegex = /^[6-9]\d{9}$/;
-        if (!phoneRegex.test(body.emergency_contact_phone.replace(/\D/g, ""))) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid emergency contact phone number",
-          });
-        }
-      }
-
-      // Add partner fields to updateData
-      const partnerFields = [
-        "partner_full_name",
-        "partner_salutation",
-        "partner_country_code",
-        "partner_phone",
-        "partner_email",
-        "partner_gender",
-        "partner_date_of_birth",
-        "partner_address",
-        "partner_occupation",
-        "partner_organization",
-        "partner_relationship",
-        "partner_id_proof_type",
-        "partner_id_proof_number",
-        "partner_address_proof_type",
-        "partner_address_proof_number",
-      ];
-
-      partnerFields.forEach((field) => {
-        if (body[field] !== undefined) {
-          updateData[field] = body[field] === "" ? null : body[field];
-        }
-      });
-
-      // Update is_couple_booking flag
-      if (body.partner_full_name !== undefined) {
-        updateData.is_couple_booking = body.partner_full_name ? true : false;
-        if (body.partner_full_name && !existingTenant.couple_id) {
-          updateData.couple_id = await generateNextCoupleId();
-        }
-      }
-
-      // ✅ IF CHECK-IN DATE CHANGED AND NO PAYMENTS, DELETE AND RECREATE MONTHLY RENT
+    // Handle check-in date change
     if (isCheckInDateChanging) {
-      // Delete all monthly rent records for this tenant
-      await connection.execute(
-        'DELETE FROM monthly_rent WHERE tenant_id = ?',
-        [id]
-      );
-      
-      // Update the check-in date in the updateData
+      await connection.execute('DELETE FROM monthly_rent WHERE tenant_id = ?', [actualTenantId]);
       updateData.check_in_date = newCheckInDate;
     }
 
-      // Update tenant
-      const ok = await TenantModel.update(id, updateData);
-      if (!ok) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Tenant not found or no changes" });
-      }
-
-      // ✅ AFTER UPDATE, RECALCULATE MONTHLY RENT IF CHECK-IN DATE CHANGED
-    if (isCheckInDateChanging) {
-      try {
-        const monthlyRentCron = require("../cron/monthlyRentCron");
-        const backfillResult = await monthlyRentCron.backfillTenantMonths(id);
-        
-        if (!backfillResult.success) {
-          console.error(`Failed to recalculate monthly rent for tenant ${id}:`, backfillResult.error);
-          // Don't rollback, just log error - tenant update succeeded
-        } else {
-          console.log(`✅ Monthly rent recalculated for tenant ${id}`);
-        }
-      } catch (cronError) {
-        console.error(`Error recalculating monthly rent for tenant ${id}:`, cronError);
-        // Don't rollback, just log error
-      }
+    // Update current tenant
+    const ok = await TenantModel.update(actualTenantId, updateData);
+    if (!ok) {
+      return res.status(404).json({ success: false, message: "Tenant not found or no changes" });
     }
 
     await connection.commit();
     connection.release();
 
-      // Handle credentials based on portal access
-      const shouldHaveCredentials =
-        updateData.portal_access_enabled === true ||
-        body.create_credentials === "true" ||
-        body.update_credentials === "true";
+    // Fetch updated tenant using the original requested ID (so the response shows the correct swapped data)
+    const updatedTenant = await TenantModel.getTenantWithPartner(requestedId);
 
-      console.log(
-        "is tenant have crediential",
-        shouldHaveCredentials,
-        body.password,
-      );
-      if (shouldHaveCredentials) {
-        // ✅ SEND EMAIL AFTER UPDATE
-        if (body.password) {
-          try {
-            const template = await getTemplate("welcome", "email");
-
-            const emailSubject = replaceVariables(template.subject, {
-              property_name: existingTenant.property_name,
-            });
-
-            const emailBody = replaceVariables(template.content, {
-              tenant_name: existingTenant.full_name,
-              property_name: existingTenant.property_name,
-              email: existingTenant.email,
-              password: body.password,
-              account_status: "updated", // 🔥 MAIN LINE
-              login_url: "https://roomac.in/login",
-            });
-
-            await sendEmail(
-              existingTenant.email,
-              emailSubject || "Credentials Updated",
-              emailBody,
-            );
-
-            console.log("✅ Update email sent");
-          } catch (err) {
-            console.error("❌ Update email failed:", err);
-          }
+    return res.json({
+      success: true,
+      message: "Tenant updated successfully",
+      data: updatedTenant,
+      additional_documents: updateData.additional_documents || [],
+    });
+    
+  } catch (err) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+    console.error("TenantController.update error:", err);
+    if (req.files) {
+      Object.values(req.files).forEach((fileArray) => {
+        if (fileArray && fileArray.length > 0) {
+          fileArray.forEach((file) => {
+            if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          });
         }
-        try {
-          const [[userCred]] = await pool.query(
-            `select * from tenant_credentials where tenant_id = ?`,
-            [id],
-          );
-          console.log("user credential ", userCred);
-          let password_hash = "";
-          if (body.password) {
-            password_hash = await bcrypt.hash(body.password, SALT_ROUNDS);
-          } else {
-            password_hash = userCred.password_hash;
-          }
-
-          const email = updateData.email ? updateData.email : userCred.email;
-          console.log("emaillll", email);
-          // Check if credentials exist
-          const credentials = await TenantModel.getCredentialsByTenantIds([id]);
-          if (credentials && credentials.length > 0) {
-            console.log("credential adfas", updateData.email);
-            // Update existing credentials
-            await TenantModel.updateCredential(id, { password_hash, email });
-          } else {
-            // Create new credentials
-            await TenantModel.createCredential({
-              tenant_id: id,
-              email: body.email || existingTenant.email,
-              password_hash,
-            });
-          }
-        } catch (credErr) {
-          console.error("Failed to update credentials:", credErr);
-        }
-      } else if (shouldHaveCredentials && !body.password) {
-        console.log(
-          "Portal access enabled but no password provided - credentials not updated",
-        );
-      }
-
-      // Fetch the updated tenant to return
-      const updatedTenant = await TenantModel.findById(id);
-
-      return res.json({
-        success: true,
-        message: "Tenant updated successfully",
-        data: updatedTenant,
-        additional_documents: updateData.additional_documents || [],
-      });
-    } catch (err) {
-      console.error("TenantController.update error:", err);
-
-      if (req.files) {
-        Object.values(req.files).forEach((fileArray) => {
-          if (fileArray && fileArray.length > 0) {
-            fileArray.forEach((file) => {
-              if (file.path && fs.existsSync(file.path)) {
-                fs.unlinkSync(file.path);
-              }
-            });
-          }
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update tenant: " + err.message,
       });
     }
-  },
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update tenant: " + err.message,
+    });
+  }
+},
+
 
   // Soft delete tenant
   async softDelete(req, res) {
@@ -2987,6 +2571,45 @@ async sendBirthdayWishes(req, res) {
     });
   }
 },
+
+async getPrimaryTenantByCoupleId(req, res) {
+  try {
+    const { coupleId } = req.params;
+    
+    const [rows] = await pool.query(
+      `SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 1 LIMIT 1`,
+      [coupleId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Primary tenant not found"
+      });
+    }
+    
+    const tenant = rows[0];
+    
+    // Format dates
+    if (tenant.date_of_birth) {
+      tenant.date_of_birth = new Date(tenant.date_of_birth).toISOString().split('T')[0];
+    }
+    if (tenant.partner_date_of_birth) {
+      tenant.partner_date_of_birth = new Date(tenant.partner_date_of_birth).toISOString().split('T')[0];
+    }
+    
+    return res.json({
+      success: true,
+      data: tenant
+    });
+  } catch (err) {
+    console.error("getPrimaryTenantByCoupleId error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch primary tenant"
+    });
+  }
+}
 
 };
 

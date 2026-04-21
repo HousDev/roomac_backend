@@ -225,9 +225,11 @@ async getTenantPaymentFormData(tenantId) {
         t.email,
         t.phone,
         t.check_in_date,
+        t.security_deposit, 
         ba.tenant_rent as monthly_rent,
         ba.bed_number,
         ba.bed_type,
+        ba.security_deposit as security_deposit,
         ba.created_at as assignment_date,
         r.room_number,
         r.id as room_id,
@@ -247,7 +249,7 @@ async getTenantPaymentFormData(tenantId) {
 
     const tenant = tenantData[0];
     const originalMonthlyRent = parseFloat(tenant.monthly_rent) || 0;
-    const securityDepositAmount = parseFloat(tenant.property_security_deposit) || 0;
+    const securityDepositAmount = parseFloat(tenant.security_deposit) || 0;
     
     // Get check-in date
     let checkInDate = tenant.check_in_date || tenant.assignment_date;
@@ -1243,57 +1245,74 @@ async deletePayment(id) {
 },
 
 
-// Get security deposit info for a tenant
+// In paymentModel.js - Update getSecurityDepositInfo
+
 async getSecurityDepositInfo(tenantId) {
   try {
-    // Get tenant's current bed assignment to fetch security deposit
-    const [assignment] = await db.execute(
-      `SELECT 
-        ba.*,
+    // ✅ FIXED: Get security deposit from bed_assignments table
+    const [result] = await db.execute(`
+      SELECT 
+        t.id as tenant_id,
+        t.full_name as tenant_name,
+        t.phone as tenant_phone,
+        t.email as tenant_email,
+        ba.security_deposit as security_deposit,  -- ✅ From bed_assignments
+        ba.id as bed_assignment_id,
+        ba.bed_number,
+        ba.bed_type,
         r.room_number,
-        r.property_id,
-        p.security_deposit as property_security_deposit,
+        r.id as room_id,
+        p.id as property_id,
         p.name as property_name
-       FROM bed_assignments ba
-       LEFT JOIN rooms r ON ba.room_id = r.id
-       LEFT JOIN properties p ON r.property_id = p.id
-       WHERE ba.tenant_id = ? AND ba.is_available = 0`,
-      [tenantId]
-    );
+      FROM tenants t
+      LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
+      LEFT JOIN rooms r ON ba.room_id = r.id
+      LEFT JOIN properties p ON r.property_id = p.id
+      WHERE t.id = ?
+    `, [tenantId]);
 
-    if (!assignment.length) {
+    if (!result.length) {
       return null;
     }
 
-    // Get ALL security deposit payments (not just the last one)
+    const tenantData = result[0];
+    
+    // Get ALL security deposit payments
     const [allPayments] = await db.execute(
-      `SELECT id, amount, payment_date, status, created_at 
+      `SELECT id, amount, payment_date, status, created_at, payment_mode, transaction_id, remark
        FROM payments 
        WHERE tenant_id = ? AND payment_type = 'security_deposit'
        ORDER BY payment_date DESC`,
       [tenantId]
     );
 
-    // Calculate total paid amount by summing ALL payments
+    // Calculate total paid amount
     const totalPaidAmount = allPayments.reduce((sum, payment) => {
-      // Only count approved payments (or count all if you want)
-      // You can adjust this based on your business logic
-      return sum + parseFloat(payment.amount);
+      if (payment.status !== 'rejected') {
+        return sum + parseFloat(payment.amount);
+      }
+      return sum;
     }, 0);
 
-    const securityDepositAmount = parseFloat(assignment[0].property_security_deposit) || 0;
+    const securityDepositAmount = parseFloat(tenantData.security_deposit) || 0;
     const pendingAmount = Math.max(0, securityDepositAmount - totalPaidAmount);
 
-    
-
     return {
-      property_id: assignment[0].property_id,
-      property_name: assignment[0].property_name,
+      tenant_id: tenantData.tenant_id,
+      tenant_name: tenantData.tenant_name,
+      tenant_phone: tenantData.tenant_phone,
+      tenant_email: tenantData.tenant_email,
+      property_id: tenantData.property_id,
+      property_name: tenantData.property_name || 'N/A',
+      room_number: tenantData.room_number,
+      bed_number: tenantData.bed_number,
+      bed_type: tenantData.bed_type,
+      bed_assignment_id: tenantData.bed_assignment_id,
       security_deposit: securityDepositAmount,
       paid_amount: totalPaidAmount,
       pending_amount: pendingAmount,
       last_payment_date: allPayments.length ? allPayments[0].payment_date : null,
-      payments: allPayments, // Return all payments for history
+      payments: allPayments,
       is_fully_paid: pendingAmount === 0
     };
   } catch (error) {
@@ -1301,6 +1320,8 @@ async getSecurityDepositInfo(tenantId) {
     throw error;
   }
 },
+
+// In paymentModel.js - Update getLatestRentPayment
 
 async getLatestRentPayment(tenantId) {
   try {
@@ -1314,11 +1335,10 @@ async getLatestRentPayment(tenantId) {
         p.year,
         p.total_amount,
         1 AS is_current_month,
-        ba.tenant_rent
+        ba.tenant_rent,
+        ba.security_deposit  -- ✅ Add security_deposit from bed_assignments
       FROM payments p
-
-      left join bed_assignments ba on p.tenant_id = ba.tenant_id 
-
+      LEFT JOIN bed_assignments ba ON p.tenant_id = ba.tenant_id AND ba.is_available = 0
       WHERE p.tenant_id = ?
         AND p.payment_type = 'rent'
       ORDER BY p.created_at DESC

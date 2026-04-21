@@ -345,9 +345,6 @@ const TenantModel = {
     }
   },
 
-  // In TenantModel.findById() - ensure it includes:
-  // In tenantModel.js - Update the findById method
-// models/tenantModel.js - Update findById method
 
 async findById(id) {
   try {
@@ -364,39 +361,7 @@ async findById(id) {
         p.notice_period_days as property_notice_period_days,
         p.notice_penalty_amount as property_notice_penalty_amount,
         p.notice_penalty_type as property_notice_penalty_type,
-        t.aadhar_number,
-        t.pan_number,
-        t.id_proof_type,
-        t.id_proof_number,
-        t.address_proof_type,
-        t.address_proof_number,
-        t.emergency_contact_name,
-        t.emergency_contact_phone,
-        t.emergency_contact_relation,
-        t.emergency_contact_email,  
-        t.partner_salutation,    
-        t.partner_full_name,
-        t.partner_phone,
-        t.partner_country_code, 
-        t.partner_email,
-        t.partner_gender,
-        t.partner_date_of_birth,
-        t.partner_address,
-        t.partner_occupation,
-        t.partner_organization,
-        t.partner_relationship,
-        t.partner_id_proof_type,
-        t.partner_id_proof_number,
-        t.partner_id_proof_url,
-        t.partner_address_proof_type,
-        t.partner_address_proof_number,
-        t.partner_address_proof_url,
-        t.partner_photo_url,
-        t.is_couple_booking,
-        t.couple_id,
-        -- Format dates directly in SQL to avoid timezone issues
         DATE_FORMAT(t.check_in_date, '%Y-%m-%d') as check_in_date_formatted,
-        DATE_FORMAT(t.check_out_date, '%Y-%m-%d') as check_out_date_formatted,
         DATE_FORMAT(t.date_of_birth, '%Y-%m-%d') as date_of_birth_formatted,
         DATE_FORMAT(t.partner_date_of_birth, '%Y-%m-%d') as partner_date_of_birth_formatted
       FROM tenants t
@@ -561,7 +526,8 @@ partner_country_code,
       partner_address_proof_url,
       partner_photo_url,
       is_couple_booking,
-      couple_id
+      couple_id,
+      is_primary_tenant, 
     } = payload;
 
     // Prepare additional_documents JSON
@@ -675,7 +641,8 @@ partner_country_code || '+91',  // ADD THIS
       partner_address_proof_url || null,
       partner_photo_url || null,
       is_couple_booking ? 1 : 0,
-      couple_id || null
+      couple_id || null,
+      is_primary_tenant ? 1 : 0,
     ];
 
     const sql = `
@@ -699,7 +666,7 @@ partner_country_code || '+91',  // ADD THIS
         partner_date_of_birth, partner_address, partner_occupation, partner_organization,
         partner_relationship, partner_id_proof_type, partner_id_proof_number,
         partner_id_proof_url, partner_address_proof_type, partner_address_proof_number,
-        partner_address_proof_url, partner_photo_url, is_couple_booking, couple_id
+        partner_address_proof_url, partner_photo_url, is_couple_booking, couple_id,is_primary_tenant
       ) VALUES (${values.map(() => '?').join(', ')})
     `;
 
@@ -815,7 +782,7 @@ partner_country_code || '+91',  // ADD THIS
       // Personal info
       setIf("salutation", payload.salutation);
       setIf("full_name", payload.full_name);
-      setIf("email", payload.email);
+      // setIf("email", payload.email);
       setIf("phone", payload.phone);
       setIf("country_code", payload.country_code);
       setIf("gender", payload.gender);
@@ -864,7 +831,6 @@ setIf("address_proof_number", payload.address_proof_number);
       setIf("preferred_property_id", payload.preferred_property_id);
       setIf("property_id", payload.property_id);
       setIf("check_in_date", payload.check_in_date);
-
       // Lock-in and notice period fields
       setIf("lockin_period_months", payload.lockin_period_months);
       setIf("lockin_penalty_amount", payload.lockin_penalty_amount);
@@ -882,7 +848,7 @@ setIf("emergency_contact_email", payload.emergency_contact_email);
       // Partner fields
     setIf("partner_full_name", payload.partner_full_name);
     setIf("partner_phone", payload.partner_phone);
-    setIf("partner_email", payload.partner_email);
+    // setIf("partner_email", payload.partner_email);
     setIf("partner_gender", payload.partner_gender);
     setIf("partner_date_of_birth", payload.partner_date_of_birth);
     setIf("partner_address", payload.partner_address);
@@ -901,6 +867,10 @@ setIf("emergency_contact_email", payload.emergency_contact_email);
     // In setIf calls:
 setIf("partner_salutation", payload.partner_salutation);
 setIf("partner_country_code", payload.partner_country_code);
+ // Add is_primary_tenant to updateable fields
+    if (typeof payload.is_primary_tenant !== "undefined") {
+      setIf("is_primary_tenant", payload.is_primary_tenant ? 1 : 0);
+    }
 
       // Additional documents
       if (typeof payload.additional_documents !== "undefined") {
@@ -1216,16 +1186,16 @@ setIf("partner_country_code", payload.partner_country_code);
   },
 
   async getAllProperties() {
-    try {
-      const [rows] = await pool.query(
-        "SELECT id, name, address, city_id, state FROM properties WHERE is_active = 1 ORDER BY name",
-      );
-      return rows;
-    } catch (err) {
-      console.error("TenantModel.getAllProperties error:", err);
-      throw err;
-    }
-  },
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, name, address, city_id, state FROM properties WHERE is_active = 1 ORDER BY name",
+    );
+    return rows;
+  } catch (err) {
+    console.error("TenantModel.getAllProperties error:", err);
+    throw err;
+  }
+},
 
   async exportTenants(filters = {}) {
     try {
@@ -1683,6 +1653,277 @@ async generateNextCoupleId() {
       return [];
     }
   },
+
+  // ========== PARTNER TENANT METHODS ==========
+
+// Get partner tenant by tenant ID
+async getPartnerTenant(tenantId) {
+  try {
+    const [tenant] = await pool.query(
+      `SELECT id, couple_id, partner_tenant_id FROM tenants WHERE id = ?`,
+      [tenantId]
+    );
+    
+    if (!tenant.length) return null;
+    
+    if (tenant[0].partner_tenant_id) {
+      const [partner] = await pool.query(
+        `SELECT * FROM tenants WHERE id = ?`,
+        [tenant[0].partner_tenant_id]
+      );
+      return partner[0] || null;
+    }
+    
+    if (tenant[0].couple_id) {
+      const [partner] = await pool.query(
+        `SELECT * FROM tenants WHERE couple_id = ? AND id != ? LIMIT 1`,
+        [tenant[0].couple_id, tenantId]
+      );
+      return partner[0] || null;
+    }
+    
+    return null;
+  } catch (err) {
+    console.error("TenantModel.getPartnerTenant error:", err);
+    return null;
+  }
+},
+
+// In tenantModel.js - createCoupleTenants method
+async createCoupleTenants(primaryData, partnerData) {
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();
+  
+  try {
+    const coupleId = await this.generateNextCoupleId();
+    
+    // Remove property_name from data if it exists
+    const cleanPrimaryData = { ...primaryData };
+    delete cleanPrimaryData.property_name;
+    
+    const cleanPartnerData = { ...partnerData };
+    delete cleanPartnerData.property_name;
+    
+    // Add is_primary_tenant flag to primary data
+    cleanPrimaryData.is_primary_tenant = true;  // ← ADD THIS
+    cleanPartnerData.is_primary_tenant = false; // ← ADD THIS
+    
+    // Build column names and values for primary tenant
+    const primaryColumns = Object.keys(cleanPrimaryData).filter(key => cleanPrimaryData[key] !== undefined);
+    const primaryValues = primaryColumns.map(key => cleanPrimaryData[key]);
+    const primaryPlaceholders = primaryColumns.map(() => '?').join(', ');
+    
+    const primaryQuery = `INSERT INTO tenants (${primaryColumns.join(', ')}) VALUES (${primaryPlaceholders})`;
+    
+    const [primaryResult] = await connection.execute(primaryQuery, primaryValues);
+    const primaryId = primaryResult.insertId;
+    
+    // Build column names and values for partner tenant
+    const partnerColumns = Object.keys(cleanPartnerData).filter(key => cleanPartnerData[key] !== undefined);
+    const partnerValues = partnerColumns.map(key => cleanPartnerData[key]);
+    const partnerPlaceholders = partnerColumns.map(() => '?').join(', ');
+    
+    const partnerQuery = `INSERT INTO tenants (${partnerColumns.join(', ')}) VALUES (${partnerPlaceholders})`;
+    
+    const [partnerResult] = await connection.execute(partnerQuery, partnerValues);
+    const partnerId = partnerResult.insertId;
+    
+    // Update primary tenant with partner_tenant_id and couple_id
+    await connection.execute(
+      `UPDATE tenants SET partner_tenant_id = ?, couple_id = ?, is_couple_booking = 1 WHERE id = ?`,
+      [partnerId, coupleId, primaryId]
+    );
+    
+    // Update partner tenant with partner_tenant_id and couple_id
+    await connection.execute(
+      `UPDATE tenants SET partner_tenant_id = ?, couple_id = ?, is_couple_booking = 1 WHERE id = ?`,
+      [primaryId, coupleId, partnerId]
+    );
+    
+    await connection.commit();
+    connection.release();
+    
+    return {
+      primary_tenant_id: primaryId,
+      partner_tenant_id: partnerId,
+      couple_id: coupleId
+    };
+  } catch (err) {
+    await connection.rollback();
+    connection.release();
+    console.error("TenantModel.createCoupleTenants error:", err);
+    throw err;
+  }
+},
+
+// In tenantModel.js - REPLACE the entire getTenantWithPartner method
+async getTenantWithPartner(tenantId) {
+  try {
+    // First, get the requested tenant
+    const requestedTenant = await this.findById(tenantId);
+    if (!requestedTenant) return null;
+    
+    let primaryTenant = null;
+    let partnerTenant = null;
+    
+    // Determine which tenant is primary and which is partner
+    if (requestedTenant.is_primary_tenant === 1) {
+      // Requested tenant is PRIMARY
+      primaryTenant = requestedTenant;
+      
+      // Get partner tenant
+      if (requestedTenant.partner_tenant_id) {
+        partnerTenant = await this.findById(requestedTenant.partner_tenant_id);
+      } else if (requestedTenant.couple_id) {
+        const [partnerRows] = await pool.query(
+          `SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 0 LIMIT 1`,
+          [requestedTenant.couple_id]
+        );
+        if (partnerRows.length) {
+          partnerTenant = await this.findById(partnerRows[0].id);
+        }
+      }
+    } else {
+      // Requested tenant is PARTNER
+      partnerTenant = requestedTenant;
+      
+      // Get primary tenant
+      if (requestedTenant.partner_tenant_id) {
+        primaryTenant = await this.findById(requestedTenant.partner_tenant_id);
+      } else if (requestedTenant.couple_id) {
+        const [primaryRows] = await pool.query(
+          `SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 1 LIMIT 1`,
+          [requestedTenant.couple_id]
+        );
+        if (primaryRows.length) {
+          primaryTenant = await this.findById(primaryRows[0].id);
+        }
+      }
+    }
+    
+    // If no primary tenant found, return the requested tenant as is
+    if (!primaryTenant) {
+      return requestedTenant;
+    }
+    
+    // ALWAYS structure the response with PRIMARY tenant data in main fields
+    // and PARTNER tenant data in partner fields
+    const responseTenant = { ...primaryTenant };
+    
+    // IMPORTANT: Keep the original requested ID for saving
+    responseTenant.requested_tenant_id = tenantId;
+    responseTenant.original_id = tenantId; // Store which tenant was actually requested
+    
+    // Override the ID with the primary tenant's ID for display purposes
+    responseTenant.id = primaryTenant.id;
+    
+    // Partner tenant data (always in partner_* fields)
+    if (partnerTenant) {
+      responseTenant.partner_id = partnerTenant.id;
+      responseTenant.partner_salutation = partnerTenant.salutation;
+      responseTenant.partner_full_name = partnerTenant.full_name;
+      responseTenant.partner_email = partnerTenant.email;
+      responseTenant.partner_phone = partnerTenant.phone;
+      responseTenant.partner_country_code = partnerTenant.country_code;
+      responseTenant.partner_gender = partnerTenant.gender;
+      responseTenant.partner_date_of_birth = partnerTenant.date_of_birth;
+      responseTenant.partner_address = partnerTenant.address;
+      responseTenant.partner_occupation = partnerTenant.occupation;
+      responseTenant.partner_organization = partnerTenant.organization;
+      responseTenant.partner_relationship = partnerTenant.partner_relationship;
+      responseTenant.partner_id_proof_type = partnerTenant.id_proof_type;
+      responseTenant.partner_id_proof_number = partnerTenant.id_proof_number;
+      responseTenant.partner_id_proof_url = partnerTenant.id_proof_url;
+      responseTenant.partner_address_proof_type = partnerTenant.address_proof_type;
+      responseTenant.partner_address_proof_number = partnerTenant.address_proof_number;
+      responseTenant.partner_address_proof_url = partnerTenant.address_proof_url;
+      responseTenant.partner_photo_url = partnerTenant.photo_url;
+      responseTenant.is_couple_booking = true;
+      responseTenant.couple_id = primaryTenant.couple_id;
+      responseTenant.partner_tenant_id = partnerTenant.id;
+      // Mark which tenant was originally requested
+responseTenant.is_editing_primary = (primaryTenant.id === tenantId);
+responseTenant.is_editing_partner = (partnerTenant && partnerTenant.id === tenantId);
+    }
+    
+    // Mark which tenant this response represents
+    responseTenant.is_primary_tenant = (primaryTenant.id === tenantId);
+    
+    // Log for debugging
+    console.log('getTenantWithPartner - Requested ID:', tenantId);
+    console.log('getTenantWithPartner - Returning Primary ID:', primaryTenant.id);
+    console.log('getTenantWithPartner - Partner ID:', partnerTenant?.id);
+    
+    return responseTenant;
+  } catch (err) {
+    console.error("TenantModel.getTenantWithPartner error:", err);
+    return null;
+  }
+},
+
+// Function to generate next couple ID
+async generateNextCoupleId() {
+  const [result] = await pool.query(
+    `SELECT couple_id FROM tenants 
+     WHERE couple_id IS NOT NULL 
+     AND couple_id REGEXP '^C[0-9]+$'
+     ORDER BY CAST(SUBSTRING(couple_id, 2) AS UNSIGNED) DESC 
+     LIMIT 1`
+  );
+  
+  let nextNumber = 1;
+  
+  if (result.length > 0 && result[0].couple_id) {
+    const currentNumber = parseInt(result[0].couple_id.substring(1));
+    if (!isNaN(currentNumber)) {
+      nextNumber = currentNumber + 1;
+    }
+  }
+  
+  return `C${nextNumber.toString().padStart(3, '0')}`;
+},
+
+// Check if tenant is primary tenant
+async isPrimaryTenant(tenantId) {
+  try {
+    const [rows] = await pool.query(
+      "SELECT is_primary_tenant FROM tenants WHERE id = ?",
+      [tenantId]
+    );
+    return rows.length > 0 && rows[0].is_primary_tenant === 1;
+  } catch (err) {
+    console.error("TenantModel.isPrimaryTenant error:", err);
+    return false;
+  }
+},
+
+// Get primary tenant for a couple
+async getPrimaryTenantByCoupleId(coupleId) {
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 1 LIMIT 1",
+      [coupleId]
+    );
+    return rows[0] || null;
+  } catch (err) {
+    console.error("TenantModel.getPrimaryTenantByCoupleId error:", err);
+    return null;
+  }
+},
+
+// Get partner tenant for a couple
+async getPartnerTenantByCoupleId(coupleId) {
+  try {
+    const [rows] = await pool.query(
+      "SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 0 LIMIT 1",
+      [coupleId]
+    );
+    return rows[0] || null;
+  } catch (err) {
+    console.error("TenantModel.getPartnerTenantByCoupleId error:", err);
+    return null;
+  }
+},
 };
 
 module.exports = TenantModel;
