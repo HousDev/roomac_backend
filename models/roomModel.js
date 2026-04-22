@@ -649,7 +649,7 @@ async repairBedAssignments(roomId) {
 
 // models/roomModel.js - Fix the assignBed function
 
-async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false, partnerDetails = null) {
+async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, isCouple = false, partnerDetails = null,securityDeposit = null) {
   let connection;
   try {
     console.log("Assigning bed:", { roomId, bedNumber, tenantId, tenantGender, tenantRent, isCouple, partnerDetails });
@@ -734,8 +734,8 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
       // Create bed if it doesn't exist
       const [result] = await connection.query(
         `INSERT INTO bed_assignments 
-         (room_id, bed_number, bed_type, tenant_id, tenant_gender, tenant_rent, is_couple, is_available) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`,
+   (room_id, bed_number, bed_type, tenant_id, tenant_gender, tenant_rent, is_couple, security_deposit, is_available) 
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE)`,
         [roomId, bedNumber, bedType, tenantId, tenantGender, finalRent, finalIsCouple]
       );
       bedId = result.insertId;
@@ -761,6 +761,8 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
         [tenantId, tenantGender, finalRent, finalIsCouple, bedId]
       );
       
+      
+
       if (updateResult.affectedRows === 0) {
         await connection.rollback();
         connection.release();
@@ -853,6 +855,8 @@ async assignBed(roomId, bedNumber, tenantId, tenantGender, tenantRent = null, is
 // models/roomModel.js
 
 async updateBedAssignment(bedId, data) {
+  console.log("Updating bed assignment:", { bedId, data });
+
   let connection;
   try {
     connection = await db.getConnection();
@@ -860,9 +864,27 @@ async updateBedAssignment(bedId, data) {
     
     // 1. Get current bed info
     const [bed] = await connection.query(
-      `SELECT id, room_id, bed_number, tenant_id, vacate_reason FROM bed_assignments WHERE id = ?`,
+      `SELECT * FROM bed_assignments WHERE id = ?`,
       [bedId]
     );
+    console.log("bed",bed)
+
+    const [roomData] = await connection.query(
+      `SELECT * FROM rooms WHERE id = ?`,
+      [bed[0].room_id]
+    );
+
+    
+    const updatedTotalRent = Number(roomData[0].rent_per_bed) - Number(bed[0].tenant_rent) + Number(data.tenant_rent);
+    console.log("roomDatea ",roomData)
+    console.log("updated total rent", updatedTotalRent)
+
+    const temp=    await connection.query(
+            `update rooms set rent_per_bed = ? where id = ?`,
+            [updatedTotalRent, roomData[0].id]
+          );
+          console.log("temp",temp)
+          console.log("is total rent updated",updatedTotalRent)
     
     if (bed.length === 0) {
       await connection.rollback();
@@ -880,6 +902,7 @@ async updateBedAssignment(bedId, data) {
       vacate_reason, 
       tenant_rent, 
       is_couple,
+      security_deposit,
       // Partner details
       partner_full_name,
       partner_phone,
@@ -921,7 +944,8 @@ async updateBedAssignment(bedId, data) {
       values.push(newReason);
     }
     
-    if (tenant_rent !== undefined) {
+    
+    if (tenant_rent !== undefined || tenant_rent !== null) {
       updates.push('tenant_rent = ?');
       if (tenant_rent === null) {
         values.push(null);
@@ -935,6 +959,12 @@ async updateBedAssignment(bedId, data) {
       updates.push('is_couple = ?');
       const coupleValue = is_couple === true || is_couple === 1 || is_couple === '1' || is_couple === 'true' ? 1 : 0;
       values.push(coupleValue);
+    }
+
+    // Add security_deposit to updates
+    if (security_deposit !== undefined) {
+      updates.push('security_deposit = ?');
+      values.push(security_deposit);
     }
     
     if (updates.length === 0) {
@@ -1020,6 +1050,8 @@ async updateBedAssignment(bedId, data) {
           const newReason = existingReason 
             ? `${existingReason} | ${transferReason}`
             : transferReason;
+
+          
           
           await connection.query(
             `UPDATE bed_assignments 
@@ -1034,6 +1066,7 @@ async updateBedAssignment(bedId, data) {
             [newReason, assignment.id]
           );
           
+       
           await this.updateRoomOccupants(assignment.room_id, connection);
         }
       }
@@ -1060,6 +1093,7 @@ async updateBedAssignment(bedId, data) {
     };
     
   } catch (error) {
+    console.log("adfdfadf")
     if (connection) {
       try {
         await connection.rollback();
@@ -1120,6 +1154,25 @@ async updateRoomOccupants(roomId, connection = null) {
   }
 },
 
+
+async createBedAssignments(roomId, totalBeds, bedsConfig = []) {
+  try {
+    for (let i = 1; i <= totalBeds; i++) {
+      const bedConfig = bedsConfig.find(bed => bed.bed_number === i);
+      const bedType = bedConfig?.bed_type || null;
+      const bedRent = bedConfig?.bed_rent || null;
+      
+      await db.query(
+        `INSERT INTO bed_assignments (room_id, bed_number, bed_type, tenant_rent, is_available) 
+         VALUES (?, ?, ?, ?, TRUE)`,
+        [roomId, i, bedType, bedRent]  // ← This stores the original rent in tenant_rent
+      );
+    }
+  } catch (err) {
+    console.error("RoomModel.createBedAssignments error:", err);
+    throw err;
+  }
+},
  
 
 // In roomModel.js - Update the vacateBed method

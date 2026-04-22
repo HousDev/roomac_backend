@@ -837,6 +837,7 @@ async assignBed(req, res) {
       tenant_gender, 
       tenant_rent, 
       is_couple,
+      security_deposit,
       // Partner details
       partner_full_name,
       partner_phone,
@@ -910,6 +911,7 @@ async assignBed(req, res) {
       tenant_gender, 
       customRent, 
       coupleStatus,
+      security_deposit,
       {  // Pass partner details as an object
         partner_full_name,
         partner_phone,
@@ -972,6 +974,7 @@ async updateBedAssignment(req, res) {
       vacate_reason, 
       tenant_rent, 
       is_couple,
+      security_deposit,
       // Partner details
       partner_full_name,
       partner_phone,
@@ -1078,6 +1081,10 @@ async updateBedAssignment(req, res) {
       processedData.partner_relationship = partner_relationship;
     }
 
+     // In the processedData, when security_deposit is null, it should be set to null
+  if (security_deposit !== undefined) {
+    processedData.security_deposit = security_deposit === null ? null : security_deposit;
+  }
     
     // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
