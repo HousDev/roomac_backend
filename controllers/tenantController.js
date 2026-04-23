@@ -203,6 +203,7 @@ const TenantController = {
     }
   },
 
+// In tenantController.js - Update the getById method
 async getById(req, res) {
   try {
     const id = req.params.id;
@@ -220,7 +221,7 @@ async getById(req, res) {
     if (tenant.property_id) {
       try {
         const [propRows] = await pool.query(
-          "SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type FROM properties WHERE id = ?",
+          "SELECT id, name, lockin_period_months, lockin_penalty_amount, lockin_penalty_type, notice_period_days, notice_penalty_amount, notice_penalty_type, security_deposit FROM properties WHERE id = ?",
           [tenant.property_id],
         );
         propertyDetails = propRows[0] || null;
@@ -252,10 +253,12 @@ async getById(req, res) {
       },
     }));
 
+    // IMPORTANT: Return the tenant object AS IS without modifying it
+    // The getTenantWithPartner already has all the partner fields
     return res.json({
       success: true,
       data: {
-        ...tenant,
+        ...tenant,  // Spread the entire tenant object (includes partner_* fields)
         property_details: propertyDetails,
         bookings: formattedBookings || [],
         payments: payments || [],
@@ -383,6 +386,7 @@ async getById(req, res) {
   },
 
 async create(req, res) {
+  
   try {
     const body = req.body || {};
     const files = req.files || {};
@@ -465,6 +469,28 @@ async create(req, res) {
       return isNaN(num) ? defaultValue : num;
     };
 
+    // Inside the couple booking section, before creating primaryTenantData
+let propertyName = "";
+let securityDeposit = 0;
+
+if (body.property_id) {
+  try {
+    const [[propertyData]] = await pool.query(
+      "SELECT name, security_deposit FROM properties WHERE id = ?",
+      [body.property_id]
+    );
+    if (propertyData) {
+      propertyName = propertyData.name;
+      securityDeposit = propertyData.security_deposit || 0;
+    }
+  } catch (err) {
+    console.error("Error fetching property details:", err);
+  }
+}
+
+if (body.security_deposit !== undefined && body.security_deposit !== "") {
+  securityDeposit = parseFloat(body.security_deposit);
+}
 
     // Check if this is a couple booking (partner_full_name exists in request)
     const isCoupleBooking = body.partner_full_name && body.partner_full_name.trim() !== "";
@@ -494,7 +520,7 @@ const primaryTenantData = {
   work_mode: body.work_mode || null,
   shift_timing: body.shift_timing || null,
   portal_access_enabled: body.portal_access_enabled === "true" || body.portal_access_enabled === true || false,
-  is_active: body.is_active === undefined || body.is_active === "" ? true : body.is_active === "true" || body.is_active === true || body.is_active === "1",
+  is_active: true,
   address: body.address || null,
   city: body.city || null,
   state: body.state || null,
@@ -524,14 +550,12 @@ const primaryTenantData = {
   address_proof_url: uploadedFiles.address_proof_url || null,
   photo_url: uploadedFiles.photo_url || null,
   additional_documents: additionalDocs,
-  // property_name: propertyName,  // ← REMOVE THIS LINE
   is_primary_tenant: true,
+  is_couple_booking: true,
 };
 
-      // Partner tenant data
-      // Prepare partner tenant data - COPY relevant fields from primary tenant
 const partnerTenantData = {
-  // Personal info (from partner form)
+  // Partner's personal info (from partner form)
   salutation: body.partner_salutation || null,
   full_name: body.partner_full_name,
   email: body.partner_email || null,
@@ -540,60 +564,85 @@ const partnerTenantData = {
   gender: body.partner_gender || null,
   date_of_birth: body.partner_date_of_birth || null,
   
-  // Occupation fields (from partner form)
+  // Partner's emergency contact (from partner form) - MAKE SURE THESE ARE INCLUDED
+  emergency_contact_name: body.partner_emergency_contact_name || null,
+  emergency_contact_phone: body.partner_emergency_contact_phone || null,
+  emergency_contact_relation: body.partner_emergency_contact_relation || null,
+  emergency_contact_email: body.partner_emergency_contact_email || null,
+  
+  // Partner's address (from partner form)
+  address: body.partner_address || null,
+  city: body.partner_city || null,
+  state: body.partner_state || null,
+  pincode: body.partner_pincode || null,
+  
+  // Partner's occupation (from partner form)
   occupation_category: body.partner_occupation_category || null,
+  exact_occupation: body.partner_exact_occupation || null,
   occupation: body.partner_occupation || null,
   organization: body.partner_organization || null,
+  years_of_experience: body.partner_years_of_experience ? parseIntValue(body.partner_years_of_experience) : null,
+  monthly_income: body.partner_monthly_income ? parseNumber(body.partner_monthly_income) : null,
+  course_duration: body.partner_course_duration || null,
+  student_id: body.partner_student_id || null,
+  employee_id: body.partner_employee_id || null,
+  portfolio_url: body.partner_portfolio_url || null,
+  work_mode: body.partner_work_mode || null,
+  shift_timing: body.partner_shift_timing || null,
   
-  // Address - COPY FROM PRIMARY TENANT (same address)
-  address: body.address || null,  // ← Same as primary tenant
-  city: body.city || null,        // ← Same as primary tenant
-  state: body.state || null,      // ← Same as primary tenant
-  pincode: body.pincode || null,  // ← Same as primary tenant
+  // Partner's documents (from partner form)
+  id_proof_type: body.partner_id_proof_type || null,
+  id_proof_number: body.partner_id_proof_number || null,
+  address_proof_type: body.partner_address_proof_type || null,
+  address_proof_number: body.partner_address_proof_number || null,
   
-  // Property Assignment - COPY FROM PRIMARY TENANT
-  property_id: body.property_id ? parseIntValue(body.property_id) : null,  // ← Same property
-  check_in_date: body.check_in_date || null,  // ← Same check-in date
-  
-  // Rental Terms - COPY FROM PRIMARY TENANT
+  // Shared fields (same as primary tenant)
+  property_id: body.property_id ? parseIntValue(body.property_id) : null,
+  check_in_date: body.check_in_date || null,
   lockin_period_months: body.lockin_period_months ? parseIntValue(body.lockin_period_months) : 0,
   lockin_penalty_amount: body.lockin_penalty_amount ? parseNumber(body.lockin_penalty_amount) : 0,
   lockin_penalty_type: body.lockin_penalty_type || "fixed",
   notice_period_days: body.notice_period_days ? parseIntValue(body.notice_period_days) : 0,
   notice_penalty_amount: body.notice_penalty_amount ? parseNumber(body.notice_penalty_amount) : 0,
   notice_penalty_type: body.notice_penalty_type || "fixed",
+  security_deposit: securityDeposit,
   
   // Status
-  portal_access_enabled: false,  // Partners don't get portal access by default
+  portal_access_enabled: false,
   is_active: true,
-  
-  // Emergency Contact (optional - can be same or different)
-  emergency_contact_name: body.emergency_contact_name || null,
-  emergency_contact_phone: body.emergency_contact_phone || null,
-  emergency_contact_relation: body.emergency_contact_relation || null,
-  emergency_contact_email: body.emergency_contact_email || null,
-  
-  // Documents (separate for partner)
-  id_proof_url: null,
-  address_proof_url: null,
-  photo_url: null,
-  id_proof_type: body.partner_id_proof_type || null,
-  id_proof_number: body.partner_id_proof_number || null,
-  address_proof_type: body.partner_address_proof_type || null,
-  address_proof_number: body.partner_address_proof_number || null,
   is_primary_tenant: false,
+  is_couple_booking: true,
 };
 
-      // Handle partner document uploads if any
-      if (files.partner_id_proof_url && files.partner_id_proof_url[0]) {
-        partnerTenantData.id_proof_url = `/uploads/partner_id_proofs/${files.partner_id_proof_url[0].filename}`;
-      }
-      if (files.partner_address_proof_url && files.partner_address_proof_url[0]) {
-        partnerTenantData.address_proof_url = `/uploads/partner_address_proofs/${files.partner_address_proof_url[0].filename}`;
-      }
-      if (files.partner_photo_url && files.partner_photo_url[0]) {
-        partnerTenantData.photo_url = `/uploads/partner_photos/${files.partner_photo_url[0].filename}`;
-      }
+// Handle partner document uploads
+if (files.partner_id_proof_url && files.partner_id_proof_url[0]) {
+  partnerTenantData.id_proof_url = `/uploads/partner_id_proofs/${files.partner_id_proof_url[0].filename}`;
+}
+if (files.partner_address_proof_url && files.partner_address_proof_url[0]) {
+  partnerTenantData.address_proof_url = `/uploads/partner_address_proofs/${files.partner_address_proof_url[0].filename}`;
+}
+if (files.partner_photo_url && files.partner_photo_url[0]) {
+  partnerTenantData.photo_url = `/uploads/partner_photos/${files.partner_photo_url[0].filename}`;
+}
+
+// Handle partner additional documents
+let partnerAdditionalDocs = [];
+if (files["partner_additional_documents[]"]) {
+  const partnerAdditionalFiles = Array.isArray(files["partner_additional_documents[]"])
+    ? files["partner_additional_documents[]"]
+    : [files["partner_additional_documents[]"]];
+  
+  partnerAdditionalDocs = partnerAdditionalFiles.map((file) => ({
+    filename: file.originalname,
+    url: `/uploads/partner_additional_docs/${file.filename}`,
+    uploaded_at: new Date().toISOString(),
+    document_type: "Additional",
+    file_size: file.size,
+    file_mimetype: file.mimetype,
+  }));
+}
+partnerTenantData.additional_documents = partnerAdditionalDocs;
+
 
       // Create both tenants with couple linking
       const coupleResult = await TenantModel.createCoupleTenants(primaryTenantData, partnerTenantData);
@@ -640,6 +689,7 @@ const partnerTenantData = {
         additional_documents: additionalDocs,
       });
     }
+    
 
     // ========== NON-COUPLE BOOKING (Single Tenant) ==========
     const tenantData = {
@@ -693,6 +743,7 @@ const partnerTenantData = {
       ...uploadedFiles,
       additional_documents: additionalDocs,
       is_couple_booking: false,
+      security_deposit: securityDeposit,
       is_primary_tenant: false
     };
 
@@ -951,66 +1002,61 @@ async sendCredentials(req, res) {
 },
 
 async update(req, res) {
+
   let connection; 
   try {
     const requestedId = req.params.id;
     const body = req.body || {};
     const files = req.files || {};
 
-    // First, get the tenant with partner details to understand which tenant we're editing
+    // First, get the tenant with partner details
     const tenantWithPartner = await TenantModel.getTenantWithPartner(requestedId);
     
-    // Determine which tenant ID we should actually update
+    // Determine which tenant to update
     let actualTenantId = requestedId;
     let isUpdatingPrimary = false;
     let isUpdatingPartner = false;
     
     if (tenantWithPartner && tenantWithPartner.is_couple_booking) {
-      // Check if the form is updating the partner section vs main section
-      const hasPartnerData = body.partner_full_name || body.partner_phone || body.partner_email;
+      // Check which section of the form has data
+      const hasMainSectionData = body.full_name || body.email || body.phone || 
+                                  body.address || body.occupation_category;
+      const hasPartnerSectionData = body.partner_full_name || body.partner_phone || 
+                                     body.partner_email || body.partner_address;
       
-      // The tenant we're actually editing (the one we clicked Edit on)
-      const isEditingPrimary = tenantWithPartner.is_editing_primary === true;
-      const isEditingPartner = tenantWithPartner.is_editing_partner === true;
+      // Get the actual IDs
+      const primaryTenantId = tenantWithPartner.id;
+      const partnerTenantId = tenantWithPartner.partner_id;
       
-      console.log('isEditingPrimary:', isEditingPrimary);
-      console.log('isEditingPartner:', isEditingPartner);
-      console.log('hasPartnerData:', hasPartnerData);
+      console.log('Primary Tenant ID:', primaryTenantId);
+      console.log('Partner Tenant ID:', partnerTenantId);
+      console.log('Requested ID:', requestedId);
+      console.log('Has Main Section Data:', hasMainSectionData);
+      console.log('Has Partner Section Data:', hasPartnerSectionData);
       
-      if (isEditingPrimary) {
-        // We clicked Edit on PRIMARY tenant
-        if (hasPartnerData) {
-          // User modified partner section -> update the PARTNER tenant
-          actualTenantId = tenantWithPartner.partner_id;
-          isUpdatingPartner = true;
-          console.log('Editing PRIMARY, updating PARTNER tenant:', actualTenantId);
-        } else {
-          // User modified main section -> update the PRIMARY tenant
-          actualTenantId = tenantWithPartner.id;
-          isUpdatingPrimary = true;
-          console.log('Editing PRIMARY, updating PRIMARY tenant:', actualTenantId);
-        }
-      } else if (isEditingPartner) {
-        // We clicked Edit on PARTNER tenant
-        if (hasPartnerData) {
-          // User modified partner section -> update the PRIMARY tenant (because partner section holds primary data)
-          actualTenantId = tenantWithPartner.id;
-          isUpdatingPrimary = true;
-          console.log('Editing PARTNER, updating PRIMARY tenant:', actualTenantId);
-        } else {
-          // User modified main section -> update the PARTNER tenant (because main section holds partner data when editing partner)
-          actualTenantId = tenantWithPartner.partner_id;
-          isUpdatingPartner = true;
-          console.log('Editing PARTNER, updating PARTNER tenant:', actualTenantId);
-        }
+      // Determine which tenant to update based on which section was modified
+      if (hasMainSectionData && !hasPartnerSectionData) {
+        // User modified main section - update the PRIMARY tenant
+        actualTenantId = primaryTenantId;
+        isUpdatingPrimary = true;
+        console.log('Updating PRIMARY tenant (main section changed):', actualTenantId);
+      } else if (!hasMainSectionData && hasPartnerSectionData) {
+        // User modified partner section - update the PARTNER tenant
+        actualTenantId = partnerTenantId;
+        isUpdatingPartner = true;
+        console.log('Updating PARTNER tenant (partner section changed):', actualTenantId);
+      } else if (hasMainSectionData && hasPartnerSectionData) {
+        // Both sections modified - this should update both tenants
+        actualTenantId = primaryTenantId;
+        isUpdatingPrimary = true;
+        console.log('Both sections changed - will update primary first:', actualTenantId);
       } else {
-        // Fallback: use the requested ID
         actualTenantId = requestedId;
         console.log('Fallback, updating tenant:', actualTenantId);
       }
     }
 
-    // Get existing tenant using the determined actualTenantId
+    // Get existing tenant
     const existingTenant = await TenantModel.findById(actualTenantId);
     if (!existingTenant) {
       if (req.files) {
@@ -1099,13 +1145,13 @@ async update(req, res) {
     processPartnerDocument("partner_address_proof_url", "partner_address_proofs", existingTenant.partner_address_proof_url);
     processPartnerDocument("partner_photo_url", "partner_photos", existingTenant.partner_photo_url);
 
-    // Process additional documents
+    // Process additional documents for main tenant
     let additionalDocs = existingTenant.additional_documents || [];
     const uniqueFiles = new Map();
     const fileFields = Object.keys(files);
 
     fileFields.forEach((field) => {
-      if (field.includes("additional_documents") || field.includes("additional_docs") || field.includes("additional")) {
+      if (field.includes("additional_documents") && !field.includes("partner_")) {
         const fileArray = Array.isArray(files[field]) ? files[field] : [files[field]];
         fileArray.forEach((file) => {
           if (file && file.filename && file.originalname) {
@@ -1132,6 +1178,53 @@ async update(req, res) {
       const uniqueNewDocs = newDocs.filter((doc) => !existingFilenames.has(doc.filename));
       additionalDocs = [...additionalDocs, ...uniqueNewDocs];
       updateData.additional_documents = additionalDocs;
+    }
+
+    // Process partner additional documents
+    let partnerAdditionalDocs = existingTenant.partner_additional_documents || [];
+
+    const partnerFilesMap = new Map();
+    Object.keys(files).forEach((field) => {
+      if (field === "partner_additional_documents[]" || field.startsWith("partner_additional_documents")) {
+        const fileArray = Array.isArray(files[field]) ? files[field] : [files[field]];
+        fileArray.forEach((file) => {
+          if (file && file.filename && file.originalname) {
+            const fileKey = `${file.originalname}_${file.size}`;
+            if (!partnerFilesMap.has(fileKey)) {
+              partnerFilesMap.set(fileKey, file);
+            }
+          }
+        });
+      }
+    });
+
+    // Check for existing partner additional documents in body
+    if (body.partner_additional_documents) {
+      try {
+        const parsedDocs = typeof body.partner_additional_documents === "string" 
+          ? JSON.parse(body.partner_additional_documents) 
+          : body.partner_additional_documents;
+        if (Array.isArray(parsedDocs)) {
+          partnerAdditionalDocs = parsedDocs;
+        }
+      } catch (e) {
+        console.error("Error parsing partner_additional_documents:", e);
+      }
+    }
+
+    // Add new partner additional documents
+    const newPartnerDocs = Array.from(partnerFilesMap.values()).map((file) => ({
+      filename: file.originalname,
+      url: `/uploads/partner_additional_docs/${file.filename}`,
+      uploaded_at: new Date().toISOString(),
+      document_type: "Additional",
+      file_size: file.size,
+      file_mimetype: file.mimetype,
+    }));
+
+    partnerAdditionalDocs = [...partnerAdditionalDocs, ...newPartnerDocs];
+    if (partnerAdditionalDocs.length > 0) {
+      updateData.partner_additional_documents = partnerAdditionalDocs;
     }
 
     // Parse number fields
@@ -1173,6 +1266,10 @@ async update(req, res) {
       updateData.portal_access_enabled = body.portal_access_enabled === "true" || body.portal_access_enabled === true || body.portal_access_enabled === "1";
     }
     
+    // Only add security deposit if we're updating the primary tenant
+    if (isUpdatingPrimary && body.security_deposit !== undefined) {
+      updateData.security_deposit = parseNumber(body.security_deposit) || 0;
+    }
 
     // Independent fields (personal info for current tenant)
     const independentFields = [
@@ -1205,10 +1302,97 @@ async update(req, res) {
       return res.status(404).json({ success: false, message: "Tenant not found or no changes" });
     }
 
+    // If both sections were modified, also update the other tenant
+    const hasMainSectionData = body.full_name || body.email || body.phone;
+    const hasPartnerSectionData = body.partner_full_name || body.partner_phone || body.partner_email;
+    
+    if (hasMainSectionData && hasPartnerSectionData && tenantWithPartner && tenantWithPartner.is_couple_booking) {
+      const otherTenantId = (actualTenantId === tenantWithPartner.id) ? tenantWithPartner.partner_id : tenantWithPartner.id;
+      const otherUpdateData = {};
+      
+      console.log("body ", req.body)
+      if (actualTenantId === tenantWithPartner.id) {
+  // We updated primary, now update partner with partner section data
+  if (body.partner_full_name) otherUpdateData.full_name = body.partner_full_name;
+  if (body.partner_phone) otherUpdateData.phone = body.partner_phone;
+  if (body.partner_email) otherUpdateData.email = body.partner_email;
+  if (body.partner_gender) otherUpdateData.gender = body.partner_gender;
+  if (body.partner_date_of_birth) otherUpdateData.date_of_birth = body.partner_date_of_birth;
+  if (body.partner_address) otherUpdateData.address = body.partner_address;
+  if (body.partner_occupation) otherUpdateData.occupation = body.partner_occupation;
+  if (body.partner_organization) otherUpdateData.organization = body.partner_organization;
+  if (body.partner_salutation) otherUpdateData.salutation = body.partner_salutation;
+  if (body.partner_country_code) otherUpdateData.country_code = body.partner_country_code;
+  if (body.partner_relationship) otherUpdateData.partner_relationship = body.partner_relationship;
+  
+  // ADD PARTNER EMERGENCY CONTACT FIELDS HERE
+  if (body.partner_emergency_contact_name) otherUpdateData.emergency_contact_name = body.partner_emergency_contact_name;
+  if (body.partner_emergency_contact_phone) otherUpdateData.emergency_contact_phone = body.partner_emergency_contact_phone;
+  if (body.partner_emergency_contact_relation) otherUpdateData.emergency_contact_relation = body.partner_emergency_contact_relation;
+  if (body.partner_emergency_contact_email) otherUpdateData.emergency_contact_email = body.partner_emergency_contact_email;
+  
+  // ADD PARTNER ADDRESS FIELDS
+  if (body.partner_city) otherUpdateData.city = body.partner_city;
+  if (body.partner_state) otherUpdateData.state = body.partner_state;
+  if (body.partner_pincode) otherUpdateData.pincode = body.partner_pincode;
+  
+  // ADD PARTNER OCCUPATION FIELDS
+  if (body.partner_occupation_category) otherUpdateData.occupation_category = body.partner_occupation_category;
+  if (body.partner_exact_occupation) otherUpdateData.exact_occupation = body.partner_exact_occupation;
+  if (body.partner_years_of_experience) otherUpdateData.years_of_experience = body.partner_years_of_experience;
+  if (body.partner_monthly_income) otherUpdateData.monthly_income = body.partner_monthly_income;
+  if (body.partner_course_duration) otherUpdateData.course_duration = body.partner_course_duration;
+  if (body.partner_student_id) otherUpdateData.student_id = body.partner_student_id;
+  if (body.partner_employee_id) otherUpdateData.employee_id = body.partner_employee_id;
+  if (body.partner_portfolio_url) otherUpdateData.portfolio_url = body.partner_portfolio_url;
+  if (body.partner_work_mode) otherUpdateData.work_mode = body.partner_work_mode;
+  if (body.partner_shift_timing) otherUpdateData.shift_timing = body.partner_shift_timing;
+  
+  // ADD PARTNER DOCUMENT FIELDS
+  if (body.partner_id_proof_type) otherUpdateData.id_proof_type = body.partner_id_proof_type;
+  if (body.partner_id_proof_number) otherUpdateData.id_proof_number = body.partner_id_proof_number;
+  if (body.partner_address_proof_type) otherUpdateData.address_proof_type = body.partner_address_proof_type;
+  if (body.partner_address_proof_number) otherUpdateData.address_proof_number = body.partner_address_proof_number;
+  
+  // Also add partner additional documents to the partner tenant
+  if (partnerAdditionalDocs.length > 0) {
+    otherUpdateData.additional_documents = partnerAdditionalDocs;
+  }
+  
+  if (Object.keys(otherUpdateData).length > 0) {
+    await TenantModel.update(otherTenantId, otherUpdateData);
+    console.log('Updated partner tenant with partner section data:', otherTenantId);
+  }
+} else {
+        // We updated partner, now update primary with main section data
+        if (body.full_name) otherUpdateData.full_name = body.full_name;
+        if (body.phone) otherUpdateData.phone = body.phone;
+        if (body.email) otherUpdateData.email = body.email;
+        if (body.gender) otherUpdateData.gender = body.gender;
+        if (body.date_of_birth) otherUpdateData.date_of_birth = body.date_of_birth;
+        if (body.address) otherUpdateData.address = body.address;
+        if (body.occupation) otherUpdateData.occupation = body.occupation;
+        if (body.organization) otherUpdateData.organization = body.organization;
+        if (body.salutation) otherUpdateData.salutation = body.salutation;
+        if (body.country_code) otherUpdateData.country_code = body.country_code;
+        if (body.occupation_category) otherUpdateData.occupation_category = body.occupation_category;
+        
+        // Also add main additional documents to the primary tenant
+        if (additionalDocs.length > 0) {
+          otherUpdateData.additional_documents = additionalDocs;
+        }
+        
+        if (Object.keys(otherUpdateData).length > 0) {
+          await TenantModel.update(otherTenantId, otherUpdateData);
+          console.log('Updated primary tenant with main section data:', otherTenantId);
+        }
+      }
+    }
+
     await connection.commit();
     connection.release();
 
-    // Fetch updated tenant using the original requested ID (so the response shows the correct swapped data)
+    // Fetch updated tenant using the original requested ID
     const updatedTenant = await TenantModel.getTenantWithPartner(requestedId);
 
     return res.json({

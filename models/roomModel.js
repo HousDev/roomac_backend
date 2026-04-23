@@ -102,7 +102,9 @@ async findAll() {
               'tenant_id', ba.tenant_id,
               'tenant_rent', ba.tenant_rent,
               'is_couple', ba.is_couple,
-              'bed_type', ba.bed_type    
+              'security_deposit', ba.security_deposit,
+              'created_at', ba.created_at,
+              'updated_at', ba.updated_at
             )
           )
           FROM bed_assignments ba 
@@ -111,7 +113,7 @@ async findAll() {
         ) as bed_assignments_json
       FROM rooms r
       JOIN properties p ON p.id = r.property_id
-    ORDER BY r.id ASC
+      ORDER BY r.id ASC
     `);
 
     return rows.map(room => ({
@@ -149,7 +151,9 @@ async findById(id) {
               'tenant_id', ba.tenant_id,
               'tenant_rent', ba.tenant_rent,
               'is_couple', ba.is_couple,
-              'bed_type', ba.bed_type    
+              'security_deposit', ba.security_deposit,
+              'created_at', DATE_FORMAT(ba.created_at, '%Y-%m-%d %H:%i:%s'),
+              'updated_at', DATE_FORMAT(ba.updated_at, '%Y-%m-%d %H:%i:%s')
             )
           )
           FROM bed_assignments ba 
@@ -241,7 +245,10 @@ async findByPropertyId(propertyId) {
               'tenant_id', ba.tenant_id,
               'tenant_rent', ba.tenant_rent,  
               'is_couple', ba.is_couple,       
-              'bed_type', ba.bed_type          
+              'bed_type', ba.bed_type,
+              'security_deposit', ba.security_deposit,
+              'created_at', ba.created_at,
+              'updated_at', ba.updated_at
             )
           )
           FROM bed_assignments ba 

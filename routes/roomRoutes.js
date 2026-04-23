@@ -46,4 +46,8 @@ router.post(
   RoomController.import
 );
 
+// In your roomRoutes.js or vacateRoutes.js
+router.get('/vacate/initial-data/:bedAssignmentId', RoomController.getVacateInitialData);
+
+
 module.exports = router;

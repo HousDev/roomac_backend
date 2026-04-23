@@ -1708,6 +1708,99 @@ async getTenantBedAssignment(req, res) {
       error: error.message
     });
   }
+},
+
+async getVacateInitialData(req, res) {
+  try {
+    const { bedAssignmentId } = req.params;
+    
+    // Get bed assignment with security deposit
+    const [bedAssignment] = await db.query(
+      `SELECT 
+        ba.id,
+        ba.room_id,
+        ba.bed_number,
+        ba.tenant_id,
+        ba.tenant_rent,
+        ba.security_deposit,
+        ba.created_at,
+        ba.updated_at,
+        r.room_number,
+        r.rent_per_bed,
+        r.property_id,
+        p.name as property_name,
+        p.security_deposit as property_security_deposit,
+        t.check_in_date,
+        t.lockin_period_months,
+        t.lockin_penalty_amount,
+        t.lockin_penalty_type,
+        t.notice_period_days,
+        t.notice_penalty_amount,
+        t.notice_penalty_type
+       FROM bed_assignments ba
+       JOIN rooms r ON ba.room_id = r.id
+       JOIN properties p ON r.property_id = p.id
+       JOIN tenants t ON ba.tenant_id = t.id
+       WHERE ba.id = ?`,
+      [bedAssignmentId]
+    );
+    
+    if (bedAssignment.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bed assignment not found'
+      });
+    }
+    
+    const bedData = bedAssignment[0];
+    
+    // Use security_deposit from bed assignment, fallback to property
+    const securityDeposit = bedData.security_deposit || bedData.property_security_deposit || 0;
+    
+    // Check for existing vacate request
+    const [existingRequest] = await db.query(
+      `SELECT vbr.*, tr.status as request_status
+       FROM vacate_bed_requests vbr
+       JOIN tenant_requests tr ON vbr.tenant_request_id = tr.id
+       WHERE vbr.bed_id = ? 
+         AND tr.status IN ('pending', 'in_progress', 'approved')
+       ORDER BY tr.created_at DESC
+       LIMIT 1`,
+      [bedAssignmentId]
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        bedAssignment: {
+          id: bedData.id,
+          bed_number: bedData.bed_number,
+          room_number: bedData.room_number,
+          property_name: bedData.property_name,
+          tenant_id: bedData.tenant_id,
+          tenant_rent: bedData.tenant_rent,
+          security_deposit: securityDeposit,  // ← From bed assignment
+          check_in_date: bedData.check_in_date,
+          lockin_period_months: bedData.lockin_period_months,
+          lockin_penalty_amount: bedData.lockin_penalty_amount,
+          lockin_penalty_type: bedData.lockin_penalty_type,
+          notice_period_days: bedData.notice_period_days,
+          notice_penalty_amount: bedData.notice_penalty_amount,
+          notice_penalty_type: bedData.notice_penalty_type,
+          rent_per_bed: bedData.rent_per_bed
+        },
+        existingVacateRequest: existingRequest[0] || null,
+        currentDate: new Date().toISOString().split('T')[0]
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting vacate initial data:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 }
 
 
