@@ -59,93 +59,67 @@ const getExpenseById = async (req, res) => {
   }
 };
 
-// POST /api/expenses
+// Update createExpense function
 const createExpense = async (req, res) => {
   try {
-    // Remove 'description' from destructuring
-    const { property_id, category_id, payment_mode, expense_date } = req.body;
-    
-    // Remove description from validation
-    if (!property_id || !category_id || !payment_mode || !expense_date) {
-      return res.status(400).json({
-        success: false,
-        message: "property_id, category_id, payment_mode and expense_date are required",
-      });
-    }
-
-    let receipt = { url: null, name: null };
-    if (req.file) receipt = saveReceipt(req.file);
-
-    let items = [];
-    if (req.body.items) {
+    // Parse items if it's a string in the request body
+    let items = req.body.items;
+    if (typeof items === 'string') {
       try {
-        items = JSON.parse(req.body.items);
-      } catch { /* ignore */ }
+        items = JSON.parse(items);
+      } catch (e) {
+        console.error("Error parsing items in controller:", e);
+        items = [];
+      }
     }
-
+    
     const expenseData = {
       property_id: req.body.property_id,
       property_name: req.body.property_name,
       category_id: req.body.category_id,
       category_name: req.body.category_name,
-      // description field removed
-      amount: req.body.amount,
-      payment_mode: req.body.payment_mode || "Cash",
-      receipt_url: receipt.url,
-      receipt_name: receipt.name,
+      total_amount: req.body.total_amount || req.body.amount, // Handle both field names
+      vendor_name: req.body.vendor_name,
       expense_date: req.body.expense_date,
-      status: req.body.status || "Pending",
+      status: req.body.status || 'Pending',
       added_by_name: req.body.added_by_name,
       notes: req.body.notes,
       items: items,
+      payment_mode: req.body.payment_mode,
     };
-
+    
+    // Handle receipt file
+    if (req.file) {
+      const { url, name } = saveReceipt(req.file);
+      expenseData.receipt_url = url;
+      expenseData.receipt_name = name;
+    }
+    
     const result = await ExpenseModel.create(expenseData);
-    res.status(201).json({ success: true, message: "Expense created", data: result });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Create expense error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// PUT /api/expenses/:id
+// Update updateExpense function
 const updateExpense = async (req, res) => {
   try {
-    const existing = await ExpenseModel.getById(req.params.id);
-    if (!existing) return res.status(404).json({ success: false, message: "Expense not found" });
-
-    let receipt = { url: existing.receipt_url, name: existing.receipt_name };
-    if (req.file) receipt = saveReceipt(req.file);
-
-    let items = existing.items || [];
-    if (req.body.items) {
-      try {
-        items = JSON.parse(req.body.items);
-      } catch { /* ignore */ }
-    }
-
-    const expenseData = {
-      property_id: req.body.property_id,
-      property_name: req.body.property_name,
-      category_id: req.body.category_id,
-      category_name: req.body.category_name,
+    const { id } = req.params;
+    const updateData = req.body;
     
-      amount: req.body.amount,
-      payment_mode: req.body.payment_mode || "Cash",
-      receipt_url: receipt.url,
-      receipt_name: receipt.name,
-      expense_date: req.body.expense_date,
-      status: req.body.status,
-      added_by_name: req.body.added_by_name,
-      notes: req.body.notes,
-      items: items,
-    };
-
-    await ExpenseModel.update(req.params.id, expenseData);
-    res.json({ success: true, message: "Expense updated" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    if (req.file) {
+      updateData.receipt_url = `/uploads/${req.file.filename}`;
+      updateData.receipt_name = req.file.originalname;
+    }
+    
+    const result = await ExpenseModel.update(id, updateData);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -167,6 +141,71 @@ const deleteExpense = async (req, res) => {
   }
 };
 
+// POST /api/expenses/:id/payment
+const addExpensePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      paid_amount, 
+      payment_mode, 
+      transaction_date, 
+      reference_no,
+      notes,
+      created_by 
+    } = req.body;
+    
+    console.log("Processing payment:", { id, paid_amount, payment_mode, transaction_date, reference_no });
+    
+    const result = await ExpenseModel.createPaymentTransaction({
+      expense_id: id,
+      paid_amount: paid_amount,
+      payment_mode: payment_mode,
+      transaction_date: transaction_date,
+      reference_no: reference_no,
+      notes: notes,
+      created_by: created_by || req.user?.name || 'System',
+    });
+    
+    console.log("Payment result:", result);
+    
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Add payment error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// GET /api/expenses/:id/payments
+const getExpensePayments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payments = await ExpenseModel.getPaymentTransactions(id);
+    res.json({ success: true, data: payments });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// GET /api/expense-payments
+const getAllPayments = async (req, res) => {
+  try {
+    const filters = {
+      expense_id: req.query.expense_id,
+      status: req.query.status,
+      from_date: req.query.from_date,
+      to_date: req.query.to_date,
+    };
+    const payments = await ExpenseModel.getAllPaymentTransactions(filters);
+    res.json({ success: true, data: payments });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+
+
 module.exports = {
   getExpenses,
   getExpenseStats,
@@ -174,4 +213,7 @@ module.exports = {
   createExpense,
   updateExpense,
   deleteExpense,
+  addExpensePayment,      // New
+  getExpensePayments,     // New
+  getAllPayments,  
 };

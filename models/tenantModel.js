@@ -455,6 +455,7 @@ async findById(id) {
 // models/tenantModel.js - Fix the create method
 
 async create(payload) {
+  console.log("Creating tenant with payload:", payload);
   try {
     const {
       salutation,
@@ -507,8 +508,12 @@ async create(payload) {
       notice_period_days,
       notice_penalty_amount,
       notice_penalty_type,
+      is_couple_booking,
+      couple_id,
+      is_primary_tenant,
+      // Partner fields - only used when is_couple_booking is true
       partner_salutation,
-partner_country_code,
+      partner_country_code,
       partner_full_name,
       partner_phone,
       partner_email,
@@ -525,9 +530,23 @@ partner_country_code,
       partner_address_proof_number,
       partner_address_proof_url,
       partner_photo_url,
-      is_couple_booking,
-      couple_id,
-      is_primary_tenant, 
+      partner_emergency_contact_name,
+      partner_emergency_contact_phone,
+      partner_emergency_contact_relation,
+      partner_emergency_contact_email,
+      partner_city,
+      partner_state,
+      partner_pincode,
+      partner_occupation_category,
+      partner_exact_occupation,
+      partner_years_of_experience,
+      partner_monthly_income,
+      partner_course_duration,
+      partner_student_id,
+      partner_employee_id,
+      partner_portfolio_url,
+      partner_work_mode,
+      partner_shift_timing,
     } = payload;
 
     // Prepare additional_documents JSON
@@ -537,28 +556,18 @@ partner_country_code,
         additionalDocsJson = additional_documents;
       } else if (Array.isArray(additional_documents)) {
         additionalDocsJson = JSON.stringify(additional_documents);
-      } else if (additional_documents && typeof additional_documents === "object") {
-        additionalDocsJson = JSON.stringify(additional_documents);
       }
     } catch (e) {
       console.error("Error processing additional_documents:", e);
       additionalDocsJson = "[]";
     }
 
-    // Format dates properly
+    // Format dates
     const formatDate = (dateValue) => {
       if (!dateValue) return null;
       try {
-        // If it's already in YYYY-MM-DD format
         if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
           return dateValue;
-        }
-        // If it's in DD/MM/YYYY format (from frontend)
-        if (typeof dateValue === 'string' && dateValue.includes('/')) {
-          const parts = dateValue.split('/');
-          if (parts.length === 3) {
-            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-          }
         }
         const date = new Date(dateValue);
         if (!isNaN(date.getTime())) {
@@ -570,107 +579,104 @@ partner_country_code,
       return null;
     };
 
-    const values = [
-      salutation || null,
-      full_name,
-      email || null,
-      phone || null,
-      country_code,
-      gender || null,
-      formatDate(date_of_birth),
-      occupation_category || null,
-      exact_occupation || null,
-      occupation || null,
-      organization || null,
-      years_of_experience || null,
-      monthly_income || null,
-      course_duration || null,
-      student_id || null,
-      employee_id || null,
-      portfolio_url || null,
-      work_mode || null,
-      shift_timing || null,
-      portal_access_enabled ? 1 : 0,
-      is_active ? 1 : 0,
-      id_proof_url || null,
-      address_proof_url || null,
-      photo_url || null,
-      aadhar_number || null,
-      pan_number || null,
-      id_proof_type || null,
-      id_proof_number || null,      // <-- ADD THIS
-      address_proof_type || null,
-      address_proof_number || null,  // <-- ADD THIS
-      address || null,
-      city || null,
-      state || null,
-      pincode || null,
-      preferred_sharing || null,
-      preferred_room_type || null,
-      preferred_property_id ? parseInt(preferred_property_id) : null,
-      property_id ? parseInt(property_id) : null,
-      formatDate(check_in_date),
-      emergency_contact_name || null,
-      emergency_contact_phone || null,
-      emergency_contact_relation || null,
-      emergency_contact_email || null,
-      additionalDocsJson,
-      lockin_period_months || 0,
-      lockin_penalty_amount || 0,
-      lockin_penalty_type || "fixed",
-      notice_period_days || 0,
-      notice_penalty_amount || 0,
-      notice_penalty_type || "fixed",
-      // Partner fields
-        partner_salutation || null,     // ADD THIS
-partner_country_code || '+91',  // ADD THIS
-      partner_full_name || null,
-      partner_phone || null,
-      partner_email || null,
-      partner_gender || null,
-      formatDate(partner_date_of_birth),
-      partner_address || null,
-      partner_occupation || null,
-      partner_organization || null,
-      partner_relationship || null,
-      partner_id_proof_type || null,
-      partner_id_proof_number || null,
-      partner_id_proof_url || null,
-      partner_address_proof_type || null,
-      partner_address_proof_number || null,
-      partner_address_proof_url || null,
-      partner_photo_url || null,
-      is_couple_booking ? 1 : 0,
-      couple_id || null,
-      is_primary_tenant ? 1 : 0,
+    // Base columns and values (always included)
+    const baseColumns = [
+      "salutation", "full_name", "email", "phone", "country_code", "gender", "date_of_birth",
+      "occupation_category", "exact_occupation", "occupation", "organization",
+      "years_of_experience", "monthly_income", "course_duration", "student_id",
+      "employee_id", "portfolio_url", "work_mode", "shift_timing",
+      "portal_access_enabled", "is_active",
+      "id_proof_url", "address_proof_url", "photo_url",
+      "aadhar_number", "pan_number",
+      "id_proof_type", "id_proof_number", "address_proof_type", "address_proof_number",
+      "address", "city", "state", "pincode",
+      "preferred_sharing", "preferred_room_type", "preferred_property_id",
+      "property_id", "check_in_date",
+      "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relation", "emergency_contact_email",
+      "additional_documents",
+      "lockin_period_months", "lockin_penalty_amount", "lockin_penalty_type",
+      "notice_period_days", "notice_penalty_amount", "notice_penalty_type",
+      "is_couple_booking", "couple_id", "is_primary_tenant"
     ];
 
-    const sql = `
-      INSERT INTO tenants (
-        salutation, full_name, email, phone, country_code, gender, date_of_birth,
-        occupation_category, exact_occupation, occupation, organization,
-        years_of_experience, monthly_income, course_duration, student_id,
-        employee_id, portfolio_url, work_mode, shift_timing,
-        portal_access_enabled, is_active,
-        id_proof_url, address_proof_url, photo_url,
-        aadhar_number, pan_number,
-        id_proof_type, id_proof_number, address_proof_type, address_proof_number,
-        address, city, state, pincode,
-        preferred_sharing, preferred_room_type, preferred_property_id,
-        property_id, check_in_date,
-        emergency_contact_name, emergency_contact_phone, emergency_contact_relation,emergency_contact_email,
-        additional_documents,
-        lockin_period_months, lockin_penalty_amount, lockin_penalty_type,
-        notice_period_days, notice_penalty_amount, notice_penalty_type,
-        partner_salutation, partner_full_name, partner_phone, partner_country_code, partner_email, partner_gender,
-        partner_date_of_birth, partner_address, partner_occupation, partner_organization,
-        partner_relationship, partner_id_proof_type, partner_id_proof_number,
-        partner_id_proof_url, partner_address_proof_type, partner_address_proof_number,
-        partner_address_proof_url, partner_photo_url, is_couple_booking, couple_id,is_primary_tenant
-      ) VALUES (${values.map(() => '?').join(', ')})
-    `;
+    const baseValues = [
+      salutation || null, full_name, email || null, phone || null, country_code,
+      gender || null, formatDate(date_of_birth),
+      occupation_category || null, exact_occupation || null, occupation || null, organization || null,
+      years_of_experience || null, monthly_income || null, course_duration || null,
+      student_id || null, employee_id || null, portfolio_url || null, work_mode || null, shift_timing || null,
+      portal_access_enabled ? 1 : 0, is_active ? 1 : 0,
+      id_proof_url || null, address_proof_url || null, photo_url || null,
+      aadhar_number || null, pan_number || null,
+      id_proof_type || null, id_proof_number || null, address_proof_type || null, address_proof_number || null,
+      address || null, city || null, state || null, pincode || null,
+      preferred_sharing || null, preferred_room_type || null,
+      preferred_property_id ? parseInt(preferred_property_id) : null,
+      property_id ? parseInt(property_id) : null, formatDate(check_in_date),
+      emergency_contact_name || null, emergency_contact_phone || null,
+      emergency_contact_relation || null, emergency_contact_email || null,
+      additionalDocsJson,
+      lockin_period_months || 0, lockin_penalty_amount || 0, lockin_penalty_type || "fixed",
+      notice_period_days || 0, notice_penalty_amount || 0, notice_penalty_type || "fixed",
+      is_couple_booking ? 1 : 0, couple_id || null, is_primary_tenant ? 1 : 0
+    ];
 
-    const [result] = await pool.query(sql, values);
+    // Partner columns and values (only for couple bookings)
+    let partnerColumns = [];
+    let partnerValues = [];
+
+// In tenantModel.js - create method, inside the if (is_couple_booking) block
+
+if (is_couple_booking) {
+  partnerColumns = [
+    "partner_salutation", "partner_full_name", "partner_phone", "partner_country_code",
+    "partner_email", "partner_gender", "partner_date_of_birth", "partner_address",
+    "partner_occupation", "partner_organization", "partner_relationship",
+    "partner_id_proof_type", "partner_id_proof_number", "partner_id_proof_url",
+    "partner_address_proof_type", "partner_address_proof_number", "partner_address_proof_url",
+    "partner_photo_url",
+    // Partner Emergency Contact Fields - ADD THESE
+    "partner_emergency_contact_name", "partner_emergency_contact_phone",
+    "partner_emergency_contact_relation", "partner_emergency_contact_email",
+    // Partner Address Fields
+    "partner_city", "partner_state", "partner_pincode",
+    // Partner Occupation Fields
+    "partner_occupation_category", "partner_exact_occupation",
+    "partner_years_of_experience", "partner_monthly_income",
+    "partner_course_duration", "partner_student_id", "partner_employee_id",
+    "partner_portfolio_url", "partner_work_mode", "partner_shift_timing"
+  ];
+
+  partnerValues = [
+    partner_salutation || null, partner_full_name || null, partner_phone || null,
+    partner_country_code || '+91', partner_email || null, partner_gender || null,
+    formatDate(partner_date_of_birth), partner_address || null, partner_occupation || null,
+    partner_organization || null, partner_relationship || null,
+    partner_id_proof_type || null, partner_id_proof_number || null,
+    partner_id_proof_url || null, partner_address_proof_type || null,
+    partner_address_proof_number || null, partner_address_proof_url || null,
+    partner_photo_url || null,
+    // Partner Emergency Contact Values - ADD THESE
+    partner_emergency_contact_name || null, partner_emergency_contact_phone || null,
+    partner_emergency_contact_relation || null, partner_emergency_contact_email || null,
+    // Partner Address Values
+    partner_city || null, partner_state || null, partner_pincode || null,
+    // Partner Occupation Values
+    partner_occupation_category || null, partner_exact_occupation || null,
+    partner_years_of_experience || null, partner_monthly_income || null,
+    partner_course_duration || null, partner_student_id || null, partner_employee_id || null,
+    partner_portfolio_url || null, partner_work_mode || null, partner_shift_timing || null
+  ];
+}
+
+    // Combine columns and values
+    const allColumns = [...baseColumns, ...partnerColumns];
+    const allValues = [...baseValues, ...partnerValues];
+    const placeholders = allColumns.map(() => '?').join(', ');
+
+    const sql = `INSERT INTO tenants (${allColumns.join(', ')}) VALUES (${placeholders})`;
+
+    const [result] = await pool.query(sql, allValues);
     return result.insertId;
     
   } catch (err) {
@@ -746,6 +752,8 @@ partner_country_code || '+91',  // ADD THIS
 
   // In tenantModel.js - Update the update method
   async update(id, payload) {
+    
+  console.log("TenantController.update called with ID:",id, "and payload:", payload);
     try {
       const fields = [];
       const params = [];
@@ -782,7 +790,7 @@ partner_country_code || '+91',  // ADD THIS
       // Personal info
       setIf("salutation", payload.salutation);
       setIf("full_name", payload.full_name);
-      // setIf("email", payload.email);
+      setIf("email", payload.email);
       setIf("phone", payload.phone);
       setIf("country_code", payload.country_code);
       setIf("gender", payload.gender);
@@ -844,11 +852,10 @@ setIf("address_proof_number", payload.address_proof_number);
       setIf("emergency_contact_phone", payload.emergency_contact_phone);
       setIf("emergency_contact_relation", payload.emergency_contact_relation);
 setIf("emergency_contact_email", payload.emergency_contact_email);
-
       // Partner fields
     setIf("partner_full_name", payload.partner_full_name);
     setIf("partner_phone", payload.partner_phone);
-    // setIf("partner_email", payload.partner_email);
+    setIf("partner_email", payload.partner_email);
     setIf("partner_gender", payload.partner_gender);
     setIf("partner_date_of_birth", payload.partner_date_of_birth);
     setIf("partner_address", payload.partner_address);
@@ -1689,8 +1696,8 @@ async getPartnerTenant(tenantId) {
   }
 },
 
-// In tenantModel.js - createCoupleTenants method
 async createCoupleTenants(primaryData, partnerData) {
+  
   const connection = await pool.getConnection();
   await connection.beginTransaction();
   
@@ -1704,18 +1711,24 @@ async createCoupleTenants(primaryData, partnerData) {
     const cleanPartnerData = { ...partnerData };
     delete cleanPartnerData.property_name;
     
-    // Add is_primary_tenant flag to primary data
-    cleanPrimaryData.is_primary_tenant = true;  // ← ADD THIS
-    cleanPartnerData.is_primary_tenant = false; // ← ADD THIS
+    // Add is_primary_tenant flag
+    cleanPrimaryData.is_primary_tenant = true;
+    cleanPartnerData.is_primary_tenant = false;
+    
+    // Ensure additional_documents is properly set
+    if (!cleanPartnerData.additional_documents) {
+      cleanPartnerData.additional_documents = [];
+    }
     
     // Build column names and values for primary tenant
     const primaryColumns = Object.keys(cleanPrimaryData).filter(key => cleanPrimaryData[key] !== undefined);
     const primaryValues = primaryColumns.map(key => cleanPrimaryData[key]);
     const primaryPlaceholders = primaryColumns.map(() => '?').join(', ');
     
-    const primaryQuery = `INSERT INTO tenants (${primaryColumns.join(', ')}) VALUES (${primaryPlaceholders})`;
     
+    const primaryQuery = `INSERT INTO tenants (${primaryColumns.join(', ')}) VALUES (${primaryPlaceholders})`;
     const [primaryResult] = await connection.execute(primaryQuery, primaryValues);
+    console.log("primary result ", primaryResult);
     const primaryId = primaryResult.insertId;
     
     // Build column names and values for partner tenant
@@ -1723,8 +1736,8 @@ async createCoupleTenants(primaryData, partnerData) {
     const partnerValues = partnerColumns.map(key => cleanPartnerData[key]);
     const partnerPlaceholders = partnerColumns.map(() => '?').join(', ');
     
-    const partnerQuery = `INSERT INTO tenants (${partnerColumns.join(', ')}) VALUES (${partnerPlaceholders})`;
     
+    const partnerQuery = `INSERT INTO tenants (${partnerColumns.join(', ')}) VALUES (${partnerPlaceholders})`;
     const [partnerResult] = await connection.execute(partnerQuery, partnerValues);
     const partnerId = partnerResult.insertId;
     
@@ -1748,6 +1761,7 @@ async createCoupleTenants(primaryData, partnerData) {
       partner_tenant_id: partnerId,
       couple_id: coupleId
     };
+    
   } catch (err) {
     await connection.rollback();
     connection.release();
@@ -1756,69 +1770,36 @@ async createCoupleTenants(primaryData, partnerData) {
   }
 },
 
-// In tenantModel.js - REPLACE the entire getTenantWithPartner method
 async getTenantWithPartner(tenantId) {
   try {
-    // First, get the requested tenant
     const requestedTenant = await this.findById(tenantId);
     if (!requestedTenant) return null;
     
     let primaryTenant = null;
     let partnerTenant = null;
     
-    // Determine which tenant is primary and which is partner
     if (requestedTenant.is_primary_tenant === 1) {
-      // Requested tenant is PRIMARY
       primaryTenant = requestedTenant;
-      
-      // Get partner tenant
       if (requestedTenant.partner_tenant_id) {
         partnerTenant = await this.findById(requestedTenant.partner_tenant_id);
-      } else if (requestedTenant.couple_id) {
-        const [partnerRows] = await pool.query(
-          `SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 0 LIMIT 1`,
-          [requestedTenant.couple_id]
-        );
-        if (partnerRows.length) {
-          partnerTenant = await this.findById(partnerRows[0].id);
-        }
       }
     } else {
-      // Requested tenant is PARTNER
       partnerTenant = requestedTenant;
-      
-      // Get primary tenant
       if (requestedTenant.partner_tenant_id) {
         primaryTenant = await this.findById(requestedTenant.partner_tenant_id);
-      } else if (requestedTenant.couple_id) {
-        const [primaryRows] = await pool.query(
-          `SELECT * FROM tenants WHERE couple_id = ? AND is_primary_tenant = 1 LIMIT 1`,
-          [requestedTenant.couple_id]
-        );
-        if (primaryRows.length) {
-          primaryTenant = await this.findById(primaryRows[0].id);
-        }
       }
     }
     
-    // If no primary tenant found, return the requested tenant as is
     if (!primaryTenant) {
       return requestedTenant;
     }
     
-    // ALWAYS structure the response with PRIMARY tenant data in main fields
-    // and PARTNER tenant data in partner fields
     const responseTenant = { ...primaryTenant };
-    
-    // IMPORTANT: Keep the original requested ID for saving
     responseTenant.requested_tenant_id = tenantId;
-    responseTenant.original_id = tenantId; // Store which tenant was actually requested
+    responseTenant.original_id = tenantId;
     
-    // Override the ID with the primary tenant's ID for display purposes
-    responseTenant.id = primaryTenant.id;
-    
-    // Partner tenant data (always in partner_* fields)
     if (partnerTenant) {
+      // Partner Personal Info
       responseTenant.partner_id = partnerTenant.id;
       responseTenant.partner_salutation = partnerTenant.salutation;
       responseTenant.partner_full_name = partnerTenant.full_name;
@@ -1827,10 +1808,35 @@ async getTenantWithPartner(tenantId) {
       responseTenant.partner_country_code = partnerTenant.country_code;
       responseTenant.partner_gender = partnerTenant.gender;
       responseTenant.partner_date_of_birth = partnerTenant.date_of_birth;
+      responseTenant.partner_relationship = partnerTenant.partner_relationship;
+      
+      // Partner Emergency Contact
+       responseTenant.partner_emergency_contact_name = partnerTenant.emergency_contact_name;
+  responseTenant.partner_emergency_contact_phone = partnerTenant.emergency_contact_phone;
+  responseTenant.partner_emergency_contact_relation = partnerTenant.emergency_contact_relation;
+  responseTenant.partner_emergency_contact_email = partnerTenant.emergency_contact_email;
+      
+      // Partner Address
       responseTenant.partner_address = partnerTenant.address;
+      responseTenant.partner_city = partnerTenant.city;
+      responseTenant.partner_state = partnerTenant.state;
+      responseTenant.partner_pincode = partnerTenant.pincode;
+      
+      // Partner Occupation
+      responseTenant.partner_occupation_category = partnerTenant.occupation_category;
+      responseTenant.partner_exact_occupation = partnerTenant.exact_occupation;
       responseTenant.partner_occupation = partnerTenant.occupation;
       responseTenant.partner_organization = partnerTenant.organization;
-      responseTenant.partner_relationship = partnerTenant.partner_relationship;
+      responseTenant.partner_years_of_experience = partnerTenant.years_of_experience;
+      responseTenant.partner_monthly_income = partnerTenant.monthly_income;
+      responseTenant.partner_course_duration = partnerTenant.course_duration;
+      responseTenant.partner_student_id = partnerTenant.student_id;
+      responseTenant.partner_employee_id = partnerTenant.employee_id;
+      responseTenant.partner_portfolio_url = partnerTenant.portfolio_url;
+      responseTenant.partner_work_mode = partnerTenant.work_mode;
+      responseTenant.partner_shift_timing = partnerTenant.shift_timing;
+      
+      // Partner Documents
       responseTenant.partner_id_proof_type = partnerTenant.id_proof_type;
       responseTenant.partner_id_proof_number = partnerTenant.id_proof_number;
       responseTenant.partner_id_proof_url = partnerTenant.id_proof_url;
@@ -1838,21 +1844,18 @@ async getTenantWithPartner(tenantId) {
       responseTenant.partner_address_proof_number = partnerTenant.address_proof_number;
       responseTenant.partner_address_proof_url = partnerTenant.address_proof_url;
       responseTenant.partner_photo_url = partnerTenant.photo_url;
+      
+      // Partner Additional Documents - IMPORTANT
+      responseTenant.partner_additional_documents = partnerTenant.additional_documents || [];
+      
       responseTenant.is_couple_booking = true;
-      responseTenant.couple_id = primaryTenant.couple_id;
+      responseTenant.couple_id = primaryTenant.couple_id || partnerTenant.couple_id;
       responseTenant.partner_tenant_id = partnerTenant.id;
-      // Mark which tenant was originally requested
-responseTenant.is_editing_primary = (primaryTenant.id === tenantId);
-responseTenant.is_editing_partner = (partnerTenant && partnerTenant.id === tenantId);
     }
     
-    // Mark which tenant this response represents
     responseTenant.is_primary_tenant = (primaryTenant.id === tenantId);
-    
-    // Log for debugging
-    console.log('getTenantWithPartner - Requested ID:', tenantId);
-    console.log('getTenantWithPartner - Returning Primary ID:', primaryTenant.id);
-    console.log('getTenantWithPartner - Partner ID:', partnerTenant?.id);
+    responseTenant.is_editing_primary = (primaryTenant.id === tenantId);
+    responseTenant.is_editing_partner = (partnerTenant && partnerTenant.id === tenantId);
     
     return responseTenant;
   } catch (err) {

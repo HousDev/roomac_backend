@@ -32,5 +32,8 @@ router.put("/:id", upload.single("receipt"), ctrl.updateExpense);
 
 // DELETE /api/expenses/:id
 router.delete("/:id", ctrl.deleteExpense);
+router.post("/:id/payment", ctrl.addExpensePayment);
+router.get("/:id/payments", ctrl.getExpensePayments);
+router.get("/payments/all", ctrl.getAllPayments); 
 
 module.exports = router;
