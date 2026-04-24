@@ -6,10 +6,18 @@ const { getTemplate, replaceVariables } = require("./templateService");
 class BirthdayCron {
   
   async sendBirthdayEmails() {
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const todayDate = `${month}-${day}`;
+    const now = new Date();
+
+const parts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  month: "2-digit",
+  day: "2-digit"
+}).formatToParts(now);
+
+const month = parts.find(p => p.type === "month").value;
+const day = parts.find(p => p.type === "day").value;
+
+const todayDate = `${month}-${day}`;
     
     console.log(`🎂 Running birthday cron job for ${today.toLocaleDateString()}`);
     
