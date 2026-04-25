@@ -119,113 +119,113 @@ async getInitialVacateData(req, res) {
     }
   }
   
-  // Submit vacate request
-  async submitVacateRequest(req, res) {
-    try {
-      const {
-        bedAssignmentId,
-        tenantId,
-        vacateReasonValue,
-        isNoticeGiven,
-        noticeGivenDate,
-        requestedVacateDate,
-        tenantAgreed,
-        lockinPeriodMonths,
-        lockinPenaltyType,
-        lockinPenaltyAmount,
-        noticePeriodDays,
-        noticePenaltyType,
-        noticePenaltyAmount,
-        securityDepositAmount,
-        totalPenaltyAmount,
-        refundableAmount,
-        lockinPenaltyApplied,
-        noticePenaltyApplied,
-        adminApproved,
-        tenantVacateRequestId
-      } = req.body;
+async submitVacateRequest(req, res) {
+  try {
+    const {
+      bedAssignmentId,
+      tenantId,
+      vacateReasonValue,
+      isNoticeGiven,
+      noticeGivenDate,
+      requestedVacateDate,
+      tenantAgreed,
+      lockinPeriodMonths,
+      lockinPenaltyType,
+      lockinPenaltyAmount,
+      noticePeriodDays,
+      noticePenaltyType,
+      noticePenaltyAmount,
+      securityDepositAmount,
+      totalPenaltyAmount,
+      refundableAmount,
+      lockinPenaltyApplied,
+      noticePenaltyApplied,
+      adminApproved,
+      tenantVacateRequestId,
+      isAdminOverride  // ✅ NEW FIELD
+    } = req.body;
 
-      // Validate required fields
-      if (!bedAssignmentId || !tenantId || !requestedVacateDate || !vacateReasonValue) {
-        return res.status(400).json({
-          success: false,
-          message: 'Missing required fields'
-        });
-      }
-
-      // Check if tenant agreed to terms
-      if (!tenantAgreed) {
-        return res.status(400).json({
-          success: false,
-          message: 'Tenant must agree to terms'
-        });
-      }
-
-      // Get bed assignment details
-      const bedAssignment = await VacateService.getBedAssignmentDetails(bedAssignmentId);
-      if (!bedAssignment) {
-        return res.status(404).json({
-          success: false,
-          message: 'Bed assignment not found'
-        });
-      }
-
-      // Submit vacate request
-      const vacateRecordId = await VacateService.submitVacateRequest({
-        bedAssignmentId,
-        tenantId,
-        roomId: bedAssignment.room_id,
-        propertyId: bedAssignment.property_id,
-        vacateReasonValue,
-        lockinPeriodMonths,
-        lockinPenaltyType,
-        lockinPenaltyAmount,
-        noticePeriodDays,
-        noticePenaltyType,
-        noticePenaltyAmount,
-        requestedVacateDate,
-        noticeGivenDate: isNoticeGiven ? noticeGivenDate : null,
-        securityDepositAmount,
-        totalPenaltyAmount,
-        refundableAmount,
-        tenantAgreed,
-        status: adminApproved ? 'approved' : 'pending',
-        lockinPenaltyApplied,
-        noticePenaltyApplied
-      });
-
-      // Update tenant request status if exists
-      if (tenantVacateRequestId) {
-        await VacateService.updateTenantRequestStatus(tenantVacateRequestId, 'completed');
-      }
-
-      // Mark bed as available
-      await VacateService.markBedAsAvailable(bedAssignmentId);
-
-      res.json({
-        success: true,
-        message: 'Vacate request submitted successfully',
-        data: {
-          vacateRecordId,
-          status: adminApproved ? 'approved' : 'pending',
-          financials: {
-            securityDeposit: securityDepositAmount,
-            lockinPenalty: lockinPenaltyApplied ? lockinPenaltyAmount : 0,
-            noticePenalty: noticePenaltyApplied ? noticePenaltyAmount : 0,
-            totalPenalty: totalPenaltyAmount,
-            refundableAmount
-          }
-        }
-      });
-
-    } catch (error) {
-      console.error('submitVacateRequest error:', error);
-      res.status(500).json({
+    // Validate required fields
+    if (!bedAssignmentId || !tenantId || !requestedVacateDate || !vacateReasonValue) {
+      return res.status(400).json({
         success: false,
-        message: error.message || 'Failed to submit vacate request'
+        message: 'Missing required fields'
       });
     }
+
+    // ✅ For admin override, tenant agreement is not required
+    if (!isAdminOverride && !tenantAgreed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tenant must agree to terms'
+      });
+    }
+
+    // Get bed assignment details
+    const bedAssignment = await VacateService.getBedAssignmentDetails(bedAssignmentId);
+    if (!bedAssignment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bed assignment not found'
+      });
+    }
+
+    // Submit vacate request
+    const vacateRecordId = await VacateService.submitVacateRequest({
+      bedAssignmentId,
+      tenantId,
+      roomId: bedAssignment.room_id,
+      propertyId: bedAssignment.property_id,
+      vacateReasonValue: isAdminOverride ? 'Admin forced vacate' : vacateReasonValue,
+      lockinPeriodMonths,
+      lockinPenaltyType,
+      lockinPenaltyAmount: isAdminOverride ? 0 : lockinPenaltyAmount,
+      noticePeriodDays,
+      noticePenaltyType,
+      noticePenaltyAmount: isAdminOverride ? 0 : noticePenaltyAmount,
+      requestedVacateDate,
+      noticeGivenDate: isNoticeGiven ? noticeGivenDate : null,
+      securityDepositAmount,
+      totalPenaltyAmount: isAdminOverride ? 0 : totalPenaltyAmount,
+      refundableAmount: isAdminOverride ? securityDepositAmount : refundableAmount,
+      tenantAgreed: true, // Admin override bypasses tenant agreement
+      status: adminApproved ? 'approved' : 'pending',
+      lockinPenaltyApplied: !isAdminOverride && lockinPenaltyApplied,
+      noticePenaltyApplied: !isAdminOverride && noticePenaltyApplied
+    });
+
+    // Update tenant request status if exists
+    if (tenantVacateRequestId) {
+      await VacateService.updateTenantRequestStatus(tenantVacateRequestId, 'completed');
+    }
+
+    // Mark bed as available
+    await VacateService.markBedAsAvailable(bedAssignmentId);
+
+    res.json({
+      success: true,
+      message: isAdminOverride ? 'Bed vacated successfully by admin!' : 'Vacate request submitted successfully',
+      data: {
+        vacateRecordId,
+        status: adminApproved ? 'approved' : 'pending',
+        financials: {
+          securityDeposit: securityDepositAmount,
+          lockinPenalty: !isAdminOverride && lockinPenaltyApplied ? lockinPenaltyAmount : 0,
+          noticePenalty: !isAdminOverride && noticePenaltyApplied ? noticePenaltyAmount : 0,
+          totalPenalty: isAdminOverride ? 0 : totalPenaltyAmount,
+          refundableAmount: isAdminOverride ? securityDepositAmount : refundableAmount
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('submitVacateRequest error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to submit vacate request'
+    });
   }
+}
   
   // Get vacate history
   async getVacateHistory(req, res) {

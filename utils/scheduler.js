@@ -7,7 +7,7 @@ class CronScheduler {
   
   initialize() {
 
-    cron.schedule('0 0 * * *', async () => {
+    cron.schedule('1 0 * * *', async () => {
       console.log('🎂 Running birthday cron job...');
       const result = await birthdayCron.sendBirthdayEmails();
       

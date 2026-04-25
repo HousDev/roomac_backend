@@ -10,6 +10,7 @@ const { getTemplate, replaceVariables } = require("../utils/templateService");
 const { sendEmail } = require("../utils/emailService");
 const PDFGenerator = require("../utils/pdfGenerator");
 const { generateLedgerHTML } = require("../utils/ledgerGenerator");
+const ReceiptGenerator = require("../utils/receiptGenerator");
 
 // In paymentController.js - Professional Clean PDF Receipt Generator
 
@@ -514,7 +515,7 @@ async createPayment(req, res) {
         month: paymentData.month || new Date().toLocaleString("default", { month: "long" }),
         year: paymentData.year || new Date().getFullYear(),
         remark: paymentData.remark || "Security deposit payment",
-        status: "pending",
+         status: paymentData.source === 'admin' ? 'paid' : 'pending',
         source: paymentData.source || "admin"
       };
 
@@ -702,7 +703,7 @@ async createPayment(req, res) {
       month: paymentData.month || new Date().toLocaleString("default", { month: "long" }),
       year: paymentData.year || new Date().getFullYear(),
       remark: paymentData.remark || `Payment of ₹${totalPaidAmount} distributed to ${distribution.length} month(s)`,
-      status: "pending",
+      status: paymentData.source === 'admin' ? 'paid' : 'pending',
        source: paymentData.source || "admin",
     };
 
@@ -1169,66 +1170,49 @@ if (paymentData.source === 'tenant') {
     }
   },
 
-  // In paymentController.js - Update downloadReceipt
+async downloadReceipt(req, res) {
+  try {
+    const { id } = req.params;
+    const receipt = await Payment.getReceiptById(id);
 
-  async downloadReceipt(req, res) {
-    try {
-      const { id } = req.params;
-      const receipt = await Payment.getReceiptById(id);
-
-      if (!receipt) {
-        return res.status(404).json({
-          success: false,
-          message: "Receipt not found",
-        });
-      }
-
-      // Fetch settings from database
-      const [settingsRows] = await db.execute(
-        "SELECT setting_key, value FROM app_settings",
-      );
-
-      const settings = {};
-      settingsRows.forEach((row) => {
-        settings[row.setting_key] = { value: row.value };
-      });
-
-      // Create PDF document with better settings
-      const doc = new PDFDocument({
-        margin: 50,
-        size: "A4",
-        info: {
-          Title: `Payment Receipt #${receipt.id}`,
-          Author: settings?.site_name?.value || "RoomAC",
-          Subject: "Payment Receipt",
-          Keywords: "receipt, payment, rent",
-          Creator: "RoomAC PMS",
-        },
-        bufferPages: true, // Better performance for larger documents
-      });
-
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=receipt-${receipt.id}.pdf`,
-      );
-      res.setHeader("Cache-Control", "no-cache");
-
-      doc.pipe(res);
-
-      // Generate professional PDF
-      await generateProfessionalReceiptPDF(doc, receipt, settings);
-
-      doc.end();
-    } catch (error) {
-      console.error("Error downloading receipt:", error);
-      res.status(500).json({
+    if (!receipt) {
+      return res.status(404).json({
         success: false,
-        message: "Failed to download receipt",
-        error: error.message,
+        message: "Receipt not found",
       });
     }
-  },
+
+    // Fetch settings from database
+    const [settingsRows] = await db.execute(
+      "SELECT setting_key, value FROM app_settings",
+    );
+
+    const settings = {};
+    settingsRows.forEach((row) => {
+      settings[row.setting_key] = { value: row.value };
+    });
+
+    // Generate professional PDF using Puppeteer
+    const pdfBuffer = await ReceiptGenerator.generateReceiptPDF(receipt, settings);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=receipt-${receipt.id}.pdf`,
+    );
+    res.setHeader("Cache-Control", "no-cache");
+    
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error("Error downloading receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to download receipt",
+      error: error.message,
+    });
+  }
+},
 
   // Create demand payment
   async createDemandPayment(req, res) {
@@ -2258,6 +2242,49 @@ async previewLedgerPDF(req, res) {
     res.status(500).json({ success: false, message: "Failed to preview report", error: error.message });
   }
 },
+
+
+// Add this endpoint in paymentController.js
+async previewReceiptPDF(req, res) {
+  try {
+    const { id } = req.params;
+    const receipt = await Payment.getReceiptById(id);
+
+    if (!receipt) {
+      return res.status(404).json({
+        success: false,
+        message: "Receipt not found",
+      });
+    }
+
+    // Fetch settings from database
+    const [settingsRows] = await db.execute(
+      "SELECT setting_key, value FROM app_settings",
+    );
+
+    const settings = {};
+    settingsRows.forEach((row) => {
+      settings[row.setting_key] = { value: row.value };
+    });
+
+    // Generate PDF using Puppeteer
+    const pdfBuffer = await ReceiptGenerator.generateReceiptPDF(receipt, settings);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "inline; filename=receipt.pdf");
+    res.setHeader("Cache-Control", "no-cache");
+    
+    res.send(pdfBuffer);
+    
+  } catch (error) {
+    console.error("Error previewing receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to preview receipt",
+      error: error.message,
+    });
+  }
+},
 };
 
 // Helper function to generate receipt HTML
@@ -2799,5 +2826,7 @@ function numberToWords(num) {
 
   return result;
 }
+
+
 
 module.exports = paymentController;

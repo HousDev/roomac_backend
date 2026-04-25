@@ -1176,170 +1176,178 @@ if (request_type === 'receipt') {
   }
 }
 
-  // NEW ENDPOINT: Get tenant contract details for frontend to display
-  async getTenantContractDetails(req, res) {
-    try {
-      const tenant_id = req.user?.id;
-      if (!tenant_id) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required'
-        });
-      }
-
-
-      // Get tenant's contract details with monthly rent
-      const [tenantInfo] = await db.query(
-        `SELECT 
-          t.id,
-          t.full_name,
-          t.property_id,
-          ba.id as bed_assignment_id,
-          ba.room_id,
-          ba.bed_number,
-          t.lockin_period_months,
-          t.lockin_penalty_amount,
-          t.lockin_penalty_type,
-          t.notice_period_days,
-          t.notice_penalty_amount,
-          t.notice_penalty_type,
-          t.check_in_date,
-          -- Get rent from rooms
-          r.rent_per_bed as monthly_rent,
-          p.security_deposit,
-          p.name as property_name,
-          r.room_number
-        FROM tenants t
-        -- Join properties to get property name
-        LEFT JOIN properties p ON t.property_id = p.id
-        -- Join bed_assignments to get current assignment
-        LEFT JOIN bed_assignments ba ON ba.tenant_id = t.id AND ba.is_available = 0
-        -- Join rooms to get room details and rent
-        LEFT JOIN rooms r ON ba.room_id = r.id
-        WHERE t.id = ? AND t.deleted_at IS NULL`,
-        [tenant_id]
-      );
-
-
-      if (tenantInfo.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Tenant not found'
-        });
-      }
-
-      const tenantData = tenantInfo[0];
-
-      
-      
-      
-      // Calculate lock-in period status
-      let lockinInfo = null;
-      if (tenantData.check_in_date && tenantData.lockin_period_months) {
-        const checkInDate = new Date(tenantData.check_in_date);
-        const currentDate = new Date();
-        const monthsDiff = (currentDate.getFullYear() - checkInDate.getFullYear()) * 12 + 
-                         (currentDate.getMonth() - checkInDate.getMonth());
-
-        const lockInEndDate = new Date(checkInDate);
-        lockInEndDate.setMonth(checkInDate.getMonth() + tenantData.lockin_period_months);
-        
-        const isInLockinPeriod = monthsDiff < tenantData.lockin_period_months;
-        const remainingMonths = Math.max(0, tenantData.lockin_period_months - monthsDiff);
-        
-        // Calculate penalty amount - FIXED: Use this.calculatePenaltyAmount
-        const lockinPenaltyAmount = this.calculatePenaltyAmount(
-          tenantData.lockin_penalty_amount,
-          tenantData.lockin_penalty_type,
-          tenantData.security_deposit
-        );
-        
-        lockinInfo = {
-          isInLockinPeriod,
-          lockinEnds: lockInEndDate,
-          remainingMonths,
-          checkInDate,
-          lockinPeriodMonths: tenantData.lockin_period_months,
-          penalty: {
-            amount: tenantData.lockin_penalty_amount,
-            type: tenantData.lockin_penalty_type,
-            description: this.getPenaltyDescription(
-              tenantData.lockin_penalty_amount,
-              tenantData.lockin_penalty_type,
-              tenantData.security_deposit
-            ),
-            calculatedAmount: lockinPenaltyAmount
-          }
-        };
-        
-      } else {
-        console.log('⚠️ No lock-in period data found');
-      }
-
-      // Calculate notice period info
-      let noticeInfo = null;
-      if (tenantData.notice_period_days) {
-        // Calculate penalty amount - FIXED: Use this.calculatePenaltyAmount
-        const noticePenaltyAmount = this.calculatePenaltyAmount(
-          tenantData.notice_penalty_amount,
-          tenantData.notice_penalty_type,
-          tenantData.security_deposit
-        );
-        
-        noticeInfo = {
-          noticePeriodDays: tenantData.notice_period_days,
-          penalty: {
-            amount: tenantData.notice_penalty_amount,
-            type: tenantData.notice_penalty_type,
-            description: this.getPenaltyDescription(
-              tenantData.notice_penalty_amount,
-              tenantData.notice_penalty_type,
-              tenantData.security_deposit
-            ),
-            calculatedAmount: noticePenaltyAmount
-          },
-          requiresAgreement: !!tenantData.notice_penalty_amount
-        };
-        
-      } else {
-        console.log('⚠️ No notice period data found');
-      }
-
-      res.json({
-        success: true,
-        data: {
-          tenantDetails: {
-            id: tenantData.id,
-            full_name: tenantData.full_name,
-            property_id: tenantData.property_id,
-            property_name: tenantData.property_name,
-            room_number: tenantData.room_number,
-            bed_number: tenantData.bed_number,
-            check_in_date: tenantData.check_in_date,
-            lockin_period_months: tenantData.lockin_period_months,
-            lockin_penalty_amount: tenantData.lockin_penalty_amount,
-            lockin_penalty_type: tenantData.lockin_penalty_type,
-            notice_period_days: tenantData.notice_period_days,
-            notice_penalty_amount: tenantData.notice_penalty_amount,
-            notice_penalty_type: tenantData.notice_penalty_type,
-            // monthly_rent: tenantData.monthly_rent,
-            security_deposit: tenantData.security_deposit
-          },
-          lockinInfo,
-          noticeInfo
-        }
-      });
-
-    } catch (err) {
-      console.error('🔥 Get tenant contract details error:', err);
-      res.status(500).json({
+async getTenantContractDetails(req, res) {
+  try {
+    const tenant_id = req.user?.id;
+    if (!tenant_id) {
+      return res.status(401).json({
         success: false,
-        message: err.message || 'Internal server error',
-        sql: err.sql,
-        code: err.code
+        message: 'Authentication required'
       });
     }
+
+    // Get tenant's contract details with bed assignment security deposit
+    const [tenantInfo] = await db.query(
+      `SELECT 
+        t.id,
+        t.full_name,
+        t.property_id,
+        t.lockin_period_months,
+        t.lockin_penalty_amount,
+        t.lockin_penalty_type,
+        t.notice_period_days,
+        t.notice_penalty_amount,
+        t.notice_penalty_type,
+        t.check_in_date,
+        -- Get bed assignment with its security_deposit
+        ba.id as bed_assignment_id,
+        ba.security_deposit as bed_security_deposit,
+        ba.tenant_rent,
+        ba.room_id,
+        ba.bed_number,
+        -- Get rent from rooms
+        r.rent_per_bed as monthly_rent,
+        p.security_deposit as property_security_deposit,
+        p.name as property_name,
+        r.room_number
+      FROM tenants t
+      -- Join bed_assignments to get current assignment with security deposit
+      LEFT JOIN bed_assignments ba ON ba.tenant_id = t.id AND ba.is_available = 0
+      -- Join properties to get property name
+      LEFT JOIN properties p ON t.property_id = p.id
+      -- Join rooms to get room details and rent
+      LEFT JOIN rooms r ON ba.room_id = r.id
+      WHERE t.id = ? AND t.deleted_at IS NULL`,
+      [tenant_id]
+    );
+
+    if (tenantInfo.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Tenant not found'
+      });
+    }
+
+    const tenantData = tenantInfo[0];
+    
+    // ✅ Use bed assignment security deposit if available, otherwise fallback to property deposit
+    const securityDeposit = tenantData.bed_security_deposit !== null && tenantData.bed_security_deposit !== undefined && tenantData.bed_security_deposit !== 0
+      ? tenantData.bed_security_deposit
+      : tenantData.property_security_deposit || 0;
+    
+    // Calculate lock-in period status
+    let lockinInfo = null;
+    let lockinCalculatedPenalty = 0;
+    let lockinPenaltyDescription = '';
+    
+    if (tenantData.check_in_date && tenantData.lockin_period_months) {
+      const checkInDate = new Date(tenantData.check_in_date);
+      const currentDate = new Date();
+      const monthsDiff = (currentDate.getFullYear() - checkInDate.getFullYear()) * 12 + 
+                       (currentDate.getMonth() - checkInDate.getMonth());
+
+      const lockInEndDate = new Date(checkInDate);
+      lockInEndDate.setMonth(checkInDate.getMonth() + tenantData.lockin_period_months);
+      
+      const isInLockinPeriod = monthsDiff < tenantData.lockin_period_months;
+      const remainingMonths = Math.max(0, tenantData.lockin_period_months - monthsDiff);
+      
+      // Calculate penalty amount using tenant's lockin values and the bed assignment security deposit
+      lockinCalculatedPenalty = this.calculatePenaltyAmount(
+        tenantData.lockin_penalty_amount,
+        tenantData.lockin_penalty_type,
+        securityDeposit
+      );
+      
+      lockinPenaltyDescription = this.getPenaltyDescription(
+        tenantData.lockin_penalty_amount,
+        tenantData.lockin_penalty_type,
+        securityDeposit
+      );
+      
+      lockinInfo = {
+        isInLockinPeriod,
+        lockinEnds: lockInEndDate,
+        remainingMonths,
+        checkInDate,
+        lockinPeriodMonths: tenantData.lockin_period_months,
+        // ✅ Include the security deposit amount in the response
+        securityDeposit: securityDeposit,
+        penalty: {
+          amount: tenantData.lockin_penalty_amount,
+          type: tenantData.lockin_penalty_type,
+          description: lockinPenaltyDescription,
+          calculatedAmount: lockinCalculatedPenalty
+        }
+      };
+    }
+
+    // Calculate notice period info
+    let noticeInfo = null;
+    let noticeCalculatedPenalty = 0;
+    let noticePenaltyDescription = '';
+    
+    if (tenantData.notice_period_days) {
+      noticeCalculatedPenalty = this.calculatePenaltyAmount(
+        tenantData.notice_penalty_amount,
+        tenantData.notice_penalty_type,
+        securityDeposit
+      );
+      
+      noticePenaltyDescription = this.getPenaltyDescription(
+        tenantData.notice_penalty_amount,
+        tenantData.notice_penalty_type,
+        securityDeposit
+      );
+      
+      noticeInfo = {
+        noticePeriodDays: tenantData.notice_period_days,
+        // ✅ Include the security deposit amount in the response
+        securityDeposit: securityDeposit,
+        penalty: {
+          amount: tenantData.notice_penalty_amount,
+          type: tenantData.notice_penalty_type,
+          description: noticePenaltyDescription,
+          calculatedAmount: noticeCalculatedPenalty
+        },
+        requiresAgreement: !!tenantData.notice_penalty_amount
+      };
+    }
+
+    res.json({
+      success: true,
+      data: {
+        tenantDetails: {
+          id: tenantData.id,
+          full_name: tenantData.full_name,
+          property_id: tenantData.property_id,
+          property_name: tenantData.property_name,
+          room_number: tenantData.room_number,
+          bed_number: tenantData.bed_number,
+          check_in_date: tenantData.check_in_date,
+          lockin_period_months: tenantData.lockin_period_months,
+          lockin_penalty_amount: tenantData.lockin_penalty_amount,
+          lockin_penalty_type: tenantData.lockin_penalty_type,
+          notice_period_days: tenantData.notice_period_days,
+          notice_penalty_amount: tenantData.notice_penalty_amount,
+          notice_penalty_type: tenantData.notice_penalty_type,
+          security_deposit: securityDeposit  // ✅ Add this to tenantDetails
+        },
+        lockinInfo,
+        noticeInfo
+      }
+    });
+
+  } catch (err) {
+    console.error('🔥 Get tenant contract details error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error',
+      sql: err.sql,
+      code: err.code
+    });
   }
+}
 
 
 async getMyRequests(req, res) {

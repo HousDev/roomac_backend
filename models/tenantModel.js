@@ -347,6 +347,7 @@ const TenantModel = {
 
 
 async findById(id) {
+  console.log("Finding tenant by ID:", id);
   try {
     const sql = `
       SELECT 
@@ -811,8 +812,10 @@ if (is_couple_booking) {
       setIf("shift_timing", payload.shift_timing);
 
       // Status fields
-      if (typeof payload.is_active !== "undefined")
+      if (typeof payload.is_active !== "undefined"){
+        console.log("Updating is_active to:", payload.is_active ? 1 : 0);
         setIf("is_active", payload.is_active ? 1 : 0);
+      }
       if (typeof payload.portal_access_enabled !== "undefined")
         setIf("portal_access_enabled", payload.portal_access_enabled ? 1 : 0);
 
@@ -920,6 +923,7 @@ setIf("partner_country_code", payload.partner_country_code);
       params.push(id);
 
       const sql = `UPDATE tenants SET ${fields.join(", ")}, updated_at = ? WHERE id = ?`;
+      console.log("Executing SQL:", sql, "with params:", params);
 
       const [result] = await pool.query(sql, params);
       return result.affectedRows > 0;
@@ -1772,6 +1776,7 @@ async createCoupleTenants(primaryData, partnerData) {
 
 async getTenantWithPartner(tenantId) {
   try {
+
     const requestedTenant = await this.findById(tenantId);
     if (!requestedTenant) return null;
     
@@ -1779,11 +1784,13 @@ async getTenantWithPartner(tenantId) {
     let partnerTenant = null;
     
     if (requestedTenant.is_primary_tenant === 1) {
+      console.log("Requested tenant is primary tenant");
       primaryTenant = requestedTenant;
       if (requestedTenant.partner_tenant_id) {
         partnerTenant = await this.findById(requestedTenant.partner_tenant_id);
       }
     } else {
+      console.log("Requested tenant is partner tenant");
       partnerTenant = requestedTenant;
       if (requestedTenant.partner_tenant_id) {
         primaryTenant = await this.findById(requestedTenant.partner_tenant_id);
