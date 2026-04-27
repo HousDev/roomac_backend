@@ -3,60 +3,75 @@ const db = require('../config/db');
 
 class VacateModel {
   // Get initial data for vacate flow
-  async getInitialData(bedAssignmentId) {
-    try {
-      // Get bed assignment details with tenant's lock-in and notice values
-      const [bedAssignment] = await db.query(
-        `SELECT ba.id, ba.room_id, ba.bed_number, ba.tenant_id,
-                t.check_in_date,
-                t.lockin_period_months,
-                t.lockin_penalty_amount,
-                t.lockin_penalty_type,
-                t.notice_period_days,
-                t.notice_penalty_amount,
-                t.notice_penalty_type,
-                r.property_id, r.rent_per_bed, r.room_number,
-                p.security_deposit,
-                p.name as property_name,
-                t.full_name as tenant_name
-         FROM bed_assignments ba
-         JOIN rooms r ON ba.room_id = r.id
-         JOIN properties p ON r.property_id = p.id
-         JOIN tenants t ON ba.tenant_id = t.id
-         WHERE ba.id = ? AND ba.is_available = FALSE`,
-        [bedAssignmentId]
-      );
-      
-      if (bedAssignment.length === 0) {
-        throw new Error("Bed assignment not found or already vacated");
-      }
-      
-      const bedData = bedAssignment[0];
-      
-      return {
-        bedAssignment: bedData,
-        tenantPolicy: {
-          lockinPeriodMonths: bedData.lockin_period_months || 0,
-          lockinPenaltyAmount: bedData.lockin_penalty_amount || 0,
-          lockinPenaltyType: bedData.lockin_penalty_type || '',
-          noticePeriodDays: bedData.notice_period_days || 0,
-          noticePenaltyAmount: bedData.notice_penalty_amount || 0,
-          noticePenaltyType: bedData.notice_penalty_type || ''
-        },
-        currentDate: new Date().toISOString().split('T')[0]
-      };
-      
-    } catch (error) {
-      console.error("VacateService.getInitialData error:", error);
-      throw error;
+async getInitialData(bedAssignmentId) {
+  try {
+    // Get bed assignment details with tenant's lock-in and notice values
+    const [bedAssignment] = await db.query(
+      `SELECT 
+        ba.id, 
+        ba.room_id, 
+        ba.bed_number, 
+        ba.tenant_id,
+        ba.security_deposit,  -- ✅ ADD THIS - Fetch from bed_assignments
+        t.check_in_date,
+        t.lockin_period_months,
+        t.lockin_penalty_amount,
+        t.lockin_penalty_type,
+        t.notice_period_days,
+        t.notice_penalty_amount,
+        t.notice_penalty_type,
+        r.property_id, 
+        r.rent_per_bed, 
+        r.room_number,
+        p.security_deposit as property_security_deposit,  -- Keep property as fallback
+        p.name as property_name,
+        t.full_name as tenant_name
+       FROM bed_assignments ba
+       JOIN rooms r ON ba.room_id = r.id
+       JOIN properties p ON r.property_id = p.id
+       JOIN tenants t ON ba.tenant_id = t.id
+       WHERE ba.id = ? AND ba.is_available = FALSE`,
+      [bedAssignmentId]
+    );
+    
+    if (bedAssignment.length === 0) {
+      throw new Error("Bed assignment not found or already vacated");
     }
+    
+    const bedData = bedAssignment[0];
+    
+    // ✅ Use security_deposit from bed_assignments if available, otherwise fallback to property
+    const securityDeposit = bedData.security_deposit !== null && bedData.security_deposit !== undefined && bedData.security_deposit !== 0
+      ? bedData.security_deposit
+      : bedData.property_security_deposit || 0;
+    
+    return {
+      bedAssignment: {
+        ...bedData,
+        security_deposit: securityDeposit  // ✅ Use the correct security deposit
+      },
+      tenantPolicy: {
+        lockinPeriodMonths: bedData.lockin_period_months || 0,
+        lockinPenaltyAmount: bedData.lockin_penalty_amount || 0,
+        lockinPenaltyType: bedData.lockin_penalty_type || '',
+        noticePeriodDays: bedData.notice_period_days || 0,
+        noticePenaltyAmount: bedData.notice_penalty_amount || 0,
+        noticePenaltyType: bedData.notice_penalty_type || ''
+      },
+      currentDate: new Date().toISOString().split('T')[0]
+    };
+    
+  } catch (error) {
+    console.error("VacateService.getInitialData error:", error);
+    throw error;
   }
+}
 
   // Get bed assignment details
   async getBedAssignmentDetails(bedAssignmentId) {
     try {
       const [bedAssignment] = await db.query(
-        `SELECT ba.*, r.room_number, r.property_id, t.full_name as tenant_name
+        `SELECT ba.*,ba.security_deposit, r.room_number, r.property_id, t.full_name as tenant_name
          FROM bed_assignments ba
          JOIN rooms r ON ba.room_id = r.id
          JOIN tenants t ON ba.tenant_id = t.id
@@ -300,30 +315,42 @@ class VacateModel {
       } = data;
       
       // Get bed details with tenant's policy values
-      const [bedAssignment] = await db.query(
-        `SELECT ba.id, ba.room_id, ba.bed_number, ba.tenant_id,
-                t.check_in_date,
-                t.lockin_period_months,
-                t.lockin_penalty_amount,
-                t.lockin_penalty_type,
-                t.notice_period_days,
-                t.notice_penalty_amount,
-                t.notice_penalty_type,
-                r.property_id, r.rent_per_bed, r.room_number,
-                p.security_deposit
-         FROM bed_assignments ba
-         JOIN rooms r ON ba.room_id = r.id
-         JOIN properties p ON r.property_id = p.id
-         JOIN tenants t ON ba.tenant_id = t.id
-         WHERE ba.id = ?`,
-        [bedAssignmentId]
-      );
-      
-      if (bedAssignment.length === 0) {
-        throw new Error("Bed assignment not found");
-      }
-      
-      const bedData = bedAssignment[0];
+    const [bedAssignment] = await db.query(
+      `SELECT 
+        ba.id, 
+        ba.room_id, 
+        ba.bed_number, 
+        ba.tenant_id,
+        ba.security_deposit,  -- ✅ ADD THIS
+        t.check_in_date,
+        t.lockin_period_months,
+        t.lockin_penalty_amount,
+        t.lockin_penalty_type,
+        t.notice_period_days,
+        t.notice_penalty_amount,
+        t.notice_penalty_type,
+        r.property_id, 
+        r.rent_per_bed, 
+        r.room_number,
+        p.security_deposit as property_security_deposit
+       FROM bed_assignments ba
+       JOIN rooms r ON ba.room_id = r.id
+       JOIN properties p ON r.property_id = p.id
+       JOIN tenants t ON ba.tenant_id = t.id
+       WHERE ba.id = ?`,
+      [bedAssignmentId]
+    );
+    
+    if (bedAssignment.length === 0) {
+      throw new Error("Bed assignment not found");
+    }
+    
+    const bedData = bedAssignment[0];
+    
+    // ✅ Use security_deposit from bed_assignments if available
+    const securityDeposit = bedData.security_deposit !== null && bedData.security_deposit !== undefined && bedData.security_deposit !== 0
+      ? bedData.security_deposit
+      : bedData.property_security_deposit || 0;
       
       // Step 1: Already have vacateReasonValue
       

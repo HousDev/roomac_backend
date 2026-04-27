@@ -80,7 +80,7 @@ create: async (data) => {
       property_id, property_name,
       category_id, category_name,
       total_amount, vendor_name,
-      expense_date, status,
+      expense_date,
       added_by_name, notes,
       items = [],
       payment_mode = null,
@@ -104,7 +104,7 @@ create: async (data) => {
       parsedItems = [];
     }
 
-    // Calculate totals from items if not provided
+    // Calculate totals from items
     let finalTotalAmount = total_amount || 0;
     let finalTotalPaid = 0;
     let finalBalance = finalTotalAmount;
@@ -120,6 +120,11 @@ create: async (data) => {
       
       finalBalance = finalTotalAmount - finalTotalPaid;
     }
+    
+    // Calculate status based on payment
+    let expenseStatus = 'Unpaid';
+    if (finalBalance === 0 && finalTotalPaid > 0) expenseStatus = 'Paid';
+    else if (finalTotalPaid > 0 && finalBalance > 0) expenseStatus = 'Partial';
     
     const itemsJson = parsedItems.length ? JSON.stringify(parsedItems) : null;
 
@@ -139,7 +144,7 @@ create: async (data) => {
         finalTotalPaid,
         finalBalance,
         vendor_name || null,
-        status || 'Pending',
+        expenseStatus,  // Auto-calculated status
         payment_mode || null,
         receipt_url || null,
         receipt_name || null,
@@ -171,13 +176,14 @@ update: async (id, data) => {
       }
     }
     
-    // If we have items, recalculate totals from items (most reliable)
+    // If we have items, recalculate totals from items
     if (parsedItems && Array.isArray(parsedItems) && parsedItems.length > 0) {
       const total_amount = parsedItems.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0);
       const total_paid = parsedItems.reduce((sum, item) => sum + (parseFloat(item.paid_amount) || 0), 0);
       const balance = total_amount - total_paid;
       
-      let status = 'Pending';
+      // Calculate status based on payment
+      let status = 'Unpaid';
       if (balance === 0 && total_paid > 0) status = 'Paid';
       else if (total_paid > 0 && balance > 0) status = 'Partial';
       
@@ -266,7 +272,7 @@ getStats: async (filters = {}) => {
          COALESCE(SUM(balance), 0)                         AS total_balance,
          COUNT(IF(status='Paid', 1, NULL))                 AS paid_count,
          COUNT(IF(status='Partial', 1, NULL))              AS partial_count,
-         COUNT(IF(status='Pending', 1, NULL))              AS pending_count
+         COUNT(IF(status='Unpaid', 1, NULL))               AS unpaid_count
        FROM expenses ${where}`,
       params
     );
@@ -276,8 +282,6 @@ getStats: async (filters = {}) => {
     throw err;
   }
 },
-
-// Add to ExpenseModel in expenseModel.js
 
 // ── Create payment transaction and update expense items ─────────────────────
 createPaymentTransaction: async (data) => {
@@ -290,6 +294,7 @@ createPaymentTransaction: async (data) => {
       reference_no,
       notes,
       created_by,
+      selected_item_id,  // Add this parameter
     } = data;
 
     // 1. Get the current expense with its items
@@ -299,34 +304,79 @@ createPaymentTransaction: async (data) => {
     const expense = expenseRows[0];
     let items = parseItems(expense.items);
     
-    console.log("Current items before payment:", JSON.stringify(items));
+    console.log("Current items before payment:", JSON.stringify(items.map(i => ({ id: i.id, name: i.name, paid: i.paid_amount, balance: i.balance }))));
+    console.log("Selected item ID:", selected_item_id);
+    console.log("Payment amount:", paid_amount);
     
-    // 2. Distribute the payment across items
+    // 2. Distribute the payment across items based on selection
     let remainingAmount = parseFloat(paid_amount);
     let updatedItems = [...items];
     
-    // Pay items that have balance (in order)
-    for (let i = 0; i < updatedItems.length && remainingAmount > 0; i++) {
-      const item = updatedItems[i];
-      const currentPaid = parseFloat(item.paid_amount) || 0;
-      const totalAmount = parseFloat(item.total_amount) || (parseFloat(item.qty) * parseFloat(item.price));
-      const itemBalance = totalAmount - currentPaid;
+    // If a specific item is selected
+    if (selected_item_id && selected_item_id !== "all" && selected_item_id !== "") {
+      console.log("Paying specific item with ID:", selected_item_id);
       
-      if (itemBalance > 0) {
-        const paymentToThisItem = Math.min(remainingAmount, itemBalance);
-        const newPaid = currentPaid + paymentToThisItem;
-        const newBalance = totalAmount - newPaid;
+      // Pay only the selected item
+      let itemFound = false;
+      updatedItems = updatedItems.map(item => {
+        // Convert both to string for comparison
+        const itemId = String(item.id);
+        const selectedId = String(selected_item_id);
         
-        console.log(`Paying ${paymentToThisItem} to item ${item.name}: old paid=${currentPaid}, new paid=${newPaid}, balance=${newBalance}`);
+        if (itemId === selectedId) {
+          itemFound = true;
+          const currentPaid = parseFloat(item.paid_amount) || 0;
+          const totalAmount = parseFloat(item.total_amount) || (parseFloat(item.qty) * parseFloat(item.price));
+          const newPaid = currentPaid + remainingAmount;
+          const newBalance = totalAmount - newPaid;
+          
+          console.log(`Paying ${remainingAmount} to item ${item.name}: old paid=${currentPaid}, new paid=${newPaid}, balance=${newBalance}`);
+          
+          // Check if payment exceeds balance
+          if (newPaid > totalAmount) {
+            throw new Error(`Payment amount ${remainingAmount} exceeds item balance ${totalAmount - currentPaid}`);
+          }
+          
+          return {
+            ...item,
+            paid_amount: newPaid,
+            balance: newBalance,
+            item_status: newBalance === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Unpaid')
+          };
+        }
+        return item;
+      });
+      
+      if (!itemFound) {
+        console.log("Item not found! Available items:", items.map(i => ({ id: i.id, name: i.name })));
+        throw new Error(`Item with ID ${selected_item_id} not found`);
+      }
+    } else {
+      // Distribute payment across all items with balance
+      console.log("Distributing payment across all items");
+      
+      for (let i = 0; i < updatedItems.length && remainingAmount > 0; i++) {
+        const item = updatedItems[i];
+        const currentPaid = parseFloat(item.paid_amount) || 0;
+        const totalAmount = parseFloat(item.total_amount) || (parseFloat(item.qty) * parseFloat(item.price));
+        const itemBalance = totalAmount - currentPaid;
         
-        updatedItems[i] = {
-          ...item,
-          paid_amount: newPaid,
-          balance: newBalance,
-          item_status: newBalance === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Pending')
-        };
-        
-        remainingAmount -= paymentToThisItem;
+        if (itemBalance > 0) {
+          const paymentToThisItem = Math.min(remainingAmount, itemBalance);
+          const newPaid = currentPaid + paymentToThisItem;
+          const newBalance = totalAmount - newPaid;
+          
+          console.log(`Paying ${paymentToThisItem} to item ${item.name}: old paid=${currentPaid}, new paid=${newPaid}, balance=${newBalance}`);
+          
+          updatedItems[i] = {
+            ...item,
+            paid_amount: newPaid,
+            balance: newBalance,
+            item_status: newBalance === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Unpaid')
+          };
+          
+          remainingAmount -= paymentToThisItem;
+        }
       }
     }
     
@@ -335,11 +385,13 @@ createPaymentTransaction: async (data) => {
     const newTotalPaid = updatedItems.reduce((sum, i) => sum + (parseFloat(i.paid_amount) || 0), 0);
     const newBalance = totalAmount - newTotalPaid;
     
-    let expenseStatus = 'Pending';
+    // Calculate status based on payment - using new enum values
+    let expenseStatus = 'Unpaid';
     if (newBalance === 0 && newTotalPaid > 0) expenseStatus = 'Paid';
     else if (newTotalPaid > 0 && newBalance > 0) expenseStatus = 'Partial';
     
     console.log(`Updating expense: total_amount=${totalAmount}, total_paid=${newTotalPaid}, balance=${newBalance}, status=${expenseStatus}`);
+    console.log("Updated items after payment:", updatedItems.map(i => ({ id: i.id, name: i.name, paid: i.paid_amount, balance: i.balance })));
     
     // 4. Update the expenses table with new item data and totals
     await db.query(

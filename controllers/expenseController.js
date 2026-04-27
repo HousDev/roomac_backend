@@ -151,10 +151,17 @@ const addExpensePayment = async (req, res) => {
       transaction_date, 
       reference_no,
       notes,
-      created_by 
+      created_by,
+      selected_item_id  // Add this
     } = req.body;
     
-    console.log("Processing payment:", { id, paid_amount, payment_mode, transaction_date, reference_no });
+    console.log("Processing payment:", { 
+      expense_id: id, 
+      paid_amount, 
+      payment_mode, 
+      selected_item_id,
+      transaction_date 
+    });
     
     const result = await ExpenseModel.createPaymentTransaction({
       expense_id: id,
@@ -164,6 +171,7 @@ const addExpensePayment = async (req, res) => {
       reference_no: reference_no,
       notes: notes,
       created_by: created_by || req.user?.name || 'System',
+      selected_item_id: selected_item_id,  // Pass this to the model
     });
     
     console.log("Payment result:", result);
