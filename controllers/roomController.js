@@ -110,7 +110,7 @@ const parsePhotoLabels = (req) => {
   return labels;
 };
 
-async function sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, isCouple) {
+async function sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, isCouple, securityDepositFromBed = null) {
   try {
     // Get tenant details
     const [tenant] = await db.query(
@@ -149,8 +149,13 @@ async function sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, isCoupl
     const rentAmount = customRent || roomData.rent_per_bed;
     
     // Get deposit amount from property's security_deposit field
-    // If security_deposit is NULL or 0, use 2 months rent as fallback
-    let depositAmount = roomData.security_deposit ? parseFloat(roomData.security_deposit) : rentAmount * 2;
+     // ✅ FIX: Use security_deposit from bed assignment if provided, otherwise fallback to property
+    let depositAmount;
+    if (securityDepositFromBed !== null && securityDepositFromBed !== undefined && securityDepositFromBed > 0) {
+      depositAmount = parseFloat(securityDepositFromBed);
+    } else {
+      depositAmount = roomData.security_deposit ? parseFloat(roomData.security_deposit) : rentAmount * 2;
+    }
     
     // Get company address from settings
     const [settings] = await db.query(
@@ -930,7 +935,7 @@ async assignBed(req, res) {
 
     if (result.success) {
       try {
-        await sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, coupleStatus);
+        await sendWelcomeEmail(tenantId, roomId, bedNumber, customRent, coupleStatus, security_deposit);
       } catch (emailErr) {
         console.error("Failed to send welcome email:", emailErr);
       }
@@ -960,11 +965,8 @@ async assignBed(req, res) {
 },
 
 
-
-
-
 async updateBedAssignment(req, res) {
-  console.log("upadate bed assignment", req.body);
+  console.log("🛏️ updateBedAssignment called with body:", req.body);
   try {
     const { id } = req.params; // bed assignment ID
     const { 
@@ -990,7 +992,6 @@ async updateBedAssignment(req, res) {
       partner_relationship 
     } = req.body;
     
-    
     if (!id) {
       return res.status(400).json({
         success: false,
@@ -1010,7 +1011,6 @@ async updateBedAssignment(req, res) {
     }
     
     if (is_available !== undefined) {
-      // Convert string 'true'/'false' to boolean
       if (is_available === 'true' || is_available === true || is_available === 1 || is_available === '1') {
         processedData.is_available = true;
       } else if (is_available === 'false' || is_available === false || is_available === 0 || is_available === '0') {
@@ -1044,73 +1044,50 @@ async updateBedAssignment(req, res) {
     }
     
     // Add partner details to processedData
-    if (partner_full_name !== undefined) {
-      processedData.partner_full_name = partner_full_name;
+    if (partner_full_name !== undefined) processedData.partner_full_name = partner_full_name;
+    if (partner_phone !== undefined) processedData.partner_phone = partner_phone;
+    if (partner_date_of_birth !== undefined) processedData.partner_date_of_birth = partner_date_of_birth;
+    if (partner_gender !== undefined) processedData.partner_gender = partner_gender;
+    if (partner_address !== undefined) processedData.partner_address = partner_address;
+    if (partner_id_proof_url !== undefined) processedData.partner_id_proof_url = partner_id_proof_url;
+    if (partner_address_proof_url !== undefined) processedData.partner_address_proof_url = partner_address_proof_url;
+    if (partner_photo_url !== undefined) processedData.partner_photo_url = partner_photo_url;
+    if (partner_email !== undefined) processedData.partner_email = partner_email;
+    if (partner_occupation !== undefined) processedData.partner_occupation = partner_occupation;
+    if (partner_organization !== undefined) processedData.partner_organization = partner_organization;
+    if (partner_relationship !== undefined) processedData.partner_relationship = partner_relationship;
+    
+    if (security_deposit !== undefined) {
+      processedData.security_deposit = security_deposit === null ? null : parseFloat(security_deposit);
     }
-    if (partner_phone !== undefined) {
-      processedData.partner_phone = partner_phone;
-    }
-    if (partner_date_of_birth !== undefined) {
-      processedData.partner_date_of_birth = partner_date_of_birth;
-    }
-    if (partner_gender !== undefined) {
-      processedData.partner_gender = partner_gender;
-    }
-    if (partner_address !== undefined) {
-      processedData.partner_address = partner_address;
-    }
-    if (partner_id_proof_url !== undefined) {
-      processedData.partner_id_proof_url = partner_id_proof_url;
-    }
-    if (partner_address_proof_url !== undefined) {
-      processedData.partner_address_proof_url = partner_address_proof_url;
-    }
-    if (partner_photo_url !== undefined) {
-      processedData.partner_photo_url = partner_photo_url;
-    }
-    if (partner_email !== undefined) {
-      processedData.partner_email = partner_email;
-    }
-    if (partner_occupation !== undefined) {
-      processedData.partner_occupation = partner_occupation;
-    }
-    if (partner_organization !== undefined) {
-      processedData.partner_organization = partner_organization;
-    }
-    if (partner_relationship !== undefined) {
-      processedData.partner_relationship = partner_relationship;
-    }
-
-     // In the processedData, when security_deposit is null, it should be set to null
-  if (security_deposit !== undefined) {
-    processedData.security_deposit = security_deposit === null ? null : security_deposit;
-  }
     
     // Call model function
     const result = await RoomModel.updateBedAssignment(id, processedData);
-
+    
     console.log("Update result:", result);
-    // ✅ Send welcome email if a new tenant was assigned (not vacating)
-      if (result.success && processedData.tenant_id && !processedData.is_available) {
-        try {
-          const [bedInfo] = await db.query(
-            `SELECT room_id, bed_number FROM bed_assignments WHERE id = ?`,
-            [id]
+    
+    // Send welcome email if a new tenant was assigned (not vacating)
+    if (result.success && processedData.tenant_id && !processedData.is_available) {
+      try {
+        const [bedInfo] = await db.query(
+          `SELECT room_id, bed_number FROM bed_assignments WHERE id = ?`,
+          [id]
+        );
+        
+        if (bedInfo.length > 0) {
+          await sendWelcomeEmail(
+            processedData.tenant_id, 
+            bedInfo[0].room_id, 
+            bedInfo[0].bed_number, 
+            processedData.tenant_rent, 
+            processedData.is_couple || false,
+            processedData.security_deposit
           );
-          
-          if (bedInfo.length > 0) {
-            await sendWelcomeEmail(
-              processedData.tenant_id, 
-              bedInfo[0].room_id, 
-              bedInfo[0].bed_number, 
-              processedData.tenant_rent, 
-              processedData.is_couple || false
-            );
-          }
-        } catch (emailErr) {
-          console.error("Failed to send welcome email on update:", emailErr);
         }
+      } catch (emailErr) {
+        console.error("Failed to send welcome email on update:", emailErr);
       }
+    }
     
     res.json({
       success: true,

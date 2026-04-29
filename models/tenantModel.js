@@ -245,7 +245,6 @@ const TenantModel = {
   state,
 }) {
   try {
-    console.log('🔍 findDeletedVacatedTenants called with:', { search, page, pageSize, gender, occupation_category, city, state });
     const offset = (page - 1) * pageSize;
     const where = [];
     const params = [];
@@ -309,7 +308,6 @@ const TenantModel = {
     const [countRows] = await pool.query(countSql, countParams);
     const total = countRows[0]?.total || 0;
     const processedRows = rows.map(parseTenant);
-    console.log(`✅ Found ${processedRows.length} deleted vacated tenants`);
     return { rows: processedRows, total };
   } catch (err) {
     console.error("TenantModel.findDeletedVacatedTenants error:", err);
@@ -347,7 +345,6 @@ const TenantModel = {
 
 
 async findById(id) {
-  console.log("Finding tenant by ID:", id);
   try {
     const sql = `
       SELECT 
@@ -456,7 +453,6 @@ async findById(id) {
 // models/tenantModel.js - Fix the create method
 
 async create(payload) {
-  console.log("Creating tenant with payload:", payload);
   try {
     const {
       salutation,
@@ -754,7 +750,6 @@ if (is_couple_booking) {
   // In tenantModel.js - Update the update method
   async update(id, payload) {
     
-  console.log("TenantController.update called with ID:",id, "and payload:", payload);
     try {
       const fields = [];
       const params = [];
@@ -813,7 +808,6 @@ if (is_couple_booking) {
 
       // Status fields
       if (typeof payload.is_active !== "undefined"){
-        console.log("Updating is_active to:", payload.is_active ? 1 : 0);
         setIf("is_active", payload.is_active ? 1 : 0);
       }
       if (typeof payload.portal_access_enabled !== "undefined")
@@ -923,7 +917,6 @@ setIf("partner_country_code", payload.partner_country_code);
       params.push(id);
 
       const sql = `UPDATE tenants SET ${fields.join(", ")}, updated_at = ? WHERE id = ?`;
-      console.log("Executing SQL:", sql, "with params:", params);
 
       const [result] = await pool.query(sql, params);
       return result.affectedRows > 0;
@@ -1732,7 +1725,6 @@ async createCoupleTenants(primaryData, partnerData) {
     
     const primaryQuery = `INSERT INTO tenants (${primaryColumns.join(', ')}) VALUES (${primaryPlaceholders})`;
     const [primaryResult] = await connection.execute(primaryQuery, primaryValues);
-    console.log("primary result ", primaryResult);
     const primaryId = primaryResult.insertId;
     
     // Build column names and values for partner tenant
@@ -1784,13 +1776,11 @@ async getTenantWithPartner(tenantId) {
     let partnerTenant = null;
     
     if (requestedTenant.is_primary_tenant === 1) {
-      console.log("Requested tenant is primary tenant");
       primaryTenant = requestedTenant;
       if (requestedTenant.partner_tenant_id) {
         partnerTenant = await this.findById(requestedTenant.partner_tenant_id);
       }
     } else {
-      console.log("Requested tenant is partner tenant");
       partnerTenant = requestedTenant;
       if (requestedTenant.partner_tenant_id) {
         primaryTenant = await this.findById(requestedTenant.partner_tenant_id);

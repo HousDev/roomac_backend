@@ -456,93 +456,111 @@ async getInitialData(bedAssignmentId) {
     }
   }
   
-  // Submit vacate request - FIXED VERSION
-  async submitVacateRequest(data) {
-    const {
-      bedAssignmentId,
-      tenantId,
-      roomId,
-      propertyId,
-      vacateReasonValue,
-      lockinPeriodMonths,
-      lockinPenaltyType,
-      lockinPenaltyAmount,
-      noticePeriodDays,
-      noticePenaltyType,
-      noticePenaltyAmount,
-      requestedVacateDate,
-      noticeGivenDate,
-      securityDepositAmount,
-      totalPenaltyAmount,
-      refundableAmount,
-      tenantAgreed,
+async createVacateRecord(vacateData) {
+  console.log("📝 createVacateRecord called with data:", vacateData);
+  
+  const {
+    bedAssignmentId,
+    tenantId,
+    roomId,
+    propertyId,
+    vacateReasonValue,
+    lockinPeriodMonths,
+    lockinPenaltyType,
+    lockinPenaltyAmount,
+    noticePeriodDays,
+    noticePenaltyType,
+    noticePenaltyAmount,
+    requestedVacateDate,
+    noticeGivenDate,
+    securityDepositAmount,
+    totalPenaltyAmount,
+    refundableAmount,
+    tenantAgreed,
+    status,
+    lockinPenaltyApplied,
+    noticePenaltyApplied
+  } = vacateData;
+
+  // **FIX: Ensure all numeric values are properly parsed**
+  const parsedLockinPenaltyAmount = parseFloat(lockinPenaltyAmount) || 0;
+  const parsedNoticePenaltyAmount = parseFloat(noticePenaltyAmount) || 0;
+  const parsedSecurityDepositAmount = parseFloat(securityDepositAmount) || 0;
+  const parsedTotalPenaltyAmount = parseFloat(totalPenaltyAmount) || 0;
+  const parsedRefundableAmount = parseFloat(refundableAmount) || 0;
+
+  console.log("📝 Inserting vacate record with values:", {
+    bedAssignmentId,
+    tenantId,
+    roomId,
+    propertyId,
+    vacateReasonValue,
+    lockinPeriodMonths: lockinPeriodMonths || 0,
+    lockinPenaltyAmount: parsedLockinPenaltyAmount,
+    noticePeriodDays: noticePeriodDays || 0,
+    noticePenaltyAmount: parsedNoticePenaltyAmount,
+    requestedVacateDate,
+    securityDepositAmount: parsedSecurityDepositAmount,
+    totalPenaltyAmount: parsedTotalPenaltyAmount,
+    refundableAmount: parsedRefundableAmount,
+    status: status || 'pending'
+  });
+
+  const query = `
+    INSERT INTO vacate_records (
+      bed_assignment_id,
+      tenant_id,
+      room_id,
+      property_id,
+      vacate_reason_value,
+      lockin_period_months,
+      lockin_penalty_type,
+      lockin_penalty_amount,
+      notice_period_days,
+      notice_penalty_type,
+      notice_penalty_amount,
+      requested_vacate_date,
+      notice_given_date,
+      security_deposit_amount,
+      total_penalty_amount,
+      refundable_amount,
+      tenant_agreed,
       status,
-      lockinPenaltyApplied,
-      noticePenaltyApplied
-    } = data;
+      lockin_penalty_applied,
+      notice_penalty_applied,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+  `;
 
-    // **FIX: Ensure all numeric values are properly parsed**
-    const parsedLockinPenaltyAmount = parseFloat(lockinPenaltyAmount) || 0;
-    const parsedNoticePenaltyAmount = parseFloat(noticePenaltyAmount) || 0;
-    const parsedSecurityDepositAmount = parseFloat(securityDepositAmount) || 0;
-    const parsedTotalPenaltyAmount = parseFloat(totalPenaltyAmount) || 0;
-    const parsedRefundableAmount = parseFloat(refundableAmount) || 0;
+  const values = [
+    bedAssignmentId,
+    tenantId,
+    roomId,
+    propertyId,
+    vacateReasonValue,
+    lockinPeriodMonths || 0,
+    lockinPenaltyType || '',
+    parsedLockinPenaltyAmount,
+    noticePeriodDays || 0,
+    noticePenaltyType || '',
+    parsedNoticePenaltyAmount,
+    requestedVacateDate,
+    noticeGivenDate || null,
+    parsedSecurityDepositAmount,
+    parsedTotalPenaltyAmount,
+    parsedRefundableAmount,
+    tenantAgreed ? 1 : 0,
+    status || 'pending',
+    lockinPenaltyApplied ? 1 : 0,
+    noticePenaltyApplied ? 1 : 0
+  ];
 
-    
+  console.log("📝 Executing insert query");
+  const [result] = await db.query(query, values);
+  console.log("✅ Vacate record created with ID:", result.insertId);
+  return result.insertId;
+}
 
-    const query = `
-      INSERT INTO vacate_records (
-        bed_assignment_id,
-        tenant_id,
-        room_id,
-        property_id,
-        vacate_reason_value,
-        lockin_period_months,
-        lockin_penalty_type,
-        lockin_penalty_amount,
-        notice_period_days,
-        notice_penalty_type,
-        notice_penalty_amount,
-        requested_vacate_date,
-        notice_given_date,
-        security_deposit_amount,
-        total_penalty_amount,
-        refundable_amount,
-        tenant_agreed,
-        status,
-        lockin_penalty_applied,
-        notice_penalty_applied,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-    `;
-
-    const values = [
-      bedAssignmentId,
-      tenantId,
-      roomId,
-      propertyId,
-      vacateReasonValue,
-      lockinPeriodMonths || 0,
-      lockinPenaltyType || '',
-      parsedLockinPenaltyAmount,
-      noticePeriodDays || 0,
-      noticePenaltyType || '',
-      parsedNoticePenaltyAmount,
-      requestedVacateDate,
-      noticeGivenDate,
-      parsedSecurityDepositAmount,
-      parsedTotalPenaltyAmount,
-      parsedRefundableAmount,
-      tenantAgreed ? 1 : 0,
-      status || 'pending',
-      lockinPenaltyApplied ? 1 : 0,
-      noticePenaltyApplied ? 1 : 0
-    ];
-
-
-    const [result] = await db.query(query, values);
-    return result.insertId;
-  }
 
   // Update tenant request status
   async updateTenantRequestStatus(tenantRequestId, status) {
