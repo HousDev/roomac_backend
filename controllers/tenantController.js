@@ -221,8 +221,6 @@ const TenantController = {
         };
       });
 
-      console.log("Tenant list fetched. Total tenants:", finalRows.length);
-
       return res.json({
         success: true,
         data: finalRows,
@@ -244,7 +242,6 @@ const TenantController = {
   },
 
 async getById(req, res) {
-  console.log("Fetching tenant by ID:", req.params.id);
   try {
     const id = req.params.id;
 
@@ -313,7 +310,6 @@ async getById(req, res) {
       },
     }));
 
-    console.log("Tenant details fetched for ID:", tenant.id);
 
     return res.json({
       success: true,
@@ -1095,14 +1091,12 @@ async getById(req, res) {
           email: tenant.email,
           password_hash,
         });
-        console.log(`✅ Credentials created for tenant ${tenantId}`);
       } else {
         // Update existing credentials
         await TenantModel.updateCredential(tenantId, {
           password_hash,
           email: tenant.email,
         });
-        console.log(`✅ Credentials updated for tenant ${tenantId}`);
       }
 
       // Also update portal_access_enabled in tenants table
@@ -1145,7 +1139,6 @@ async getById(req, res) {
         emailBody,
       );
 
-      console.log(`✅ Credentials email sent to ${tenant.email}`);
 
       return res.json({
         success: true,
@@ -1199,40 +1192,25 @@ async getById(req, res) {
         const primaryTenantId = tenantWithPartner.id;
         const partnerTenantId = tenantWithPartner.partner_id;
 
-        console.log("Primary Tenant ID:", primaryTenantId);
-        console.log("Partner Tenant ID:", partnerTenantId);
-        console.log("Requested ID:", requestedId);
-        console.log("Has Main Section Data:", hasMainSectionData);
-        console.log("Has Partner Section Data:", hasPartnerSectionData);
 
         // Determine which tenant to update based on which section was modified
         if (hasMainSectionData && !hasPartnerSectionData) {
           // User modified main section - update the PRIMARY tenant
           actualTenantId = primaryTenantId;
           isUpdatingPrimary = true;
-          console.log(
-            "Updating PRIMARY tenant (main section changed):",
-            actualTenantId,
-          );
+          
         } else if (!hasMainSectionData && hasPartnerSectionData) {
           // User modified partner section - update the PARTNER tenant
           actualTenantId = partnerTenantId;
           isUpdatingPartner = true;
-          console.log(
-            "Updating PARTNER tenant (partner section changed):",
-            actualTenantId,
-          );
+          
         } else if (hasMainSectionData && hasPartnerSectionData) {
           // Both sections modified - this should update both tenants
           actualTenantId = primaryTenantId;
           isUpdatingPrimary = true;
-          console.log(
-            "Both sections changed - will update primary first:",
-            actualTenantId,
-          );
+          
         } else {
           actualTenantId = requestedId;
-          console.log("Fallback, updating tenant:", actualTenantId);
         }
       }
 
@@ -1585,7 +1563,6 @@ async getById(req, res) {
         );
         updateData.check_in_date = newCheckInDate;
       }
-      console.log("Update data for tenant ID", actualTenantId, ":", updateData);
       // Update current tenant
       const ok = await TenantModel.update(actualTenantId, updateData);
       if (!ok) {
@@ -1611,7 +1588,6 @@ async getById(req, res) {
             : tenantWithPartner.id;
         const otherUpdateData = {};
 
-        console.log("body ", req.body);
         if (actualTenantId === tenantWithPartner.id) {
           // We updated primary, now update partner with partner section data
           if (body.partner_full_name)
@@ -1694,15 +1670,19 @@ async getById(req, res) {
           if (partnerAdditionalDocs.length > 0) {
             otherUpdateData.additional_documents = partnerAdditionalDocs;
           }
+          otherUpdateData.property_id = updateData.property_id ;
+          otherUpdateData.lockin_period_months = updateData.lockin_period_months;
+          otherUpdateData.lockin_penalty_amount = updateData.lockin_penalty_amount;
+          otherUpdateData.lockin_penalty_type = updateData.lockin_penalty_type;
+          otherUpdateData.notice_period_days = updateData.notice_period_days;
+          otherUpdateData.notice_penalty_amount = updateData.notice_penalty_amount;
+          otherUpdateData.notice_penalty_type = updateData.notice_penalty_type;
+          otherUpdateData.check_in_date = updateData.check_in_date;
           otherUpdateData.is_active = updateData.is_active; // Sync active status between tenants
-          console.log("Other tenant update data:", otherUpdateData);
 
           if (Object.keys(otherUpdateData).length > 0) {
             await TenantModel.update(otherTenantId, otherUpdateData);
-            console.log(
-              "Updated partner tenant with partner section data:",
-              otherTenantId,
-            );
+            
           }
         } else {
           // We updated partner, now update primary with main section data
@@ -1729,10 +1709,7 @@ async getById(req, res) {
 
           if (Object.keys(otherUpdateData).length > 0) {
             await TenantModel.update(otherTenantId, otherUpdateData);
-            console.log(
-              "Updated primary tenant with main section data:",
-              otherTenantId,
-            );
+            
           }
         }
       }
@@ -1746,9 +1723,6 @@ async getById(req, res) {
           existingTenant.is_couple_booking === 0);
 
       if (isBecomingCoupleBooking) {
-        console.log(
-          "🔄 Converting single tenant to couple booking - Creating/Updating partner tenant",
-        );
 
         // Generate couple ID
         const coupleId = await generateNextCoupleId();
@@ -1764,10 +1738,7 @@ async getById(req, res) {
           );
           if (existingPartner.length > 0) {
             partnerTenantId = existingPartner[0].id;
-            console.log(
-              "Found existing partner tenant by email:",
-              partnerTenantId,
-            );
+            
           }
         }
 
@@ -1779,16 +1750,12 @@ async getById(req, res) {
           );
           if (existingPartner.length > 0) {
             partnerTenantId = existingPartner[0].id;
-            console.log(
-              "Found existing partner tenant by phone:",
-              partnerTenantId,
-            );
+            
           }
         }
 
         // If partner already exists, update their information
         if (partnerTenantId) {
-          console.log("Updating existing partner tenant:", partnerTenantId);
 
           // Build update query with only the fields that are provided
           const updateFields = [];
@@ -1860,14 +1827,12 @@ async getById(req, res) {
             updateValues.push(partnerTenantId);
 
             const updateQuery = `UPDATE tenants SET ${updateFields.join(", ")} WHERE id = ?`;
-            console.log("Update query:", updateQuery);
-            console.log("Update values:", updateValues);
+            
 
             await connection.execute(updateQuery, updateValues);
           }
         } else {
-          // Create new partner tenant
-          console.log("Creating new partner tenant");
+          
 
           const partnerInsertData = {
             salutation: body.partner_salutation || null,
@@ -2061,7 +2026,6 @@ async getById(req, res) {
           ],
         );
 
-        console.log("✅ Linked primary and partner tenants");
       }
 
       await connection.commit();

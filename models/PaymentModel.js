@@ -1172,7 +1172,6 @@ async rejectPayment(id, rejectionReason, rejectionReasonCategoryId, rejectedBy) 
   }
 },
 
-// Update payment
 async updatePayment(id, paymentData) {
   // First, get the current payment to check status
   const [currentPayment] = await db.execute(
@@ -1184,11 +1183,14 @@ async updatePayment(id, paymentData) {
     throw new Error('Payment not found');
   }
   
-  // Only allow updating pending or rejected payments
-  if (currentPayment[0].status !== 'pending' && currentPayment[0].status !== 'rejected') {
-    throw new Error('Only pending or rejected payments can be updated');
+  // Only allow updating pending, paid, or rejected payments
+  if (currentPayment[0].status !== 'pending' && 
+      currentPayment[0].status !== 'paid' && 
+      currentPayment[0].status !== 'rejected') {
+    throw new Error('Only pending, paid, or rejected payments can be updated');
   }
   
+  // Simple update - just update the payment record
   const query = `
     UPDATE payments 
     SET amount = ?,
@@ -1225,6 +1227,10 @@ async updatePayment(id, paymentData) {
   
   try {
     const [result] = await db.execute(query, values);
+    
+    // ✅ DO NOT update monthly_rent table - it stays as is
+    // The monthly_rent table already has the correct allocation
+    
     return result.affectedRows > 0;
   } catch (error) {
     console.error("Error updating payment:", error);

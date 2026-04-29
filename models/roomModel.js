@@ -1182,17 +1182,17 @@ async createBedAssignments(roomId, totalBeds, bedsConfig = []) {
 },
  
 
-// In roomModel.js - Update the vacateBed method
+// In models/roomModel.js - REPLACE the vacateBed method
+
 async vacateBed(bedId, reason = null) {
   let connection;
   try {
     connection = await db.getConnection();
     await connection.beginTransaction();
     
-    
-    // 1. Get bed info
+    // 1. Get bed info - INCLUDING the current tenant_rent
     const [bed] = await connection.query(
-      `SELECT id, room_id, bed_number, tenant_id, tenant_rent, is_couple
+      `SELECT id, room_id, bed_number, tenant_id, tenant_rent, is_couple, security_deposit, tenant_gender, bed_type
        FROM bed_assignments 
        WHERE id = ? FOR UPDATE`,
       [bedId]
@@ -1204,23 +1204,35 @@ async vacateBed(bedId, reason = null) {
     
     const bedInfo = bed[0];
     
-    // 2. Update the bed to be available with reason
+    // Store current tenant_rent and security_deposit before clearing tenant_id
+    const currentRent = bedInfo.tenant_rent; // KEEP THIS VALUE
+    const currentSecurityDeposit = bedInfo.security_deposit; // KEEP THIS VALUE
+    const currentBedType = bedInfo.bed_type; // KEEP THIS VALUE
+    
+    console.log(`💰 Preserving rent value: ${currentRent}`);
+    console.log(`💰 Preserving security deposit: ${currentSecurityDeposit}`);
+    
+    // 2. Update the bed - ONLY clear tenant_id and tenant_gender, keep tenant_rent and security_deposit
     const [result] = await connection.query(
       `UPDATE bed_assignments 
        SET tenant_id = NULL, 
            tenant_gender = NULL, 
            is_available = TRUE,
-           tenant_rent = NULL,
+           tenant_rent = ?,  -- ← KEEP THE ORIGINAL RENT VALUE
            is_couple = FALSE,
+           security_deposit = ?, -- ← KEEP THE ORIGINAL SECURITY DEPOSIT
+           bed_type = ?,
            vacate_reason = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [reason, bedId]
+      [currentRent, currentSecurityDeposit, currentBedType, reason || 'Admin vacate', bedId]
     );
     
     if (result.affectedRows === 0) {
       throw new Error('Failed to vacate bed');
     }
+    
+    console.log(`✅ Bed ${bedInfo.bed_number} vacated successfully - Rent preserved: ${currentRent}`);
     
     // 3. Update room occupancy
     await this.updateRoomOccupants(bedInfo.room_id, connection);
@@ -1242,12 +1254,13 @@ async vacateBed(bedId, reason = null) {
     
     return {
       success: true,
-      message: `Vacated bed ${bedInfo.bed_number} (was occupied by ${tenantName})`,
+      message: `Vacated bed ${bedInfo.bed_number} (was occupied by ${tenantName}) - Rent preserved: ${currentRent}`,
       data: {
         bed_number: bedInfo.bed_number,
         room_id: bedInfo.room_id,
         previous_tenant: bedInfo.tenant_id,
-        previous_rent: bedInfo.tenant_rent,
+        previous_rent: currentRent, // ← Return preserved rent
+        previous_security_deposit: currentSecurityDeposit,
         was_couple: bedInfo.is_couple,
         vacate_reason: reason
       }

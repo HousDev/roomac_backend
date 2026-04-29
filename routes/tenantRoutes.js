@@ -337,4 +337,31 @@ router.get("/birthday-check/:date", async (req, res) => {
 
 router.get('/couple/:coupleId/primary', TenantController.getPrimaryTenantByCoupleId);
 
+router.get("/raw/:id", async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    
+    const [rows] = await db.query(
+      `SELECT 
+        id, full_name, email, phone, gender, 
+        is_primary_tenant, is_couple_booking, partner_tenant_id,
+        partner_full_name, partner_phone, partner_email, partner_gender,
+        partner_relationship, couple_id
+       FROM tenants 
+       WHERE id = ? AND deleted_at IS NULL`,
+      [tenantId]
+    );
+    
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "Tenant not found" });
+    }
+    
+    console.log("📊 Raw tenant data:", rows[0]);
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    console.error("Error fetching raw tenant:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

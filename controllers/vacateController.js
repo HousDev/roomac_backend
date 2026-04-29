@@ -120,6 +120,8 @@ async getInitialVacateData(req, res) {
   }
   
 async submitVacateRequest(req, res) {
+  console.log("📢 submitVacateRequest called with body:", req.body);
+  
   try {
     const {
       bedAssignmentId,
@@ -142,18 +144,22 @@ async submitVacateRequest(req, res) {
       noticePenaltyApplied,
       adminApproved,
       tenantVacateRequestId,
-      isAdminOverride  // ✅ NEW FIELD
-    } = req.body;
+      isAdminOverride,
+      isPartialVacate
+    } = req.body || {};
 
     // Validate required fields
-    if (!bedAssignmentId || !tenantId || !requestedVacateDate || !vacateReasonValue) {
+    if (!bedAssignmentId || !tenantId || !requestedVacateDate) {
+      console.error("❌ Missing required fields:", { bedAssignmentId, tenantId, requestedVacateDate });
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields: bedAssignmentId, tenantId, requestedVacateDate'
       });
     }
 
-    // ✅ For admin override, tenant agreement is not required
+    console.log("✅ Validated fields:", { bedAssignmentId, tenantId, requestedVacateDate });
+
+    // For admin override, tenant agreement is not required
     if (!isAdminOverride && !tenantAgreed) {
       return res.status(400).json({
         success: false,
@@ -170,56 +176,66 @@ async submitVacateRequest(req, res) {
       });
     }
 
-    // Submit vacate request
-    const vacateRecordId = await VacateService.submitVacateRequest({
+    console.log("✅ Bed assignment found:", bedAssignment.id);
+
+    // ✅ Use the correct function name - createVacateRecord
+    const vacateRecordId = await VacateService.createVacateRecord({
       bedAssignmentId,
       tenantId,
       roomId: bedAssignment.room_id,
       propertyId: bedAssignment.property_id,
       vacateReasonValue: isAdminOverride ? 'Admin forced vacate' : vacateReasonValue,
-      lockinPeriodMonths,
-      lockinPenaltyType,
-      lockinPenaltyAmount: isAdminOverride ? 0 : lockinPenaltyAmount,
-      noticePeriodDays,
-      noticePenaltyType,
-      noticePenaltyAmount: isAdminOverride ? 0 : noticePenaltyAmount,
+      lockinPeriodMonths: lockinPeriodMonths || 0,
+      lockinPenaltyType: lockinPenaltyType || '',
+      lockinPenaltyAmount: isAdminOverride ? 0 : (parseFloat(lockinPenaltyAmount) || 0),
+      noticePeriodDays: noticePeriodDays || 0,
+      noticePenaltyType: noticePenaltyType || '',
+      noticePenaltyAmount: isAdminOverride ? 0 : (parseFloat(noticePenaltyAmount) || 0),
       requestedVacateDate,
       noticeGivenDate: isNoticeGiven ? noticeGivenDate : null,
-      securityDepositAmount,
-      totalPenaltyAmount: isAdminOverride ? 0 : totalPenaltyAmount,
-      refundableAmount: isAdminOverride ? securityDepositAmount : refundableAmount,
-      tenantAgreed: true, // Admin override bypasses tenant agreement
+      securityDepositAmount: parseFloat(securityDepositAmount) || 0,
+      totalPenaltyAmount: isAdminOverride ? 0 : (parseFloat(totalPenaltyAmount) || 0),
+      refundableAmount: isAdminOverride ? (parseFloat(securityDepositAmount) || 0) : (parseFloat(refundableAmount) || 0),
+      tenantAgreed: true,
       status: adminApproved ? 'approved' : 'pending',
       lockinPenaltyApplied: !isAdminOverride && lockinPenaltyApplied,
       noticePenaltyApplied: !isAdminOverride && noticePenaltyApplied
     });
+
+    console.log("✅ Vacate record created with ID:", vacateRecordId);
 
     // Update tenant request status if exists
     if (tenantVacateRequestId) {
       await VacateService.updateTenantRequestStatus(tenantVacateRequestId, 'completed');
     }
 
-    // Mark bed as available
-    await VacateService.markBedAsAvailable(bedAssignmentId);
+    // Only mark bed as available if this is NOT a partial vacate
+    if (!isPartialVacate) {
+      await VacateService.markBedAsAvailable(bedAssignmentId);
+      console.log("✅ Bed marked as available");
+    } else {
+      console.log("⚠️ Partial vacate - bed not marked as available");
+    }
 
     res.json({
       success: true,
-      message: isAdminOverride ? 'Bed vacated successfully by admin!' : 'Vacate request submitted successfully',
+      message: isAdminOverride ? 'Tenant vacated successfully by admin!' : 'Vacate request submitted successfully',
       data: {
         vacateRecordId,
         status: adminApproved ? 'approved' : 'pending',
+        isPartialVacate: isPartialVacate || false,
         financials: {
-          securityDeposit: securityDepositAmount,
-          lockinPenalty: !isAdminOverride && lockinPenaltyApplied ? lockinPenaltyAmount : 0,
-          noticePenalty: !isAdminOverride && noticePenaltyApplied ? noticePenaltyAmount : 0,
-          totalPenalty: isAdminOverride ? 0 : totalPenaltyAmount,
-          refundableAmount: isAdminOverride ? securityDepositAmount : refundableAmount
+          securityDeposit: parseFloat(securityDepositAmount) || 0,
+          lockinPenalty: !isAdminOverride && lockinPenaltyApplied ? (parseFloat(lockinPenaltyAmount) || 0) : 0,
+          noticePenalty: !isAdminOverride && noticePenaltyApplied ? (parseFloat(noticePenaltyAmount) || 0) : 0,
+          totalPenalty: isAdminOverride ? 0 : (parseFloat(totalPenaltyAmount) || 0),
+          refundableAmount: isAdminOverride ? (parseFloat(securityDepositAmount) || 0) : (parseFloat(refundableAmount) || 0)
         }
       }
     });
 
   } catch (error) {
-    console.error('submitVacateRequest error:', error);
+    console.error('❌ submitVacateRequest error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to submit vacate request'
