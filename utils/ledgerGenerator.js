@@ -369,7 +369,7 @@ const generateLedgerHTML = (data) => {
         .sort((a, b) => {
           const dateA = new Date(`${a.month} 1, ${a.year}`);
           const dateB = new Date(`${b.month} 1, ${b.year}`);
-          return dateB.getTime() - dateA.getTime();
+           return dateA.getTime() - dateB.getTime();
         })
         .map((month) => {
           // Determine status and color

@@ -1,3 +1,156 @@
+// // utils/birthdayCron.js
+// const db = require("../config/db");
+// const { sendEmail } = require("./emailService");
+// const { getTemplate, replaceVariables } = require("./templateService");
+
+// class BirthdayCron {
+  
+//   async sendBirthdayEmails() {
+//     const today = new Date();
+//     const month = String(today.getMonth() + 1).padStart(2, "0");
+//     const day = String(today.getDate()).padStart(2, "0");
+//     const todayDate = `${month}-${day}`;
+//     console.log("Starting birthday cron job for date:", day , month );
+    
+//     console.log(`🎂 Running birthday cron job for ${today.toLocaleDateString()}`);
+    
+//     try {
+//       // Get tenants with birthday today who are active and not deleted
+//       const [tenants] = await db.query(`
+//         SELECT 
+//           t.id, 
+//           t.full_name, 
+//           t.email, 
+//           t.property_id,
+//           t.is_active,
+//           t.date_of_birth
+//         FROM tenants t
+//         WHERE DATE_FORMAT(t.date_of_birth, '%m-%d') = ?
+//           AND t.is_active = 1
+//           AND t.deleted_at IS NULL
+//           AND t.email IS NOT NULL
+//           AND t.email != ''
+//       `, [todayDate]);
+      
+//       console.log(`🎂 Found ${tenants.length} tenants with birthday today`);
+      
+//       let sent = 0;
+//       let failed = 0;
+//       const failedEmails = [];
+      
+//       for (const tenant of tenants) {
+//         try {
+//           // Get property name if property_id exists
+//           let propertyName = "Roomac";
+//           if (tenant.property_id) {
+//             const [[property]] = await db.query(
+//               "SELECT name FROM properties WHERE id = ?",
+//               [tenant.property_id]
+//             );
+//             if (property && property.name) {
+//               propertyName = property.name;
+//             }
+//           }
+          
+//           // Get company address from settings
+//           const [settings] = await db.query(
+//             "SELECT value FROM app_settings WHERE setting_key = 'site_name'"
+//           );
+//           const companyAddress = settings.length > 0 ? settings[0].value : "Your Address Here";
+          
+//           // Get birthday template - category = 'birthday', no sub_category needed
+//           const template = await getTemplate("birthday", "email");
+          
+//           if (!template) {
+//             console.error(`❌ Template not found for tenant ${tenant.id}`);
+//             failed++;
+//             failedEmails.push({ id: tenant.id, email: tenant.email, reason: "Template not found" });
+//             continue;
+//           }
+          
+//           // Replace variables in subject and content
+//           // Your template uses: tenant_name, year, company_address
+//           const emailSubject = replaceVariables(template.subject, {
+//             tenant_name: tenant.full_name,
+//             year: new Date().getFullYear(),
+//             company_address: companyAddress
+//           });
+          
+//           const emailBody = replaceVariables(template.content, {
+//             tenant_name: tenant.full_name,
+//             year: new Date().getFullYear(),
+//             company_address: companyAddress
+//           });
+          
+//           // Send email
+//           await sendEmail(
+//             tenant.email,
+//             emailSubject || "Happy Birthday! 🎉",
+//             emailBody
+//           );
+          
+//           // Log the birthday wish sent (optional)
+//           await this.logBirthdaySent(tenant.id, tenant.email);
+          
+//           console.log(`🎉 Birthday email sent to ${tenant.email} (${tenant.full_name})`);
+//           sent++;
+          
+//         } catch (error) {
+//           console.error(`❌ Failed to send birthday email to tenant ${tenant.id}:`, error.message);
+//           failed++;
+//           failedEmails.push({ id: tenant.id, email: tenant.email, reason: error.message });
+//         }
+//       }
+      
+//       console.log(`📊 Birthday cron completed: ${sent} sent, ${failed} failed`);
+      
+//       return {
+//         success: true,
+//         sent,
+//         failed,
+//         failedEmails,
+//         date: today.toLocaleDateString()
+//       };
+      
+//     } catch (error) {
+//       console.error("❌ Birthday cron failed:", error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   }
+  
+//   // Optional: Log birthday emails sent
+//   async logBirthdaySent(tenantId, email) {
+//     try {
+//       // Create table if not exists
+//       await db.query(`
+//         CREATE TABLE IF NOT EXISTS birthday_email_logs (
+//           id INT AUTO_INCREMENT PRIMARY KEY,
+//           tenant_id INT NOT NULL,
+//           email VARCHAR(255) NOT NULL,
+//           sent_at DATETIME NOT NULL,
+//           status ENUM('sent', 'failed') DEFAULT 'sent',
+//           error_message TEXT,
+//           INDEX idx_tenant_id (tenant_id),
+//           INDEX idx_sent_at (sent_at)
+//         )
+//       `);
+      
+//       await db.query(`
+//         INSERT INTO birthday_email_logs (tenant_id, email, sent_at, status)
+//         VALUES (?, ?, NOW(), 'sent')
+//       `, [tenantId, email]);
+//     } catch (error) {
+//       console.error(`Failed to log birthday email for tenant ${tenantId}:`, error.message);
+//       // Don't throw - just log the error
+//     }
+//   }
+// }
+
+// module.exports = new BirthdayCron();
+
 // utils/birthdayCron.js
 const db = require("../config/db");
 const { sendEmail } = require("./emailService");
@@ -6,33 +159,72 @@ const { getTemplate, replaceVariables } = require("./templateService");
 class BirthdayCron {
   
   async sendBirthdayEmails() {
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const todayDate = `${month}-${day}`;
-    console.log("Starting birthday cron job for date:", day , month );
-    
-    console.log(`🎂 Running birthday cron job for ${today.toLocaleDateString()}`);
-    
     try {
-      // Get tenants with birthday today who are active and not deleted
-      const [tenants] = await db.query(`
+      // Get today's date in IST using MySQL
+      const [dateResult] = await db.query(`
         SELECT 
-          t.id, 
-          t.full_name, 
-          t.email, 
-          t.property_id,
-          t.is_active,
-          t.date_of_birth
-        FROM tenants t
-        WHERE DATE_FORMAT(t.date_of_birth, '%m-%d') = ?
-          AND t.is_active = 1
-          AND t.deleted_at IS NULL
-          AND t.email IS NOT NULL
-          AND t.email != ''
-      `, [todayDate]);
+          DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+05:30'), '%m-%d') as today_date,
+          DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+05:30'), '%d') as today_day,
+          DATE_FORMAT(CONVERT_TZ(NOW(), '+00:00', '+05:30'), '%m') as today_month
+      `);
       
-      console.log(`🎂 Found ${tenants.length} tenants with birthday today`);
+      const todayDate = dateResult[0].today_date;
+      const todayDay = dateResult[0].today_day;
+      const todayMonth = dateResult[0].today_month;
+      
+      console.log(`🎂 Running birthday cron job for ${todayDay}/${todayMonth} (IST)`);
+      
+      let tenants = [];
+      let usedFallback = false;
+      
+      // Try SOLUTION 2 first (with CONVERT_TZ)
+      try {
+        [tenants] = await db.query(`
+          SELECT 
+            t.id, 
+            t.full_name, 
+            t.email, 
+            t.property_id,
+            t.is_active,
+            t.date_of_birth
+          FROM tenants t
+          WHERE DATE_FORMAT(CONVERT_TZ(t.date_of_birth, '+00:00', '+05:30'), '%m-%d') = ?
+            AND t.is_active = 1
+            AND t.deleted_at IS NULL
+            AND t.email IS NOT NULL
+            AND t.email != ''
+        `, [todayDate]);
+        
+        console.log(`✅ Using CONVERT_TZ method - Found ${tenants.length} tenants`);
+      } catch (convertError) {
+        // If CONVERT_TZ fails (timezone tables not loaded), use SOLUTION 3 as fallback
+        console.log(`⚠️ CONVERT_TZ failed, using DAY/MONTH fallback method`);
+        usedFallback = true;
+        
+        [tenants] = await db.query(`
+          SELECT 
+            t.id, 
+            t.full_name, 
+            t.email, 
+            t.property_id,
+            t.is_active,
+            t.date_of_birth
+          FROM tenants t
+          WHERE DAY(t.date_of_birth) = DAY(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
+            AND MONTH(t.date_of_birth) = MONTH(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
+            AND t.is_active = 1
+            AND t.deleted_at IS NULL
+            AND t.email IS NOT NULL
+            AND t.email != ''
+        `);
+        
+        console.log(`✅ Using DAY/MONTH fallback - Found ${tenants.length} tenants`);
+      }
+      
+      console.log(`Birthday tenants:`, tenants.map(t => ({ 
+        name: t.full_name, 
+        dob: t.date_of_birth 
+      })));
       
       let sent = 0;
       let failed = 0;
@@ -40,7 +232,7 @@ class BirthdayCron {
       
       for (const tenant of tenants) {
         try {
-          // Get property name if property_id exists
+          // Get property name
           let propertyName = "Roomac";
           if (tenant.property_id) {
             const [[property]] = await db.query(
@@ -58,7 +250,7 @@ class BirthdayCron {
           );
           const companyAddress = settings.length > 0 ? settings[0].value : "Your Address Here";
           
-          // Get birthday template - category = 'birthday', no sub_category needed
+          // Get birthday template
           const template = await getTemplate("birthday", "email");
           
           if (!template) {
@@ -68,8 +260,7 @@ class BirthdayCron {
             continue;
           }
           
-          // Replace variables in subject and content
-          // Your template uses: tenant_name, year, company_address
+          // Replace variables
           const emailSubject = replaceVariables(template.subject, {
             tenant_name: tenant.full_name,
             year: new Date().getFullYear(),
@@ -89,7 +280,7 @@ class BirthdayCron {
             emailBody
           );
           
-          // Log the birthday wish sent (optional)
+          // Log the birthday wish sent
           await this.logBirthdaySent(tenant.id, tenant.email);
           
           console.log(`🎉 Birthday email sent to ${tenant.email} (${tenant.full_name})`);
@@ -102,14 +293,15 @@ class BirthdayCron {
         }
       }
       
-      console.log(`📊 Birthday cron completed: ${sent} sent, ${failed} failed`);
+      console.log(`📊 Birthday cron completed: ${sent} sent, ${failed} failed ${usedFallback ? '(using fallback method)' : ''}`);
       
       return {
         success: true,
         sent,
         failed,
         failedEmails,
-        date: today.toLocaleDateString()
+        date: `${todayDay}/${todayMonth}`,
+        method: usedFallback ? 'fallback' : 'convert_tz'
       };
       
     } catch (error) {
@@ -121,10 +313,8 @@ class BirthdayCron {
     }
   }
   
-  // Optional: Log birthday emails sent
   async logBirthdaySent(tenantId, email) {
     try {
-      // Create table if not exists
       await db.query(`
         CREATE TABLE IF NOT EXISTS birthday_email_logs (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -140,11 +330,10 @@ class BirthdayCron {
       
       await db.query(`
         INSERT INTO birthday_email_logs (tenant_id, email, sent_at, status)
-        VALUES (?, ?, NOW(), 'sent')
+        VALUES (?, ?, CONVERT_TZ(NOW(), '+00:00', '+05:30'), 'sent')
       `, [tenantId, email]);
     } catch (error) {
       console.error(`Failed to log birthday email for tenant ${tenantId}:`, error.message);
-      // Don't throw - just log the error
     }
   }
 }
