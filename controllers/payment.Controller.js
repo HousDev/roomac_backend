@@ -1849,7 +1849,7 @@ async generateLedgerPDF(req, res) {
   try {
     const { tenantId } = req.params;
 
-    // Fetch tenant data
+    // ✅ FIX: Get security deposit from bed_assignments, NOT from properties
     const [tenantRows] = await db.execute(`
       SELECT 
         t.id,
@@ -1862,9 +1862,9 @@ async generateLedgerPDF(req, res) {
         r.room_number,
         ba.bed_number,
         ba.tenant_rent as monthly_rent,
+        ba.security_deposit as security_deposit,  -- ✅ FROM bed_assignments (correct)
         p.name as property_name,
-        p.address as property_address,
-        p.security_deposit
+        p.address as property_address
       FROM tenants t
       LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
       LEFT JOIN rooms r ON ba.room_id = r.id
@@ -1877,8 +1877,28 @@ async generateLedgerPDF(req, res) {
     }
 
     const tenant = tenantRows[0];
+    
+    // ✅ Get security deposit amount from bed_assignments
+    const securityDepositAmount = parseFloat(tenant.security_deposit) || 0;
+    
+    // ✅ Get ALL security deposit payments
+    const [securityDepositPayments] = await db.execute(`
+      SELECT id, amount, payment_date, payment_mode, transaction_id, status
+      FROM payments 
+      WHERE tenant_id = ? 
+        AND payment_type = 'security_deposit'
+        AND status IN ('approved', 'paid', 'pending')
+      ORDER BY payment_date ASC
+    `, [tenantId]);
+    
+    // ✅ Calculate correct total deposit paid
+    const totalDepositPaid = securityDepositPayments
+      .filter(p => p.status !== 'rejected')
+      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    
+    const depositPending = Math.max(0, securityDepositAmount - totalDepositPaid);
 
-    // Fetch monthly rent records (this has the correct prorated rent)
+    // Fetch monthly rent records
     const [monthlyRentRecords] = await db.execute(`
       SELECT month, year, rent, paid, balance, discount, status, days
       FROM monthly_rent 
@@ -1895,7 +1915,8 @@ async generateLedgerPDF(req, res) {
     const [paymentRows] = await db.execute(`
       SELECT 
         id, amount, payment_date, payment_mode, bank_name,
-        transaction_id, month, year, remark, status, payment_type
+        transaction_id, month, year, remark, status, payment_type,
+        discount_amount, total_amount
       FROM payments 
       WHERE tenant_id = ?
       ORDER BY payment_date ASC
@@ -1903,76 +1924,42 @@ async generateLedgerPDF(req, res) {
 
     const payments = paymentRows.map(p => ({
       ...p,
-      amount: parseFloat(p.amount)
+      amount: parseFloat(p.amount),
+      discount_amount: parseFloat(p.discount_amount) || 0,
+      total_amount: parseFloat(p.total_amount) || p.amount
     }));
 
-    // Calculate deposit totals
-    const totalDepositPaid = payments
-      .filter(p => p.payment_type === 'security_deposit' && (p.status === 'approved' || p.status === 'paid' || p.status === 'pending'))
-      .reduce((sum, p) => sum + p.amount, 0);
+    // Build monthly summary from monthly_rent table
+    const monthlySummary = {};
+    let totalRentExpected = 0;
+    let totalRentPaid = 0;
+    let totalRentPending = 0;
+    let totalDiscount = 0;
 
-    const securityDeposit = parseFloat(tenant.security_deposit) || 0;
-    const depositPending = Math.max(0, securityDeposit - totalDepositPaid);
-
-    // ========== BUILD MONTHLY SUMMARY FROM monthly_rent TABLE ==========
-// Build monthly summary from monthly_rent table
-const monthlySummary = {};
-let totalRentExpected = 0;
-let totalRentPaid = 0;
-let totalRentPending = 0;
-let totalDiscount = 0;
-
-// First, create a map of payments by month to get discount amounts
-const paymentDiscountByMonth = {};
-for (const payment of payments) {
-  if (payment.payment_type === 'rent') {
-    const key = `${payment.month} ${payment.year}`;
-    if (!paymentDiscountByMonth[key]) {
-      paymentDiscountByMonth[key] = {
-        discount: 0,
-        amount: 0
+    for (const record of monthlyRentRecords) {
+      const rentAmount = parseFloat(record.rent);
+      const paidAmount = parseFloat(record.paid);
+      const pendingAmount = rentAmount - paidAmount;
+      
+      const key = `${record.month} ${record.year}`;
+      
+      monthlySummary[key] = {
+        month: record.month,
+        year: record.year,
+        totalRent: rentAmount,
+        totalPaid: paidAmount,
+        totalPending: pendingAmount,
+        discount_amount: parseFloat(record.discount) || 0,
+        status: record.status === 'paid' ? 'Paid' : (paidAmount > 0 ? 'Partial' : 'Pending'),
+        is_prorated: record.days !== null && record.days > 0,
+        prorated_days: record.days || 0
       };
+      
+      totalRentExpected += rentAmount;
+      totalRentPaid += paidAmount;
+      totalRentPending += pendingAmount;
+      totalDiscount += parseFloat(record.discount) || 0;
     }
-    paymentDiscountByMonth[key].discount += parseFloat(payment.discount_amount) || 0;
-    paymentDiscountByMonth[key].amount += parseFloat(payment.amount);
-  }
-}
-
-for (const record of monthlyRentRecords) {
-  const rentAmount = parseFloat(record.rent);
-  const paidAmount = parseFloat(record.paid);
-  const pendingAmount = rentAmount - paidAmount;
-  
-  const key = `${record.month} ${record.year}`;
-  
-  // ✅ Get discount from payments for this month
-  const paymentDiscount = paymentDiscountByMonth[key]?.discount || 0;
-  
-  // Calculate original rent (rent + discount)
-  const originalRent = rentAmount + paymentDiscount;
-  
-  monthlySummary[key] = {
-    month: record.month,
-    year: record.year,
-    totalRent: rentAmount,
-    original_rent: originalRent,
-    discount_amount: paymentDiscount,
-    totalPaid: paidAmount,
-    totalPending: pendingAmount,
-    status: record.status === 'paid' ? 'Paid' : (paidAmount > 0 ? 'Partial' : 'Pending'),
-    is_prorated: record.days !== null && record.days > 0,
-    prorated_days: record.days || 0
-  };
-  
-  totalRentExpected += rentAmount;
-  totalRentPaid += paidAmount;
-  totalRentPending += pendingAmount;
-  totalDiscount += paymentDiscount;
-}
-// Also calculate total discount from payments
-const totalDiscountAmount = payments
-  .filter(p => p.payment_type === 'rent' && (p.status === 'approved' || p.status === 'paid' || p.status === 'pending'))
-  .reduce((sum, p) => sum + (parseFloat(p.discount_amount) || 0), 0);
 
     // Get settings
     const [settingsRows] = await db.execute("SELECT setting_key, value FROM app_settings");
@@ -1988,9 +1975,9 @@ const totalDiscountAmount = payments
       ? `${process.env.CLIENT_URL || "http://localhost:3001"}${settings.logo_header.value}`
       : null;
 
-    // Calculate grand total of all successful payments
+    // Calculate grand total
     const grandTotal = payments
-      .filter(p => p.status === 'approved' || p.status === 'paid' || p.status === 'pending')
+      .filter(p => p.status === 'approved' || p.status === 'paid')
       .reduce((sum, p) => sum + p.amount, 0);
 
     // Prepare data for HTML template
@@ -2007,7 +1994,7 @@ const totalDiscountAmount = payments
         property_name: tenant.property_name,
         property_address: tenant.property_address,
         monthly_rent: parseFloat(tenant.monthly_rent) || 0,
-        security_deposit: securityDeposit,
+        security_deposit: securityDepositAmount,  // ✅ Correct value from bed_assignments
         months_since_joining: monthlyRentRecords.length
       },
       payments: payments,
@@ -2018,16 +2005,16 @@ const totalDiscountAmount = payments
       contactEmail,
       companyLogo,
       summary: {
-    totalRentExpected: totalRentExpected,
-    totalRentPaid: totalRentPaid,
-    totalRentPending: totalRentPending,
-    totalDiscount: totalDiscount,
-    totalDiscountAmount: totalDiscountAmount,
-    totalDepositPaid: totalDepositPaid,
-    depositPending: depositPending,
-    grandTotal: grandTotal,
-    monthlySummary: monthlySummary
-  }
+        totalRentExpected: totalRentExpected,
+        totalRentPaid: totalRentPaid,
+        totalRentPending: totalRentPending,
+        totalDiscount: totalDiscount,
+        totalDiscountAmount: totalDiscount,
+        totalDepositPaid: totalDepositPaid,  // ✅ Correct calculation
+        depositPending: depositPending,      // ✅ Correct calculation
+        grandTotal: grandTotal,
+        monthlySummary: monthlySummary
+      }
     };
 
     // Generate HTML and PDF
@@ -2061,9 +2048,9 @@ async previewLedgerPDF(req, res) {
         r.room_number,
         ba.bed_number,
         ba.tenant_rent as monthly_rent,
+        ba.security_deposit as security_deposit,  -- ✅ FROM bed_assignments
         p.name as property_name,
-        p.address as property_address,
-        p.security_deposit
+        p.address as property_address
       FROM tenants t
       LEFT JOIN bed_assignments ba ON t.id = ba.tenant_id AND ba.is_available = 0
       LEFT JOIN rooms r ON ba.room_id = r.id
@@ -2076,6 +2063,7 @@ async previewLedgerPDF(req, res) {
     }
 
     const tenant = tenantRows[0];
+     const securityDepositAmount = parseFloat(tenant.security_deposit) || 0;
 
     // Fetch monthly rent records
     const [monthlyRentRecords] = await db.execute(`
@@ -2107,13 +2095,30 @@ async previewLedgerPDF(req, res) {
       discount_amount: parseFloat(p.discount_amount) || 0
     }));
 
-    // Calculate deposit totals
-    const totalDepositPaid = payments
-      .filter(p => p.payment_type === 'security_deposit' && (p.status === 'approved' || p.status === 'paid' || p.status === 'pending'))
-      .reduce((sum, p) => sum + p.amount, 0);
 
-    const securityDeposit = parseFloat(tenant.security_deposit) || 0;
-    const depositPending = Math.max(0, securityDeposit - totalDepositPaid);
+      // Get security deposit payments
+    const [securityDepositPayments] = await db.execute(`
+      SELECT id, amount, payment_date, payment_mode, transaction_id, status
+      FROM payments 
+      WHERE tenant_id = ? 
+        AND payment_type = 'security_deposit'
+        AND status IN ('approved', 'paid', 'pending')
+      ORDER BY payment_date ASC
+    `, [tenantId]);
+    
+    const totalDepositPaid = securityDepositPayments
+      .filter(p => p.status !== 'rejected')
+      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    
+    const depositPending = Math.max(0, securityDepositAmount - totalDepositPaid);
+
+    // Calculate deposit totals
+    // const totalDepositPaid = payments
+    //   .filter(p => p.payment_type === 'security_deposit' && (p.status === 'approved' || p.status === 'paid' || p.status === 'pending'))
+    //   .reduce((sum, p) => sum + p.amount, 0);
+
+    // const securityDeposit = parseFloat(tenant.security_deposit) || 0;
+    // const depositPending = Math.max(0, securityDeposit - totalDepositPaid);
 
     // Create a map of payments by month to get discount amounts
     const paymentDiscountByMonth = {};
@@ -2207,7 +2212,7 @@ async previewLedgerPDF(req, res) {
         property_name: tenant.property_name,
         property_address: tenant.property_address,
         monthly_rent: parseFloat(tenant.monthly_rent) || 0,
-        security_deposit: securityDeposit,
+        security_deposit: securityDepositAmount,
         months_since_joining: monthlyRentRecords.length
       },
       payments: payments,
