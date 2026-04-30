@@ -1703,7 +1703,8 @@ async downloadReceipt(req, res) {
     }
   },
 
-  // Delete payment
+// In paymentController.js - Fixed deletePayment function
+
 async deletePayment(req, res) {
   const connection = await db.getConnection();
   await connection.beginTransaction();
@@ -1721,24 +1722,95 @@ async deletePayment(req, res) {
       });
     }
 
-    // ✅ Remove the restriction - allow deleting any payment regardless of status
-    // Just delete the payment record
-    
-    // If it's an approved payment, also update monthly_rent
-    if (payment.status === 'approved' || payment.status === 'paid') {
-      // Update monthly_rent to subtract this payment
-      await connection.execute(`
-        UPDATE monthly_rent 
-        SET paid = paid - ?, 
-            balance = balance + ?,
-            status = CASE 
-              WHEN (paid - ?) >= rent THEN 'paid'
-              WHEN (paid - ?) > 0 THEN 'partial'
-              ELSE 'pending'
-            END
-        WHERE tenant_id = ? AND month = ? AND year = ?
-      `, [payment.amount, payment.amount, payment.amount, payment.amount, 
-          payment.tenant_id, payment.month, payment.year]);
+    // If it's an approved/paid payment, need to recalculate monthly_rent
+    if (payment.status === 'approved' || payment.status === 'paid' || payment.status === 'pending') {
+      // ✅ Get all monthly rent records for this tenant
+      const [monthlyRecords] = await connection.execute(`
+        SELECT id, month, year, rent, paid, balance, status
+        FROM monthly_rent 
+        WHERE tenant_id = ? 
+        ORDER BY 
+          year ASC,
+          FIELD(month, 
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ) ASC
+      `, [payment.tenant_id]);
+
+      // ✅ Get all other approved payments (excluding the one being deleted)
+      const [otherPayments] = await connection.execute(`
+        SELECT id, amount, month, year, status
+        FROM payments 
+        WHERE tenant_id = ? 
+          AND id != ?
+          AND status IN ('approved', 'paid')
+          AND payment_type = 'rent'
+        ORDER BY payment_date ASC
+      `, [payment.tenant_id, id]);
+
+      // ✅ Recalculate paid amounts for each month from scratch
+      // First, reset all months to 0 paid
+      for (const record of monthlyRecords) {
+        await connection.execute(`
+          UPDATE monthly_rent 
+          SET paid = 0, balance = rent, status = 'pending', updated_at = NOW()
+          WHERE id = ?
+        `, [record.id]);
+      }
+
+      // ✅ Apply all remaining payments to the months
+      let remainingAmount = 0;
+      for (const otherPayment of otherPayments) {
+        let amountToDistribute = parseFloat(otherPayment.amount);
+        
+        for (const record of monthlyRecords) {
+          if (amountToDistribute <= 0) break;
+          
+          const currentBalance = parseFloat(record.balance);
+          if (currentBalance > 0) {
+            const amountToPay = Math.min(amountToDistribute, currentBalance);
+            const newPaid = parseFloat(record.paid) + amountToPay;
+            const newBalance = currentBalance - amountToPay;
+            const newStatus = newBalance === 0 ? "paid" : newPaid > 0 ? "partial" : "pending";
+
+            await connection.execute(`
+              UPDATE monthly_rent 
+              SET paid = ?, balance = ?, status = ?, updated_at = NOW()
+              WHERE id = ?
+            `, [newPaid, newBalance, newStatus, record.id]);
+
+            amountToDistribute -= amountToPay;
+          }
+        }
+      }
+
+      // ✅ Also update previous_balance and new_balance in payments table
+      // Recalculate running totals for payments
+      let runningBalance = monthlyRecords.reduce((sum, r) => sum + parseFloat(r.rent), 0);
+      
+      // Get all payments (excluding the one being deleted) sorted by date
+      const [allPaymentsSorted] = await connection.execute(`
+        SELECT id, amount, payment_date
+        FROM payments 
+        WHERE tenant_id = ? 
+          AND id != ?
+          AND status IN ('approved', 'paid')
+          AND payment_type = 'rent'
+        ORDER BY payment_date ASC
+      `, [payment.tenant_id, id]);
+
+      // Update running balances
+      for (const p of allPaymentsSorted) {
+        const paidAmount = parseFloat(p.amount);
+        const newPreviousBalance = runningBalance;
+        runningBalance = Math.max(0, runningBalance - paidAmount);
+        
+        await connection.execute(`
+          UPDATE payments 
+          SET previous_balance = ?, new_balance = ?, updated_at = NOW()
+          WHERE id = ?
+        `, [newPreviousBalance, runningBalance, p.id]);
+      }
     }
     
     // Delete the payment
